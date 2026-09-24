@@ -1,0 +1,6 @@
+# Local only — matches docker/docker-compose.local.yml. Never reuse these credentials elsewhere.
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/ergo_connect
+    username: ergo
+    password: ergo

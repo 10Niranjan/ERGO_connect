@@ -1,0 +1,11 @@
+version: 2
+updates:
+  - package-ecosystem: maven
+    directory: /ergo-connect-backend
+    schedule: { interval: weekly }
+  - package-ecosystem: npm
+    directory: /ergo-connect-frontend
+    schedule: { interval: weekly }
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }

@@ -1,0 +1,21 @@
+# Local dev dependencies. Run: docker compose -f docker/docker-compose.local.yml up -d
+# Kafka intentionally absent — deferred out of MVP (ARCHITECTURE.md §6).
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ergo_connect
+      POSTGRES_USER: ergo
+      POSTGRES_PASSWORD: ergo
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ergo -d ergo_connect"]
+      interval: 5s
+      retries: 10
+  redis:
+    image: redis:8-alpine
+    ports: ["6379:6379"]
+
+volumes:
+  pgdata:

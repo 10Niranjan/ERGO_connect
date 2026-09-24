@@ -1,0 +1,3534 @@
+ERGO CONNECT – SOFTWARE REQUIREMENTS DOCUMENT (V1)
+1. Project Overview
+1.1 Project Name
+ERGO Connect
+1.2 Purpose
+ERGO Connect is a digital collaboration platform connecting ERGO teams, ERGO customers, and ERGO suppliers across the sourcing and supply lifecycle.
+1.3 Objectives
+Create a single source of truth for RFQs, quotes, NPD, OFP, and quality activities
+Improve transparency between ERGO, customers, and suppliers
+Strengthen process discipline, quality, and commitment tracking
+Reduce dependence on scattered communication channels
+Enable scale through defined workflows, audit trails, and role-based access
+2. User Roles
+2.1 ERGO Internal Roles
+ERGO Admin
+ERGO Management
+ERGO RFQ
+ERGO NPD
+ERGO OFP
+ERGO Quality
+ERGO Key Account Manager
+2.2 Customer Roles
+Customer RFQ
+Customer NPD
+Customer OFP
+Customer Quality
+Customer Key Account Manager
+Customer Management
+2.3 Supplier Roles
+Supplier RFQ
+Supplier NPD
+Supplier OFP
+Supplier Quality
+Supplier Key Account Manager
+3. Core Modules
+User & Access Management
+Customer Management
+Supplier Management
+RFQ Management
+Quotation Management
+NPD Management
+OFP / Order Fulfillment & Production Tracking
+Quality Management
+Document Management System
+Communication & Alerts
+Dashboard & Analytics
+Admin Controls & Master Data
+4. Confirmed Business Rules
+Customer should see only ERGO-selected quotes
+Supplier should not see target prices
+Supplier can edit quotation only if ERGO explicitly re-opens or allows edit
+ERGO will manually decide which approved RFQ converts to NPD (no automatic conversion), but system gives prompt showing approved projects ready for converting to NPD in NPD section
+5. RFQ Management
+5.1 Purpose
+Manage RFQ lifecycle from receipt to supplier quotation and ERGO recommendation.
+5.2 Users
+Customer RFQ
+ERGO RFQ
+Supplier RFQ
+ERGO Management
+5.3 Functionalities
+RFQ creation by customer or ERGO
+Drawing and document upload
+Technical and commercial requirement capture
+Internal review by ERGO
+Supplier assignment and RFQ float
+Supplier quotation submission
+Quote comparison by ERGO
+Customer review of ERGO-selected quotes only
+Customer Approval / Denial / Request for review and rework on quote
+5.4 RFQ / Quote Fields
+Summary
+RFQ Number (auto)
+Quotation Date (auto)
+Part Number (auto)
+Revision (auto)
+Description (auto)
+EAU (auto)
+Net Weight
+Gross Weight
+Technical Inputs
+Material specification
+Process
+Coating / surface treatment
+Commercial Section
+Tooling Cost (total)
+Tooling cost details (Tool name and cost details)
+Piece price for PPAP lot
+Piece Price for production
+Payment terms (Pre populated, but can be edited)
+Cost Breakdown
+Raw Material Cost
+Processing Cost
+Overhead Cost
+Packaging Cost
+Profit
+Lead Time & MOQ
+Material Lead Time (weeks)
+Tooling lead time
+Sample lead time
+MOQ
+Production lead time from PO date
+Remarks
+Free text
+5.5 Process Flow Table
+Expandable rows, starting with 2 rows
+Fields:
+Process Step
+Cycle Time
+Inhouse / Outsourced
+Supplier Name (if outsourced)
+Remarks
+5.6 RFQ Business Rules
+Supplier cannot see other supplier quotes
+Supplier cannot see target price
+Customer sees only ERGO-selected quotes
+RFQ must be validated by ERGO before float
+Mandatory fields before submission
+Quote version control required
+Customer can not see other customer / supplier quotes
+6. Confirmed System Rules & Assumptions
+Supplier quote edit is controlled by ERGO (re-open mechanism required)
+Multi-currency support required: INR, USD, EUR, RMB
+System should support currency tagging at RFQ and quote level
+Currency conversion view (optional) can be enabled for ERGO internal comparison
+RFQ to NPD conversion will be manual trigger by ERGO only
+7. Next Sections To Be Expanded
+Quotation Comparison Engine
+NPD Module
+OFP Module
+Quality Module
+Full Access Matrix
+Core Data Model
+UI Framework
+Notification Logic
+Audit Trail Requirements
+8. Full Access Control Philosophy
+Use strict role-based access control plus record-based restrictions.
+8.1 Core Principles
+Customer users can see only records belonging to their own company
+Supplier users can see only records belonging to their own company
+Supplier users cannot see competitor information
+Customer users cannot see non-selected supplier quotations
+ERGO internal roles are function-based and should see only the modules relevant to their role, except ERGO Management, ERGO Admin, and ERGO Key Account Manager as defined below
+ERGO Key Account Manager can see all records related to assigned customers and linked suppliers/projects where needed for coordination
+Any approval-sensitive function must be separately permission-controlled even if the user has edit access
+Internal notes, margins, supplier ratings, and internal comparison logic must remain hidden from customers and suppliers unless explicitly marked shareable
+8.2 Record-Based Visibility Rules
+Customer-side visibility
+Customer RFQ: only own company RFQs and quote responses shown to customer
+Customer NPD: only own company NPD projects, sample status, milestones, and customer-side NPD actions
+Customer OFP: only own production and order follow-up records
+Customer Quality: only own complaints, approvals, and quality records that are customer-facing
+Customer Key Account Manager: full visibility for that customer account across RFQ, NPD, OFP, Quality, Documents, Communication
+Supplier-side visibility
+Supplier RFQ: only RFQs assigned to that supplier
+Supplier NPD: only NPD projects, activities, readiness items, and submissions linked to that supplier
+Supplier OFP: only orders and production follow-up linked to that supplier
+Supplier Quality: only quality records, NCRs, CAPA, and inspection items linked to that supplier
+Supplier Key Account Manager: full visibility for that supplier account across assigned RFQ, NPD, OFP, Quality, Documents, Communication
+ERGO-side visibility
+ERGO RFQ: RFQ and quote-related modules, linked documents, linked communication
+ERGO NPD: NPD projects, linked documents, linked communication, relevant supplier/customer interactions
+ERGO OFP: production follow-up, order tracking, dispatch tracking, linked documents, linked communication
+ERGO Quality: inspection, NCR, CAPA, deviation, quality dashboards, linked documents
+ERGO Key Account Manager: full customer-account visibility for coordination, status review, communication, and escalation
+ERGO Management: full visibility across all modules, dashboards, reports, approvals as configured
+ERGO Admin: full system access including user creation, role mapping, masters, workflow settings, audit logs, and permissions configuration
+9. Role Definitions
+This section defines the intended responsibility and access behavior of each role. These role definitions should be treated as the governing logic for permissions, UI visibility, workflow actions, and data restrictions.
+9.1 ERGO Internal Roles
+ERGO Admin
+Full system administrator
+Creates and manages users, roles, permission mapping, workflow settings, master data, and system policies
+Has visibility across all companies, records, and audit logs
+Can override locks and re-open records where policy allows
+ERGO Management
+Executive visibility across all modules
+Reviews dashboards, approves major business decisions, and monitors performance
+Should not do routine transaction entry unless specifically allowed
+Can approve sensitive workflows according to configured approval matrix
+ERGO Key Account Manager
+Customer-facing coordination role for assigned accounts
+Full visibility to assigned customer records and linked supplier/project records relevant for coordination
+Can review progress, communicate, escalate, and support alignment between customer, ERGO, and supplier
+Should not access unrelated accounts
+ERGO RFQ
+Manages customer RFQs, supplier RFQ float, quote collection, comparison, and submission to customer
+Controls supplier quote edit permission and quote validation
+Responsible for commercial flow until quote closure
+ERGO NPD
+Owns project conversion into NPD, development milestones, activity tracking, and sample submission readiness
+Coordinates supplier development actions and customer-facing NPD progress where required
+Responsible for closure of NPD stage and handover to OFP
+ERGO OFP
+Owns production follow-up, delivery tracking, dispatch readiness, shipment progress, and order execution visibility
+Coordinates between supplier, quality, and customer on live order commitments
+ERGO Quality
+Owns inspections, NCR, CAPA, deviation control, quality approvals, and quality-related dashboard visibility
+Controls quality-related stage gates and closure conditions
+9.2 Customer Roles
+Customer RFQ
+Creates and manages own RFQs
+Reviews only ERGO-shared quotations
+Can approve, reject, or request revision on quote proposals shown to own company
+Customer NPD
+Reviews sample status, NPD milestones, and customer-facing development records
+Can provide sample-related comments, milestone acknowledgment, and approval where needed
+Sees only own company projects
+Customer OFP
+Reviews order fulfillment, dispatch progress, shipment status, and customer-facing delivery records
+No access to internal supplier-side commercial or competitor information
+Customer Quality
+Reviews complaints, sample approvals, customer-facing quality records, and closure items requiring customer confirmation
+Can approve or reject customer-side quality acceptance where workflow requires it
+Customer Key Account Manager
+Full account-level visibility for own company across RFQ, NPD, OFP, Quality, Documents, and Communication
+Acts as coordinator and escalation owner from customer side
+Customer Management
+Optional broader customer-side management role if the customer wants a supervisory user above functional roles
+Can be configured later if required; for MVP it may remain inactive unless needed by a specific customer
+9.3 Supplier Roles
+Supplier RFQ
+Receives assigned RFQs, submits quotations, raises clarification requests, and regrets RFQs with reason where needed
+Can edit quotations only when ERGO explicitly opens edit permission
+Supplier NPD
+Updates supplier-owned NPD tasks, readiness, attachments, process confirmations, and issue responses
+Sees only NPD records assigned to that supplier
+Supplier OFP
+Updates order status, production readiness, quantities, dispatch readiness, and blockers for assigned orders
+Sees only supplier-owned live order records
+Supplier Quality
+Updates supplier-side inspection responses, NCR responses, CAPA, and quality documents linked to that supplier
+Cannot approve final customer-side quality closure unless specifically configured
+Supplier Key Account Manager
+Full visibility across that supplier’s assigned RFQ, NPD, OFP, Quality, Documents, and Communication
+Acts as commercial/coordination owner on supplier side
+10. Module-wise Permissions
+Legend:
+V = View
+C = Create
+E = Edit
+S = Submit / Update own transactional response
+A = Approve / Validate / Final authorize
+X = No access
+RV = Restricted view (own company / assigned records only)
+10.1 Module: User & Access Management
+Role
+View
+Create
+Edit
+Submit
+Approve
+ERGO Admin
+V
+C
+E
+S
+A
+ERGO Management
+V
+X
+E
+S
+A
+ERGO Key Account Manager
+V
+X
+X
+X
+X
+ERGO RFQ
+V
+C
+E
+S
+X
+ERGO NPD
+V
+C
+E
+S
+A
+ERGO OFP
+V
+C
+E
+S
+A
+ERGO Quality
+V
+C
+E
+S
+A
+Customer RFQ
+RV
+C
+E
+S
+A
+Customer NPD
+RV
+C
+E
+S
+A
+Customer OFP
+RV
+C
+E
+S
+A
+Customer Quality
+RV
+C
+E
+S
+A
+Customer Key Account Manager
+RV
+C
+E
+S
+A
+Customer Management
+RV
+C
+E
+S
+A
+Supplier RFQ
+RV
+X
+X
+S
+X
+Supplier NPD
+RV
+X
+E
+S
+X
+Supplier OFP
+RV
+X
+E
+S
+X
+Supplier Quality
+RV
+C
+E
+S
+X
+Supplier Key Account Manager
+RV
+X
+X
+X
+X
+10.2 Module: Customer Management
+Role
+View
+Create
+Edit
+Submit
+Approve
+ERGO Admin
+V
+C
+E
+S
+A
+ERGO Management
+V
+X
+X
+X
+A
+ERGO Key Account Manager
+V
+C
+E
+S
+X
+ERGO RFQ
+V
+C
+E
+S
+X
+ERGO NPD
+RV
+X
+X
+X
+X
+ERGO OFP
+RV
+X
+X
+X
+X
+ERGO Quality
+RV
+X
+X
+X
+X
+Customer RFQ
+RV
+X
+E
+S
+X
+Customer NPD
+RV
+X
+X
+X
+X
+Customer OFP
+RV
+X
+X
+X
+X
+Customer Quality
+RV
+X
+X
+X
+X
+Customer Key Account Manager
+RV
+X
+E
+S
+X
+Customer Management
+RV
+X
+E
+S
+X
+Supplier RFQ
+X
+X
+X
+X
+X
+Supplier NPD
+X
+X
+X
+X
+X
+Supplier OFP
+X
+X
+X
+X
+X
+Supplier Quality
+X
+X
+X
+X
+X
+Supplier Key Account Manager
+X
+X
+X
+X
+X
+10.3 Module: Supplier Management
+Role
+View
+Create
+Edit
+Submit
+Approve
+ERGO Admin
+V
+C
+E
+S
+A
+ERGO Management
+V
+X
+X
+X
+A
+ERGO Key Account Manager
+RV
+X
+X
+X
+X
+ERGO RFQ
+V
+C
+E
+S
+X
+ERGO NPD
+RV
+X
+X
+X
+X
+ERGO OFP
+RV
+X
+X
+X
+X
+ERGO Quality
+RV
+X
+X
+X
+X
+Customer RFQ
+X
+X
+X
+X
+X
+Customer NPD
+X
+X
+X
+X
+X
+Customer OFP
+X
+X
+X
+X
+X
+Customer Quality
+X
+X
+X
+X
+X
+Customer Key Account Manager
+X
+X
+X
+X
+X
+Customer Management
+X
+X
+X
+X
+X
+Supplier RFQ
+RV
+X
+E
+S
+X
+Supplier NPD
+RV
+X
+X
+X
+X
+Supplier OFP
+RV
+X
+X
+X
+X
+Supplier Quality
+RV
+X
+X
+X
+X
+Supplier Key Account Manager
+RV
+X
+E
+S
+X
+10.4 Module: RFQ Management
+Role
+View
+Create
+Edit
+Submit
+Approve
+ERGO Admin
+V
+C
+E
+S
+A
+ERGO Management
+V
+C
+E
+S
+A
+ERGO Key Account Manager
+RV
+C
+E
+S
+X
+ERGO RFQ
+V
+C
+E
+S
+A
+ERGO NPD
+RV
+X
+X
+X
+X
+ERGO OFP
+X
+X
+X
+X
+X
+ERGO Quality
+X
+X
+X
+X
+X
+Customer RFQ
+RV
+C
+E
+S
+X
+Customer NPD
+X
+X
+X
+X
+X
+Customer OFP
+X
+X
+X
+X
+X
+Customer Quality
+X
+X
+X
+X
+X
+Customer Key Account Manager
+RV
+C
+E
+S
+X
+Customer Management
+RV
+C
+E
+S
+X
+Supplier RFQ
+RV
+X
+E*
+S
+X
+Supplier NPD
+X
+X
+X
+X
+X
+Supplier OFP
+X
+X
+X
+X
+X
+Supplier Quality
+X
+X
+X
+X
+X
+Supplier Key Account Manager
+RV
+X
+E*
+S
+X
+Rule for E*: Supplier RFQ and Supplier Key Account Manager can edit quotation data only when ERGO has explicitly opened quote edit permission.
+10.5 Module: Quotation Management
+Role
+View
+Create
+Edit
+Submit
+Approve
+ERGO Admin
+V
+C
+E
+S
+A
+ERGO Management
+V
+X
+X
+X
+A
+ERGO Key Account Manager
+RV
+X
+X
+X
+X
+ERGO RFQ
+V
+C
+E
+S
+A
+ERGO NPD
+RV
+X
+X
+X
+X
+ERGO OFP
+X
+X
+X
+X
+X
+ERGO Quality
+X
+X
+X
+X
+X
+Customer RFQ
+RV**
+X
+X
+S***
+X
+Customer NPD
+X
+X
+X
+X
+X
+Customer OFP
+X
+X
+X
+X
+X
+Customer Quality
+X
+X
+X
+X
+X
+Customer Key Account Manager
+RV**
+X
+X
+S***
+X
+Customer Management
+RV**
+X
+X
+S***
+X
+Supplier RFQ
+RV
+C
+E*
+S
+X
+Supplier NPD
+X
+X
+X
+X
+X
+Supplier OFP
+X
+X
+X
+X
+X
+Supplier Quality
+X
+X
+X
+X
+X
+Supplier Key Account Manager
+RV
+C
+E*
+S
+X
+Rule for RV**: Customer sees only ERGO-selected quotes for own company.
+Rule for S**: Customer can submit approve / revise / decline response only on ERGO-shared quote.
+10.6 Module: NPD Management
+Role
+View
+Create
+Edit
+Submit
+Approve
+ERGO Admin
+V
+C
+E
+S
+A
+ERGO Management
+V
+X
+X
+X
+A
+ERGO Key Account Manager
+RV
+X
+X
+X
+X
+ERGO RFQ
+RV
+X
+X
+X
+X
+ERGO NPD
+V
+C
+E
+S
+A
+ERGO OFP
+RV
+X
+X
+X
+X
+ERGO Quality
+RV
+X
+E
+S
+A*
+Customer RFQ
+RV
+X
+X
+X
+X
+Customer NPD
+RV
+X
+E**
+S
+A**
+Customer OFP
+RV
+X
+X
+X
+X
+Customer Quality
+RV
+X
+E**
+S
+A**
+Customer Key Account Manager
+RV
+X
+X
+X
+X
+Customer Management
+RV
+X
+X
+X
+X
+Supplier RFQ
+RV
+X
+X
+X
+X
+Supplier NPD
+RV
+X
+E***
+S
+X
+Supplier OFP
+RV
+X
+E***
+S
+X
+Supplier Quality
+RV
+X
+E***
+S
+X
+Supplier Key Account Manager
+RV
+X
+E***
+S
+X
+A*: ERGO Quality approval applicable for quality-related stage gates only.
+E** and A****: Customer NPD and Customer Quality can edit/approve only customer-facing sample approval, milestone acknowledgment, and quality acceptance records.
+E***: Supplier NPD, Supplier OFP, Supplier Quality, and Supplier Key Account Manager edit rights are limited to supplier-owned activities, dates, attachments, readiness updates, and issue responses.
+10.7 Module: OFP / Production Tracking
+Role
+View
+Create
+Edit
+Submit
+Approve
+ERGO Admin
+V
+C
+E
+S
+A
+ERGO Management
+V
+X
+X
+X
+A
+ERGO Key Account Manager
+RV
+X
+X
+X
+X
+ERGO RFQ
+X
+X
+X
+X
+X
+ERGO NPD
+RV
+X
+X
+X
+X
+ERGO OFP
+V
+C
+E
+S
+A
+ERGO Quality
+RV
+X
+E*
+S
+A*
+Customer RFQ
+X
+X
+X
+X
+X
+Customer NPD
+RV
+X
+X
+X
+X
+Customer OFP
+RV
+X
+X
+X
+X
+Customer Quality
+RV
+X
+X
+X
+X
+Customer Key Account Manager
+RV
+X
+X
+X
+X
+Customer Management
+RV
+X
+X
+X
+X
+Supplier RFQ
+X
+X
+X
+X
+X
+Supplier NPD
+RV
+X
+E**
+S
+X
+Supplier OFP
+RV
+X
+E**
+S
+X
+Supplier Quality
+RV
+X
+E**
+S
+X
+Supplier Key Account Manager
+RV
+X
+E**
+S
+X
+E* and A*: ERGO Quality for inspection clearance, hold, and release decisions.
+E**: Supplier NPD, Supplier OFP, Supplier Quality, and Supplier Key Account Manager edit rights are limited to production status, quantities, dispatch readiness, blocker reasons, and attachments for assigned orders.
+10.8 Module: Quality Management
+Role
+View
+Create
+Edit
+Submit
+Approve
+ERGO Admin
+V
+C
+E
+S
+A
+ERGO Management
+V
+X
+X
+X
+A
+ERGO Key Account Manager
+RV
+X
+X
+X
+X
+ERGO RFQ
+X
+X
+X
+X
+X
+ERGO NPD
+RV
+X
+X
+X
+X
+ERGO OFP
+RV
+X
+X
+X
+X
+ERGO Quality
+V
+C
+E
+S
+A
+Customer RFQ
+X
+X
+X
+X
+X
+Customer NPD
+RV
+X
+X
+X
+X
+Customer OFP
+RV
+X
+X
+X
+X
+Customer Quality
+RV
+C
+E
+S
+A*
+Customer Key Account Manager
+RV
+X
+X
+X
+X
+Customer Management
+RV
+X
+X
+X
+X
+Supplier RFQ
+X
+X
+X
+X
+X
+Supplier NPD
+RV
+X
+X
+X
+X
+Supplier OFP
+RV
+X
+X
+X
+X
+Supplier Quality
+RV
+C
+E
+S
+X
+Supplier Key Account Manager
+RV
+X
+X
+X
+X
+A*: Customer Quality approval applies only to customer-side acceptance/closure items where customer action is required.
+10.9 Module: Document Management System
+Role
+View
+Create
+Edit
+Submit
+Approve
+ERGO Admin
+V
+C
+E
+S
+A
+ERGO Management
+V
+X
+X
+X
+A
+ERGO Key Account Manager
+RV
+C
+E
+S
+X
+ERGO RFQ
+RV
+C
+E
+S
+X
+ERGO NPD
+RV
+C
+E
+S
+X
+ERGO OFP
+RV
+C
+E
+S
+X
+ERGO Quality
+RV
+C
+E
+S
+X
+Customer RFQ
+RV
+C
+E*
+S
+X
+Customer NPD
+RV
+C
+E*
+S
+X
+Customer OFP
+RV
+C
+E*
+S
+X
+Customer Quality
+RV
+C
+E*
+S
+X
+Customer Key Account Manager
+RV
+C
+E*
+S
+X
+Customer Management
+RV
+C
+E*
+S
+X
+Supplier RFQ
+RV
+C
+E**
+S
+X
+Supplier NPD
+RV
+C
+E**
+S
+X
+Supplier OFP
+RV
+C
+E**
+S
+X
+Supplier Quality
+RV
+C
+E**
+S
+X
+Supplier Key Account Manager
+RV
+C
+E**
+S
+X
+E*: Customer roles can edit or replace only own-uploaded documents until locked/approved.
+E**: Supplier roles can edit or replace only own-uploaded documents until locked/approved.
+10.10 Module: Communication & Alerts
+Role
+View
+Create
+Edit
+Submit
+Approve
+ERGO Admin
+V
+C
+E
+S
+A
+ERGO Management
+V
+C
+E
+S
+X
+ERGO Key Account Manager
+RV
+C
+E
+S
+X
+ERGO RFQ
+RV
+C
+E
+S
+X
+ERGO NPD
+RV
+C
+E
+S
+X
+ERGO OFP
+RV
+C
+E
+S
+X
+ERGO Quality
+RV
+C
+E
+S
+X
+Customer RFQ
+RV
+C
+E*
+S
+X
+Customer NPD
+RV
+C
+E*
+S
+X
+Customer OFP
+RV
+C
+E*
+S
+X
+Customer Quality
+RV
+C
+E*
+S
+X
+Customer Key Account Manager
+RV
+C
+E*
+S
+X
+Customer Management
+RV
+C
+E*
+S
+X
+Supplier RFQ
+RV
+C
+E**
+S
+X
+Supplier NPD
+RV
+C
+E**
+S
+X
+Supplier OFP
+RV
+C
+E**
+S
+X
+Supplier Quality
+RV
+C
+E**
+S
+X
+Supplier Key Account Manager
+RV
+C
+E**
+S
+X
+E* and E**: edit limited to own comments/messages until conversation item is locked or responded to according to workflow.
+10.11 Module: Dashboard & Analytics
+Role
+View
+Create
+Edit
+Submit
+Approve
+ERGO Admin
+V
+X
+X
+X
+X
+ERGO Management
+V
+X
+X
+X
+X
+ERGO Key Account Manager
+RV
+X
+X
+X
+X
+ERGO RFQ
+RV
+X
+X
+X
+X
+ERGO NPD
+RV
+X
+X
+X
+X
+ERGO OFP
+RV
+X
+X
+X
+X
+ERGO Quality
+RV
+X
+X
+X
+X
+Customer RFQ
+RV
+X
+X
+X
+X
+Customer NPD
+RV
+X
+X
+X
+X
+Customer OFP
+RV
+X
+X
+X
+X
+Customer Quality
+RV
+X
+X
+X
+X
+Customer Key Account Manager
+RV
+X
+X
+X
+X
+Customer Management
+RV
+X
+X
+X
+X
+Supplier RFQ
+RV
+X
+X
+X
+X
+Supplier NPD
+RV
+X
+X
+X
+X
+Supplier OFP
+RV
+X
+X
+X
+X
+Supplier Quality
+RV
+X
+X
+X
+X
+Supplier Key Account Manager
+RV
+X
+X
+X
+X
+10.12 Module: Admin Controls & Master Data
+Role
+View
+Create
+Edit
+Submit
+Approve
+ERGO Admin
+V
+C
+E
+S
+A
+ERGO Management
+V
+X
+X
+X
+A*
+ERGO Key Account Manager
+X
+X
+X
+X
+X
+ERGO RFQ
+RV
+X
+X
+X
+X
+ERGO NPD
+RV
+X
+X
+X
+X
+ERGO OFP
+RV
+X
+X
+X
+X
+ERGO Quality
+RV
+X
+X
+X
+X
+Customer RFQ
+X
+X
+X
+X
+X
+Customer NPD
+X
+X
+X
+X
+X
+Customer OFP
+X
+X
+X
+X
+X
+Customer Quality
+X
+X
+X
+X
+X
+Customer Key Account Manager
+X
+X
+X
+X
+X
+Customer Management
+X
+X
+X
+X
+X
+Supplier RFQ
+X
+X
+X
+X
+X
+Supplier NPD
+X
+X
+X
+X
+X
+Supplier OFP
+X
+X
+X
+X
+X
+Supplier Quality
+X
+X
+X
+X
+X
+Supplier Key Account Manager
+X
+X
+X
+X
+X
+A*: ERGO Management approval may apply to selected master changes such as workflow policy, commercial policy, or strategic configuration if company wishes dual control.
+11. Special Rules and Exceptions
+11.1 Visibility Exceptions
+Customer users must never see competitor supplier data or ERGO internal comparison notes
+Supplier users must never see competitor supplier data, customer target price, ERGO margins, or internal ranking logic
+ERGO Key Account Manager sees cross-functional data only for assigned accounts, not for all global data unless separately authorized
+11.2 Edit Exceptions
+Supplier quotation edit is allowed only when ERGO explicitly opens quote edit permission
+Customer and supplier document edits are limited to files uploaded by their own company and only until the document is locked or approved
+Communication edit is limited to own messages/comments until workflow or response lock applies
+11.3 Approval Exceptions
+Quality-related approvals may require ERGO Quality and, where applicable, Customer Quality approval
+Management approval is not required for every transaction; it should apply only to configured high-risk or high-value workflows
+NPD conversion is manual by ERGO only, but the system should show approved projects ready for conversion in the NPD section
+11.4 Coding Notes
+Access should be controlled at both module level and record level
+Action buttons must appear only if user has permission for that action
+Supplier quote edit button should appear only when ERGO toggles quote edit permission to open
+Customer quote approval action should appear only for ERGO-shared selected quotes
+Internal notes must have separate visibility flag from external comments
+Document download permission should follow role and document visibility classification
+Every approval action must store approver, date-time, previous status, new status, and comments
+12. Screen-by-Screen UI Architecture
+This section defines the proposed user interface structure for ERGO Connect. It should guide frontend design, navigation planning, component re-use, and backend/API requirements.
+12.1 UI Design Principles
+Clean professional B2B interface
+Strong dashboard orientation
+Strict role-based visibility
+Record-based security at page, tab, field, and action-button level
+Fast access to status, pending actions, delays, approvals, and documents
+Common layout across modules to reduce training effort
+Full audit visibility on critical records
+Responsive design for desktop first, tablet second, mobile-lite later
+12.2 Global Layout Structure
+A. Main Layout Areas
+Top header bar
+Left navigation menu
+Central workspace
+Right-side context panel or activity panel where needed
+Global notifications drawer
+B. Top Header Bar
+Should include:
+ERGO Connect logo
+Global search
+Quick create button
+Notifications bell
+Pending approvals indicator
+Currency/view selector where relevant
+User profile menu
+Company / role switcher if user has multiple mapped roles
+C. Left Navigation Menu
+Menu should be dynamic based on role.Typical menu groups:
+Dashboard
+RFQ
+Quotations
+NPD
+OFP / Orders
+Quality
+Documents
+Communication
+Customers
+Suppliers
+Analytics
+Admin
+D. Standard Page Structure
+Each transaction page should follow a standard layout:
+Page title
+Breadcrumb
+Status badge
+Record summary strip
+Main tab structure
+Action buttons at top-right
+Activity timeline at bottom or side
+12.3 Common UI Components
+The following reusable components should be used across modules:
+Summary cards
+Status badges
+Data tables with filters and export
+Expandable row grids
+Tabbed detail views
+Comments panel
+Document upload widget
+Approval panel
+Timeline / audit trail panel
+Linked records panel
+Alert banner for overdue or blocked items
+Side drawer for quick edit / quick review
+Modal for approvals, re-open, reject, and clarification requests
+12.4 Login and Access Screens
+12.4.1 Login Screen
+Fields:
+Email / user ID
+Password
+Forgot password
+Optional two-factor authentication
+12.4.2 Role Selection Screen
+Shown only if a user has multiple mapped roles.Fields:
+Company context
+Role selection
+Default landing page preference
+12.4.3 Access Denied Screen
+Should display:
+restricted access message
+contact admin button
+request access option for future enhancement
+12.5 Dashboard Screens
+12.5.1 ERGO Management Dashboard
+Widgets:
+Open RFQs
+Quotes pending submission
+Quotes awaiting customer approval
+Approved projects ready for NPD conversion
+Active NPD projects
+Delayed NPD projects
+Orders at risk
+Open NCRs
+Supplier performance summary
+Customer complaint trend
+Pending approvals
+Views:
+summary cards
+trend charts
+delayed items table
+high-risk projects table
+recent activity feed
+12.5.2 ERGO Functional Dashboards
+Separate landing dashboards for:
+ERGO RFQ
+ERGO NPD
+ERGO OFP
+ERGO Quality
+ERGO Key Account Manager
+Each should show:
+own pending actions
+due today
+overdue items
+items waiting for external response
+quick filters by customer / supplier / project / priority
+12.5.3 Customer Dashboard
+Widgets:
+Open RFQs
+Quotes awaiting action
+Active NPD milestones
+Sample approval pending
+Live order status
+Shipment status
+Open quality issues
+Pending documents/reviews
+12.5.4 Supplier Dashboard
+Widgets:
+Assigned RFQs
+Quote due items
+NPD tasks due
+Production commitments
+Dispatch due list
+Open NCR / CAPA items
+Pending document uploads
+12.6 RFQ Screens
+12.6.1 RFQ List Screen
+Purpose:
+show all RFQs visible to the user
+Main elements:
+filter bar
+search bar
+create RFQ button
+table/grid view toggle
+bulk actions for ERGO only
+Columns:
+RFQ number
+customer
+part number
+revision
+status
+quote due date
+assigned suppliers count
+created date
+owner
+priority
+Filters:
+customer
+supplier
+status
+date range
+owner
+priority
+currency
+12.6.2 RFQ Create / Edit Screen
+Sections:
+Summary
+Technical Inputs
+Commercial Inputs
+Process Flow Table
+Attachments
+Internal Notes
+Important UI behavior:
+autosave draft
+expandable process table starting with 2 rows
+add row button at left bottom
+supplier selection panel for ERGO
+validation message panel
+mandatory field highlighting
+12.6.3 RFQ Detail Screen
+Header strip:
+RFQ number
+customer name
+part number
+revision
+status
+owner
+created date
+due date
+Tabs:
+Summary
+Technical
+Commercial
+Process Flow
+Suppliers
+Quotes
+Documents
+Communication
+Audit Trail
+Action buttons by role:
+Validate RFQ
+Send to Supplier
+Re-open
+Clone RFQ
+Cancel RFQ
+Submit Clarification
+Approve / Reject / Request Rework
+12.6.4 Supplier RFQ Response Screen
+Sections:
+RFQ summary view
+quotation input form
+regret RFQ action
+clarification request section
+attachments upload
+save draft / submit final
+Special behavior:
+edit enabled only when ERGO opens quote edit permission
+read-only after final submission unless reopened
+version label visible
+12.7 Quotation Screens
+12.7.1 Quote Comparison Screen
+Purpose:
+allow ERGO to compare supplier quotes and decide what to present to customer
+Layout:
+RFQ summary header
+comparison matrix in center
+quote cards or column comparison by supplier
+right-side recommendation panel
+Comparison blocks:
+commercial comparison
+technical comparison
+lead time comparison
+quality/capability/risk comparison
+internal remarks
+Actions:
+mark shortlisted
+mark selected for customer
+request revision from supplier
+create ERGO quote
+send selected quote to customer
+12.7.2 Customer Quote Review Screen
+Visible only for ERGO-selected quote(s).Sections:
+quote summary
+part details
+price and lead time summary
+documents
+remarks from ERGO
+response area
+Actions:
+approve
+request revision
+decline with reason
+12.7.3 Quote Version History Screen
+Should show:
+version number
+changed by
+changed on
+change summary
+reopen reason
+previous vs latest values
+12.8 NPD Screens
+12.8.1 NPD List Screen
+Columns:
+NPD number
+linked RFQ
+customer
+supplier
+part number
+stage
+target sample date
+overall progress
+status
+owner
+risk flag
+Filters:
+customer
+supplier
+stage
+status
+delayed only
+target date range
+risk level
+12.8.2 Approved Projects Ready for NPD Conversion Screen
+Purpose:
+show ERGO approved/eligible projects that can be converted manually into NPD
+Columns:
+RFQ number
+customer
+supplier
+part number
+approval date
+selected quote reference
+recommended target sample date
+convert to NPD action
+12.8.3 NPD Detail Screen
+Header strip:
+NPD number
+linked RFQ
+customer
+supplier
+part number
+stage
+target sample date
+delay days
+owner
+Tabs:
+Overview
+Stage Plan
+Activities
+Prompt Checklist
+Issues & Risks
+Quality
+Documents
+Communication
+Approvals
+Audit Trail
+Actions:
+convert from approved RFQ
+update stage
+add activity
+mark blocked
+raise issue
+request approval
+close stage
+handover to OFP
+12.8.4 NPD Activity Board
+Views:
+table view
+Kanban by stage/status
+timeline / Gantt style view in later phase
+Columns:
+activity ID
+phase
+activity
+owner organization
+responsible person
+planned date
+actual date
+delay days
+status
+dependency
+risk flag
+issue flag
+12.8.5 Prompt Checklist Screen
+Purpose:
+guide ERGO and supplier users through structured questions per NPD step
+Layout:
+left pane: activity list
+right pane: question checklist, responses, attachments, remarks
+12.9 OFP / Production Tracking Screens
+12.9.1 Order / OFP List Screen
+Columns:
+order number
+customer PO
+supplier PO
+part number
+quantity
+due date
+dispatch date
+status
+production progress
+inspection status
+shipment status
+Filters:
+customer
+supplier
+due date
+dispatch risk
+status
+delayed only
+12.9.2 OFP Detail Screen
+Tabs:
+Order Summary
+Material Status
+Production Progress
+Inspection
+Packaging
+Dispatch
+Shipment Tracking
+Documents
+Communication
+Audit Trail
+Actions:
+update material status
+update production quantity
+hold order
+release order
+mark dispatch ready
+record dispatch
+update shipment milestone
+12.9.3 Production Progress Screen
+Views:
+process-wise quantity progress
+quantity accepted / rejected / rework
+blocker log
+revised dispatch date section
+12.9.4 Shipment Tracking Screen
+Fields:
+dispatch date
+transporter / forwarder
+shipment mode
+AWB / BL / tracking number
+ETA
+actual delivery date
+POD / proof upload
+receipt confirmation by customer
+12.10 Quality Screens
+12.10.1 Quality Dashboard
+Widgets:
+open NCRs
+repeat issues
+CAPA due items
+supplier defect trend
+complaint aging
+deviation approvals pending
+12.10.2 Inspection Record Screen
+Sections:
+part details
+lot / batch details
+quantity checked
+inspection result
+defect details
+attachments/photos
+disposition
+12.10.3 NCR / CAPA Detail Screen
+Tabs:
+Issue Summary
+Containment
+Root Cause
+Corrective Action
+Preventive Action
+Effectiveness Check
+Documents
+Communication
+Audit Trail
+Actions:
+assign owner
+set due date
+upload evidence
+request closure
+approve closure
+12.10.4 Deviation Approval Screen
+Fields:
+deviation number
+linked order / project / part
+description
+impact assessment
+requested by
+validity quantity / date
+customer approval required
+approver comments
+Actions:
+approve
+reject
+send back for clarification
+12.11 Document Management Screens
+12.11.1 Document Library Screen
+Views:
+folder-like grouping by module
+table view
+linked-record view
+Columns:
+document name
+category
+linked module
+linked record
+version
+uploaded by
+uploaded date
+status
+visibility
+Filters:
+module
+category
+linked customer
+linked supplier
+uploaded by
+date
+status
+12.11.2 Document Detail Screen
+Sections:
+preview
+metadata
+version history
+linked records
+access visibility
+approval state
+12.12 Communication Screens
+12.12.1 Communication Center
+Features:
+module-wise threaded communication
+internal comment vs external comment tagging
+mentions
+attachments
+unresolved query markers
+escalation markers
+12.12.2 Notifications Drawer
+Types:
+action required
+overdue reminder
+approval pending
+response received
+document uploaded
+record updated
+12.13 Master Data and Admin Screens
+12.13.1 User Administration Screen
+Functions:
+create user
+map company
+assign role(s)
+set active/inactive
+password reset trigger
+define landing page
+12.13.2 Permission Mapping Screen
+Functions:
+configure role access
+configure special approvals
+configure record visibility exceptions
+configure dual approval rules
+12.13.3 Master Data Screens
+Masters may include:
+customer master
+supplier master
+material master
+process master
+coating master
+currency master
+incoterms master
+defect category master
+NCR / CAPA category master
+shipment mode master
+payment terms master
+document category master
+12.14 UI Field-Level and Action-Level Control Rules
+fields containing margin, internal ranking, internal notes, and competitor data must be hidden from customer and supplier roles
+action buttons must be dynamic based on both role and record status
+edit forms should become read-only after final submission unless re-opened by authorized role
+stage completion buttons should appear only when mandatory dependent actions are complete
+upload widgets should respect document visibility and module permissions
+approval popups must capture comments and digital trace
+12.15 Recommended Navigation by Role
+ERGO RFQ
+Dashboard
+RFQ List
+RFQ Detail
+Quote Comparison
+Customer Quote Submission
+ERGO NPD
+Dashboard
+Approved for NPD Conversion
+NPD List
+NPD Detail
+Activity Board
+ERGO OFP
+Dashboard
+OFP List
+OFP Detail
+Shipment Tracking
+ERGO Quality
+Dashboard
+Inspection Records
+NCR/CAPA
+Deviation Approvals
+Customer Users
+Dashboard
+RFQ / Quotes
+NPD
+Orders / Shipment
+Quality
+Documents
+Communication
+Supplier Users
+Dashboard
+Assigned RFQs
+NPD Tasks
+OFP / Orders
+Quality Actions
+Documents
+Communication
+13. Database Entities and Table Structure
+This section defines the proposed core data model for ERGO Connect. The purpose is to guide backend architecture, API design, database normalization, and integration planning.
+13.1 Data Model Design Principles
+Use a relational database as primary system of record
+Separate master data from transactional data
+Maintain strong auditability for all critical objects
+Use status fields plus workflow history, not only current status
+Support multi-company and multi-role architecture from day one
+Support document linking across multiple record types
+Support record-level security using company, role, and assignment mapping
+13.2 Core Master Tables
+13.2.1 companies
+Purpose:
+store all ERGO, customer, and supplier organizations
+Suggested fields:
+company_id
+company_code
+company_name
+company_type (ERGO / Customer / Supplier / Other)
+address_line_1
+address_line_2
+city
+state
+country
+postal_code
+tax_id / GST / VAT as needed
+website
+primary_contact_name
+primary_contact_email
+primary_contact_phone
+status
+created_at
+updated_at
+13.2.2 users
+Suggested fields:
+user_id
+company_id
+first_name
+last_name
+email
+mobile
+password_hash / SSO reference
+status
+last_login_at
+created_at
+updated_at
+13.2.3 roles
+Suggested fields:
+role_id
+role_code
+role_name
+role_type (ERGO / Customer / Supplier)
+description
+status
+13.2.4 user_role_mappings
+Suggested fields:
+user_role_mapping_id
+user_id
+role_id
+company_id
+default_role_flag
+active_flag
+created_at
+updated_at
+13.2.5 user_account_assignments
+Purpose:
+map ERGO users to specific customer accounts and linked suppliers
+Suggested fields:
+assignment_id
+user_id
+customer_company_id
+supplier_company_id (nullable)
+scope_type (customer / supplier / project)
+active_flag
+created_at
+updated_at
+13.2.6 currencies
+Suggested fields:
+currency_id
+currency_code (INR / USD / EUR / RMB)
+currency_name
+active_flag
+13.2.7 exchange_rates
+Suggested fields:
+exchange_rate_id
+from_currency_id
+to_currency_id
+rate_date
+exchange_rate
+source
+created_at
+13.2.8 materials
+Suggested fields:
+material_id
+material_code
+material_name
+specification
+grade
+active_flag
+13.2.9 processes
+Suggested fields:
+process_id
+process_code
+process_name
+process_type (inhouse / outsourced / mixed)
+active_flag
+13.2.10 coatings
+Suggested fields:
+coating_id
+coating_code
+coating_name
+specification
+active_flag
+13.2.11 payment_terms
+Suggested fields:
+payment_term_id
+payment_term_code
+payment_term_name
+description
+active_flag
+13.2.12 incoterms
+Suggested fields:
+incoterm_id
+incoterm_code
+incoterm_name
+active_flag
+13.2.13 document_categories
+Suggested fields:
+document_category_id
+category_code
+category_name
+linked_module
+active_flag
+13.2.14 defect_categories
+Suggested fields:
+defect_category_id
+defect_code
+defect_name
+severity_level
+active_flag
+13.2.15 shipment_modes
+Suggested fields:
+shipment_mode_id
+mode_code
+mode_name
+active_flag
+13.3 Transactional Tables – RFQ and Quotation
+13.3.1 rfqs
+Suggested fields:
+rfq_id
+rfq_number
+source_type (customer-created / ERGO-created)
+customer_company_id
+created_by_user_id
+owner_user_id
+part_number
+revision
+description
+EAU
+net_weight
+gross_weight
+material_id / free_text_material_spec
+process_summary
+coating_id / free_text_coating
+tooling_cost_total
+ppap_piece_price
+production_piece_price
+payment_term_id
+material_lead_time_weeks
+tooling_lead_time_days
+sample_lead_time_days
+MOQ
+production_lead_time_days
+currency_id
+target_quote_date
+status
+priority
+validation_status
+approved_for_customer_submission_flag
+created_at
+updated_at
+13.3.2 rfq_process_flows
+Suggested fields:
+rfq_process_flow_id
+rfq_id
+sequence_no
+process_step_name
+cycle_time
+sourcing_type (inhouse / outsourced)
+supplier_company_id (nullable)
+remarks
+created_at
+updated_at
+13.3.3 rfq_supplier_assignments
+Suggested fields:
+rfq_supplier_assignment_id
+rfq_id
+supplier_company_id
+assigned_by_user_id
+assigned_date
+response_due_date
+status
+clarification_required_flag
+regret_flag
+regret_reason
+quote_edit_open_flag
+latest_quote_id
+created_at
+updated_at
+13.3.4 supplier_quotes
+Suggested fields:
+supplier_quote_id
+rfq_id
+rfq_supplier_assignment_id
+supplier_company_id
+quote_reference_no
+quote_date
+validity_date
+currency_id
+incoterm_id
+tooling_cost_total
+ppap_piece_price
+production_piece_price
+MOQ
+material_lead_time_weeks
+tooling_lead_time_days
+sample_lead_time_days
+production_lead_time_days
+payment_term_id
+raw_material_cost
+processing_cost
+overhead_cost
+packaging_cost
+profit
+assumptions_deviations
+remarks
+submission_status
+current_version_no
+final_submission_flag
+submitted_by_user_id
+submitted_at
+created_at
+updated_at
+13.3.5 supplier_quote_tooling_details
+Suggested fields:
+supplier_quote_tooling_detail_id
+supplier_quote_id
+tool_name
+tooling_cost
+remarks
+13.3.6 supplier_quote_versions
+Suggested fields:
+supplier_quote_version_id
+supplier_quote_id
+version_no
+version_snapshot_json
+change_summary
+reopened_by_user_id
+reopened_reason
+changed_by_user_id
+changed_at
+13.3.7 quote_comparisons
+Suggested fields:
+quote_comparison_id
+rfq_id
+prepared_by_user_id
+prepared_at
+internal_summary
+recommendation_summary
+selected_for_customer_flag
+comparison_status
+13.3.8 quote_comparison_lines
+Suggested fields:
+quote_comparison_line_id
+quote_comparison_id
+supplier_quote_id
+commercial_score
+technical_score
+quality_score
+risk_score
+total_score
+shortlisted_flag
+selected_for_customer_flag
+internal_remarks
+13.3.9 customer_quote_submissions
+Suggested fields:
+customer_quote_submission_id
+rfq_id
+customer_company_id
+quote_type (supplier_quote / ERGO_quote)
+linked_supplier_quote_id (nullable)
+ERGO_quote_id (nullable)
+submitted_by_user_id
+submitted_at
+customer_response_status
+customer_response_date
+customer_response_by_user_id
+customer_response_comments
+13.3.10 ERGO_quotes
+Suggested fields:
+ERGO_quote_id
+rfq_id
+base_supplier_quote_id
+customer_company_id
+currency_id
+quoted_ppap_piece_price
+quoted_production_piece_price
+quoted_tooling_cost
+payment_term_id
+margin_amount_hidden
+internal_margin_percentage_hidden
+customer_visible_summary
+status
+created_by_user_id
+created_at
+updated_at
+13.4 Transactional Tables – NPD
+13.4.1 npd_projects
+Suggested fields:
+npd_project_id
+npd_number
+source_rfq_id
+customer_company_id
+supplier_company_id
+part_number
+revision
+description
+quote_reference_id
+stage
+overall_status
+target_sample_date
+actual_sample_submission_date
+handover_ready_flag
+owner_user_id
+risk_level
+created_by_user_id
+created_at
+updated_at
+13.4.2 npd_stage_history
+Suggested fields:
+npd_stage_history_id
+npd_project_id
+stage_name
+previous_stage_name
+changed_by_user_id
+changed_at
+remarks
+13.4.3 npd_activities
+Suggested fields:
+npd_activity_id
+npd_project_id
+phase_name
+activity_name
+activity_description
+owner_organization_type (ERGO / Customer / Supplier)
+owner_company_id
+responsible_user_id
+planned_date
+baseline_date
+actual_date
+dependency_activity_id
+status
+blocked_flag
+risk_flag
+issue_flag
+delay_days
+approval_required_flag
+created_at
+updated_at
+13.4.4 npd_prompt_checklists
+Suggested fields:
+checklist_id
+npd_activity_id
+question_text
+response_type
+mandatory_flag
+sequence_no
+13.4.5 npd_prompt_responses
+Suggested fields:
+checklist_response_id
+checklist_id
+npd_activity_id
+response_value
+remarks
+responded_by_user_id
+responded_at
+13.4.6 npd_issues_risks
+Suggested fields:
+issue_risk_id
+npd_project_id
+linked_activity_id
+type (issue / risk)
+title
+description
+severity
+owner_user_id
+target_date
+status
+closure_date
+13.4.7 npd_approvals
+Suggested fields:
+npd_approval_id
+npd_project_id
+stage_name
+approval_type
+requested_by_user_id
+requested_at
+approver_role
+approved_by_user_id
+approval_status
+approval_comments
+approved_at
+13.5 Transactional Tables – OFP / Orders / Shipment
+13.5.1 orders
+Suggested fields:
+order_id
+order_number
+customer_company_id
+supplier_company_id
+linked_npd_project_id (nullable)
+linked_rfq_id (nullable)
+customer_PO_no
+supplier_PO_no
+part_number
+revision
+ordered_quantity
+due_date
+committed_dispatch_date
+actual_dispatch_date
+current_status
+owner_user_id
+created_at
+updated_at
+13.5.2 order_material_status
+Suggested fields:
+order_material_status_id
+order_id
+material_status
+material_order_date
+expected_receipt_date
+actual_receipt_date
+inspection_status
+remarks
+13.5.3 order_production_progress
+Suggested fields:
+production_progress_id
+order_id
+process_step_name
+planned_quantity
+completed_quantity
+accepted_quantity
+rejected_quantity
+rework_quantity
+status
+blocker_reason
+revised_dispatch_date
+updated_by_user_id
+updated_at
+13.5.4 order_packaging_dispatch
+Suggested fields:
+packaging_dispatch_id
+order_id
+packed_quantity
+packaging_status
+dispatch_ready_flag
+dispatch_date
+dispatch_remarks
+updated_by_user_id
+updated_at
+13.5.5 shipments
+Suggested fields:
+shipment_id
+order_id
+shipment_mode_id
+transporter_name
+forwarder_name
+tracking_number
+AWB_BL_no
+ETA
+actual_delivery_date
+POD_document_id
+receipt_confirmed_by_customer_flag
+receipt_confirmed_at
+status
+13.6 Transactional Tables – Quality
+13.6.1 inspections
+Suggested fields:
+inspection_id
+linked_module (NPD / OFP / incoming / final / in-process)
+linked_record_id
+part_number
+batch_lot_no
+quantity_checked
+quantity_rejected
+result_status
+inspected_by_user_id
+inspection_date
+remarks
+13.6.2 inspection_defects
+Suggested fields:
+inspection_defect_id
+inspection_id
+defect_category_id
+defect_description
+defect_quantity
+severity
+13.6.3 NCRs
+Suggested fields:
+NCR_id
+NCR_number
+linked_module
+linked_record_id
+customer_company_id
+supplier_company_id
+issue_category
+issue_description
+containment_action
+root_cause
+corrective_action
+preventive_action
+owner_user_id
+target_closure_date
+closure_date
+effectiveness_status
+current_status
+created_at
+updated_at
+13.6.4 deviations
+Suggested fields:
+deviation_id
+deviation_number
+linked_module
+linked_record_id
+part_number
+deviation_description
+requested_by_user_id
+quality_impact
+technical_impact
+customer_approval_required_flag
+validity_quantity
+validity_end_date
+current_status
+approved_by_user_id
+approved_at
+13.6.5 CAPA_actions
+Suggested fields:
+CAPA_action_id
+NCR_id
+action_type (corrective / preventive)
+action_description
+owner_user_id
+target_date
+status
+evidence_document_id
+closed_at
+13.7 Transactional Tables – Documents and Communication
+13.7.1 documents
+Suggested fields:
+document_id
+document_name
+document_category_id
+file_storage_path / object_key
+file_type
+file_size
+uploaded_by_user_id
+uploaded_company_id
+linked_module
+linked_record_id
+version_no
+visibility_type (internal / customer-visible / supplier-visible / both-external)
+lock_status
+approval_status
+created_at
+updated_at
+13.7.2 document_links
+Suggested fields:
+document_link_id
+document_id
+linked_module
+linked_record_id
+13.7.3 comments
+Suggested fields:
+comment_id
+linked_module
+linked_record_id
+comment_type (internal / external-customer / external-supplier)
+comment_text
+created_by_user_id
+created_by_company_id
+editable_flag
+created_at
+updated_at
+13.7.4 notifications
+Suggested fields:
+notification_id
+notification_type
+linked_module
+linked_record_id
+recipient_user_id
+title
+message
+action_url
+read_flag
+sent_at
+read_at
+13.8 Transactional Tables – Audit and Workflow
+13.8.1 workflow_instances
+Suggested fields:
+workflow_instance_id
+workflow_type
+linked_module
+linked_record_id
+current_step
+current_status
+initiated_by_user_id
+initiated_at
+completed_at
+13.8.2 workflow_steps
+Suggested fields:
+workflow_step_id
+workflow_instance_id
+step_name
+step_sequence
+assigned_role
+assigned_user_id
+step_status
+action_taken
+action_comments
+action_at
+13.8.3 audit_logs
+Suggested fields:
+audit_log_id
+module_name
+record_id
+field_name
+old_value
+new_value
+action_type
+changed_by_user_id
+changed_at
+ip_address / device_info if needed
+13.9 Suggested Relationships
+one company → many users
+one user → many roles
+one RFQ → many supplier assignments
+one supplier assignment → many quote versions
+one RFQ → many quote comparison lines
+one approved RFQ → zero or one NPD project (recommended for MVP)
+one NPD project → many activities, issues, approvals, documents, comments
+one order → many production progress updates and shipment records
+one quality record → many defects / CAPA actions / documents / comments
+14. Workflow and Approval Engine Logic
+This section defines the core workflow logic needed to drive status transitions, approvals, and restricted actions.
+14.1 Workflow Design Principles
+Every business-critical object should have both a status and a workflow history
+Status changes must be role-controlled
+Approval flows should be configurable, not hardcoded
+Re-open actions should require reason capture
+Rejection and send-back actions should require comments
+Workflow transitions should trigger notifications automatically
+14.2 RFQ Workflow
+Recommended status flow:
+Draft
+Submitted
+Under ERGO Review
+Clarification Required
+Validated
+Sent to Supplier
+Quote Received Partially
+Quote Received Complete
+Under Comparison
+Sent to Customer
+Customer Revision Requested
+Customer Approved
+Customer Declined
+Closed
+Key rules:
+only ERGO RFQ / ERGO Admin / approved management role can validate RFQ
+supplier quote edit allowed only when supplier assignment record has quote_edit_open_flag = true
+customer sees quote only after ERGO submits selected quote
+customer approval does not auto-create NPD; project appears in “ready for NPD conversion” queue
+14.3 Supplier Quote Workflow
+Recommended status flow:
+Not Started
+Draft Saved
+Clarification Requested
+Submitted
+Re-opened by ERGO
+Resubmitted
+Shortlisted
+Selected for Customer
+Rejected / Not Selected
+Key rules:
+final submission locks the quote
+re-open requires reason capture
+every re-open creates new quote version entry
+supplier cannot delete historical submitted versions
+14.4 Customer Quote Response Workflow
+Recommended response states:
+Waiting for Customer Review
+Customer Approved
+Customer Revision Requested
+Customer Declined
+Key rules:
+customer can act only on ERGO-shared quote
+customer response comment mandatory for revision request and decline
+approved item can be flagged as ready for manual NPD conversion by ERGO
+14.5 NPD Workflow
+Recommended stage flow:
+Pending Conversion
+Planning
+Commercial & Sourcing Readiness
+Tooling & Material Release
+Trial Preparation
+Trial Execution
+Final Sample Readiness
+Customer Feedback
+Approved for Production Handover
+Closed
+Key rules:
+only ERGO NPD / ERGO Admin can convert RFQ to NPD
+stage close should check mandatory activity completion
+quality gate approval should be required before final sample closure where applicable
+customer-side approval should be required only on designated stages / sample records
+handover to OFP requires explicit handover action and record creation
+14.6 OFP / Order Workflow
+Recommended status flow:
+Order Created
+Material Ordered
+Material Received
+Production Started
+In Inspection
+Packaging in Progress
+Dispatch Ready
+Dispatched
+In Transit
+Delivered
+Closed
+On Hold / Blocked
+Key rules:
+dispatch cannot be marked complete unless required inspection/release status is passed
+shipment status updates should be possible after dispatch
+blocker reason mandatory when order is placed on hold
+14.7 Quality Workflow
+Inspection workflow
+Open
+In Inspection
+Passed
+Rejected
+Released with Deviation
+Closed
+NCR workflow
+Open
+Containment in Progress
+Root Cause in Progress
+CAPA in Progress
+Pending Closure Approval
+Closed
+Deviation workflow
+Requested
+Under Review
+Customer Approval Pending (if needed)
+Approved
+Rejected
+Expired
+Closed
+Key rules:
+deviation approval restricted to approved authority only
+customer approval required only if customer_approval_required_flag = true
+NCR closure should require evidence where configured
+14.8 Approval Matrix Concept
+Approvals should be configurable by:
+module
+record type
+stage / status
+company type
+role
+value threshold if needed later
+dual approval flag
+Examples:
+RFQ validation → ERGO RFQ or ERGO Management
+quote customer release → ERGO RFQ / ERGO Management
+NPD stage gate → ERGO NPD + ERGO Quality where required
+deviation approval → ERGO Quality + Customer Quality where required
+master policy change → ERGO Admin + ERGO Management
+14.9 Notification Triggers
+System should trigger notifications on:
+record assignment
+clarification request
+final submission
+re-open
+approval request
+approval granted / rejected
+overdue activity
+status change
+document upload
+comment mention
+dispatch recorded
+delivery confirmed
+15. Audit Trail Structure
+This section defines the expected auditability requirements for compliance, traceability, and process discipline.
+15.1 Audit Objectives
+know who changed what
+know when it was changed
+know why it was changed where reason is required
+preserve previous versions for critical commercial and quality records
+support investigation, supplier discipline, and customer confidence
+15.2 Mandatory Audit Coverage
+Audit trail must be maintained for:
+user creation / role changes
+RFQ creation and edits
+supplier assignment and quote edit toggle changes
+supplier quote submissions and re-open actions
+quote comparison and selection decisions
+customer quote responses
+NPD stage changes and activity date changes
+OFP status changes and dispatch milestone changes
+quality approvals, NCR, CAPA, deviation approvals
+document uploads, replacements, visibility changes, approvals
+permission changes and master data changes
+15.3 Audit Event Structure
+Suggested fields per audit event:
+audit_log_id
+module_name
+record_id
+event_type
+field_name
+old_value
+new_value
+action_reason
+changed_by_user_id
+changed_by_role_id
+changed_by_company_id
+changed_at
+source_channel (UI / API / import / system)
+15.4 Versioning Requirements
+Versioning should be maintained at minimum for:
+supplier quotes
+ERGO quotes
+RFQ revisions where technical/commercial fields change after supplier exposure
+critical documents
+deviation approvals
+selected workflow configuration rules
+15.5 Audit UI Requirements
+Each major record should have an Audit Trail tab showing:
+date-time
+user
+role
+action
+field change summary
+reason
+old vs new values for important fields
+15.6 Locking and Re-open Audit Logic
+When a record is re-opened:
+system must store who reopened it
+system must store reopen reason
+system must store previous locked state
+system must create a version marker for critical transactional records
+16. MVP vs Phase-2 Roadmap
+This section separates what should be built first from what can be added later for faster go-live and better investment control.
+16.1 MVP Scope (Recommended First Release)
+Recommended modules:
+User & Access Management
+Customer Management
+Supplier Management
+RFQ Management
+Quotation Management
+Manual RFQ to NPD conversion queue
+NPD Management
+OFP / basic order tracking
+Quality Management (inspection, NCR, deviation, CAPA basic)
+Document Management
+Communication & Alerts basic
+Dashboard & Analytics basic
+Audit Trail basic
+Recommended MVP capabilities:
+strict role-based login and record visibility
+RFQ creation, supplier assignment, quote submission, quote comparison
+ERGO-selected quote submission to customer
+controlled supplier quote re-open logic
+manual NPD conversion by ERGO
+NPD activity tracking with prompt checklists
+order/OFP tracking until shipment and receipt confirmation
+inspection, NCR, deviation approval
+threaded comments and document upload
+notification engine for critical actions
+audit history tabs on major records
+16.2 Phase-2 Scope
+Potential additions:
+payment tracking module
+invoice linkage
+advanced shipment integrations
+customer management role activation by customer-specific configuration
+advanced approval matrix designer UI
+Gantt view for NPD and OFP
+supplier performance scorecards auto-generated
+landed cost analytics
+API integrations with ERP / Odoo
+email integration for inbound/outbound logging
+mobile-friendly task mode
+advanced search and saved views
+SLA monitoring dashboards
+multilingual support
+16.3 Phase-3 / Strategic Expansion
+Potential later items:
+supplier development assessment module
+100-point supplier audit module integration
+self-service onboarding for suppliers/customers
+predictive delay / quality risk engine
+AI-assisted quote comparison notes
+AI-assisted NPD risk prompts
+customer portal branding / white-label capability
+16.4 Recommended Build Sequence
+access model and login
+masters and company/user setup
+RFQ and quotation flow
+customer quote review
+NPD conversion queue and NPD module
+OFP / order and shipment tracking
+quality workflows
+documents, communication, notifications
+dashboards and audit refinement
+integrations and advanced analytics
+16.5 Recommended Technology Thinking (High Level)
+Suggested architecture direction:
+web application, desktop-first responsive UI
+relational database backend
+API-first architecture
+document/object storage for files
+modular permissions engine
+event/notification service
+audit service as foundational component
+17. Detailed Functional Specification (Page-Level)
+This section translates UI into developer-ready behavior.
+17.1 RFQ Detail Page – Functional Logic
+Fields Behavior
+RFQ Number: auto-generated, read-only
+Part Number / Revision / Description: editable only in Draft and Submitted stages
+EAU: editable until RFQ validation
+Cost fields: hidden from supplier until quote stage
+Button Logic
+Validate RFQ → visible only to ERGO RFQ when status = Submitted
+Send to Supplier → visible only after validation
+Re-open RFQ → visible to ERGO Admin / RFQ after submission
+Cancel RFQ → only before supplier response
+Validation Rules
+Mandatory: part number, description, process, material, target quote date
+Cannot send to supplier if process flow empty
+17.2 Supplier Quote Entry Page – Functional Logic
+Field Rules
+Currency dropdown → INR / USD / EUR / RMB
+Cost breakdown mandatory before submission
+MOQ must be > 0
+Button Logic
+Save Draft → always enabled
+Submit Quote → enabled only when mandatory fields filled
+Edit Quote → enabled only if quote_edit_open_flag = TRUE
+Lock Rules
+After final submission → all fields read-only
+If reopened → new version created
+17.3 Quote Comparison Page – Functional Logic
+Behavior
+Show all supplier quotes in matrix
+Highlight lowest cost automatically
+Allow manual scoring by ERGO
+Buttons
+Shortlist
+Select for Customer
+Request Revision
+Create ERGO Quote
+Rules
+Only selected quotes visible to customer
+Internal notes not visible externally
+17.4 NPD Detail Page – Functional Logic
+Stage Control
+Stage change only via “Close Stage” button
+Stage cannot close unless mandatory activities complete
+Activity Rules
+Activity owner editable only by ERGO
+Supplier can update only assigned activities
+Buttons
+Add Activity
+Mark Blocked
+Request Approval
+Close Stage
+Handover to OFP
+17.5 OFP Detail Page – Functional Logic
+Production Rules
+Cannot mark dispatch ready if inspection not cleared
+Delay auto-calculated from planned vs actual
+Buttons
+Update Progress
+Hold Order
+Release Order
+Dispatch
+17.6 Quality Module – Functional Logic
+NCR Rules
+Root cause mandatory before CAPA closure
+Evidence upload mandatory for closure
+Deviation Rules
+Customer approval required if flag enabled
+18. API / Backend Endpoint Structure
+18.1 API Design Principles
+REST-based APIs
+Secure with JWT / token
+Role-based middleware validation
+Record-level filtering in backend
+18.2 Sample API Structure
+RFQ APIs
+POST /rfq/create
+GET /rfq/list
+GET /rfq/{id}
+PUT /rfq/update
+POST /rfq/validate
+POST /rfq/send-to-supplier
+Supplier Quote APIs
+POST /quote/create
+PUT /quote/update
+POST /quote/submit
+POST /quote/reopen
+GET /quote/version-history
+NPD APIs
+POST /npd/create-from-rfq
+GET /npd/list
+PUT /npd/update-stage
+POST /npd/add-activity
+OFP APIs
+POST /order/create
+PUT /order/update-status
+POST /shipment/create
+Quality APIs
+POST /inspection/create
+POST /ncr/create
+PUT /ncr/update
+POST /deviation/approve
+19. Wireframe Guidance (Textual)
+RFQ Detail Layout
+Top: RFQ summary strip
+Middle: Tabs (Summary | Technical | Commercial | Suppliers | Quotes)
+Right: Actions panel
+Bottom: Timeline + Comments
+Quote Comparison
+Left: Supplier list
+Center: comparison grid
+Right: decision panel
+NPD Screen
+Top: Stage tracker (horizontal)
+Center: Activity board
+Right: Risk + Issues
+20. Development Plan (Execution)
+Phase 1 (0–8 Weeks)
+Login + roles
+Masters
+RFQ module
+Supplier quote module
+Quote comparison
+Phase 2 (8–16 Weeks)
+Customer interaction
+NPD module
+Basic dashboards
+Phase 3 (16–24 Weeks)
+OFP module
+Quality module
+Documents + communication
+Phase 4 (24–32 Weeks)
+Analytics
+Integration with ERP
+Automation enhancements
+21. Final System Readiness Checklist
+Before go-live:
+Role access validated
+Workflow tested end-to-end
+Supplier and customer pilot tested
+Audit logs verified
+Data security tested
+Backup and recovery plan ready
+This document is now developer-ready for execution and can be directly used for:
+UI/UX design
+Backend development
+Database creation
+API implementation
+Project planning
+(End of Document)
+📘 ERGO CONNECT – SOFTWARE REQUIREMENTS DOCUMENT (V1)
+1. Project Overview
+1.1 Project Name
+ERGO Connect
+1.2 Purpose
+ERGO Connect is a digital collaboration platform that connects:
+ERGO Team 
+ERGO Customers (Global) 
+ERGO Suppliers (India & Global) 
+The system will enable end-to-end management of sourcing lifecycle, including:
+RFQ Management 
+Quotation Handling 
+New Product Development (NPD) 
+Order Follow-up (OFP) 
+Quality Management 
+Supplier Performance 
+Communication & Document Sharing 
+1.3 Business Objectives
+Create single source of truth for all projects 
+Improve customer transparency & trust 
+Ensure supplier discipline (quality + commitment + process) 
+Enable process-driven operations (TPS style) 
+Reduce dependency on emails/WhatsApp 
+Improve on-time delivery & quality performance 
+Build scalable system for ₹50 Cr growth vision 
+Good management visibility
+2. User Roles
+2.1 ERGO Internal Roles
+ERGO Admin 
+ERGO Management 
+ERGO Key Account Manager
+ERGO RFQ 
+ERGO NPD 
+ERGO OFP 
+ERGO Quality 
+2.2 External – Customers
+Customer RFQ 
+Customer OFP 
+Customer Quality 
+Customer Key Account Manager
+2.3 External – Suppliers
+Supplier RFQ 
+Supplier OFP 
+Supplier Quality 
+Supplier Key Account Manager 
+3. Core Modules
+User & Access Management 
+Customer Management 
+Supplier Management 
+RFQ Management 
+Quotation Management 
+NPD (New Product Development) 
+OFP (Order Fulfillment & Production Tracking) 
+Quality Management 
+Document Management System (DMS) 
+Communication & Alerts 
+Dashboard & Analytics 
+Admin Controls & Master Data 
+4. End-to-End Workflow (High Level)
+Customer RFQ→ ERGO RFQ Review
+→ ERGO Share customer RFQ to Supplier OR Create sub rfq to supplier OR create new RFQ→ Supplier RFQ Float→ Supplier Quote Submission→ ERGO Quote Comparison & analysis
+→ ERGO submit supplier quote or ERGO quote to customer→ Customer Approval
+→ Customer release Sample PO & Tooling PO→ NPD Initiation→ Sample Development, Quality checks & Approval→ Production Order Release→ Production PO Tracking (OFP)→ Quality Checks→ Dispatch
+→ Shipment tracking
+→ Shipment receipt and approval by customer
+→ Supplier/ ERGO payment tracking
+→ Supplier / ERGO Payment receipt→ Closure
+5. MODULE DETAILS (STARTING WITH RFQ MODULE)
+🔹 MODULE 1: RFQ MANAGEMENT
+5.1 Purpose
+To manage complete RFQ lifecycle from:
+Customer request → ERGO Review →Supplier sourcing → Quote submission → Approval 
+5.2 Users Involved
+Customer RFQ 
+ERGO RFQ 
+Supplier RFQ 
+ERGO Management
+5.3 Key Functionalities
+A. RFQ Creation (Customer / ERGO)
+Create RFQ 
+Upload drawings, specifications, images, other details
+Define technical & commercial requirements
+B. RFQ Review (ERGO)
+Validate RFQ 
+Assign suppliers 
+Add internal notes 
+Communicate back to customer if additional information is required
+C. RFQ Float to Suppliers
+Forward customer RFQ as it is / Split customer RFQ and send to multiple suppliers
+Select multiple suppliers 
+Send RFQ 
+Track supplier responses
+Supplier communicate back to ERGO if additional information is required
+D. Supplier Quote Submission
+Supplier fills structured quote form 
+Upload supporting documents
+OR regret RFQ with reason
+E. Quote Comparison (ERGO)
+Auto comparison sheet 
+Technical + commercial comparison
+Submits supplier quote OR ERGO Quote to customer for review 
+F. Customer Review & Approval
+Customer views quotes 
+Approves / asks revision / Declines quote with reason
+5.4 RFQ Data Fields
+🔹 Summary Section
+RFQ Number (auto) 
+Quotation Date (auto)
+Customer Name 
+Part Number (auto) 
+Revision (auto)
+Description (auto) 
+EAU (Estimated Annual Usage) (Auto)
+Net Weight 
+Gross Weight 
+🔹 Technical Inputs
+Material grade
+Process 
+Coating / Surface treatment
+🔹 Commercial Section
+Tooling name & Cost side by side  
+PPAP batch piece price
+Production Piece Price 
+🔹 Cost Breakdown
+Raw Material Cost 
+Processing Cost 
+Overhead Cost 
+Packaging Cost 
+Profit 
+🔹 Lead Time & MOQ
+Material Lead Time (weeks) 
+Tool lead time
+Sample lead time
+MOQ 
+🔹 Remarks
+Free text 
+5.5 Process Flow Table (Important Requirement)
+Table should support:
+Expandable rows (start with 2 rows), Add row button at the left bottom
+Columns: 
+Process Step 
+Cycle Time 
+Inhouse / Outsourced 
+Supplier Name (if outsourced) 
+Outsourced supplier name
+Remarks 
+5.6 Business Rules
+Supplier cannot see other supplier quotes 
+Customer sees only final selected quotes for his/her company
+RFQ cannot move forward without ERGO validation 
+Mandatory fields before submission 
+Version control for quotes
+Customer can not see other customer data
+Customer can not see supplier quotes not validated by ERGO
+5.7 Access Control (Sample)
+Role
+View
+Create
+Edit
+Submit
+Approve
+Customer RFQ
+Yes (own)
+Yes
+Yes
+Yes
+No
+ERGO RFQ
+Yes
+Yes
+Yes
+Yes
+Yes
+Supplier RFQ
+Yes (assigned)
+No
+Fill quote only
+Yes
+No
+ERGO Management
+Yes
+Yes
+Yes
+Yes
+Yes
+5.8 Notifications
+RFQ Created → ERGO RFQ 
+RFQ Assigned → Supplier 
+Quote Submitted → ERGO
+ERGO Quote validated → Customer
+Quote Pending Reminder → Supplier 
+Approval Pending → Customer
+Quote approved → ERGO 
+5.9 UI Requirements
+Dashboard with RFQ status: 
+Open 
+In Progress 
+Quotes Received 
+Pending Approval 
+Closed 
+Filters: 
+Customer 
+Supplier 
+Date 
+Status 
+RFQ Detail Page: 
+Tabs: 
+Summary 
+Technical 
+Quotes 
+Documents 
+Communication

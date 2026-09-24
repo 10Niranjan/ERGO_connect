@@ -1,0 +1,16 @@
+# All secrets come from the environment (Azure Key Vault in deployment) — never commit values here.
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+ergo:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS}
