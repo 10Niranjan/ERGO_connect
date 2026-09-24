@@ -45,6 +45,7 @@ export type RfqAction =
   | 'VALIDATE'
   | 'REOPEN'
   | 'CANCEL'
+  | 'CLOSE'
   | 'CLONE'
   | 'UPLOAD'
 
@@ -195,7 +196,7 @@ export interface AuditEntry {
 }
 
 /** Workflow endpoints that take an optional/required comment. */
-export type RfqCommand = 'submit' | 'start-review' | 'request-clarification' | 'validate' | 'reopen' | 'cancel'
+export type RfqCommand = 'submit' | 'start-review' | 'request-clarification' | 'validate' | 'reopen' | 'cancel' | 'close'
 
 const rfqApi = api.enhanceEndpoints({ addTagTypes: ['Rfq', 'RfqDocuments'] }).injectEndpoints({
   endpoints: (build) => ({

@@ -1,22 +1,21 @@
-import { Alert, Box, Button, Card, CardContent, LinearProgress, MenuItem, Stack, TextField, Typography } from '@mui/material'
-import { useState, type ReactNode } from 'react'
+import { Alert, Button, Card, CardContent, LinearProgress, MenuItem, Stack, TextField, Typography } from '@mui/material'
+import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { useAppSelector } from '../../../app/store'
+import { FormSection as Section } from '../../../shared/components/FormSection'
+import { num, str, text } from '../../../shared/form'
 import { useMasterOptionsQuery } from '../../../shared/masterData'
 import { problemMessage } from '../../../shared/problem'
 import { useCompaniesQuery } from '../../companies/companiesApi'
 import { ProcessFlowTable } from '../components/ProcessFlowTable'
-import { EMPTY_STEP, type StepRow } from '../processFlow'
+import { EMPTY_STEP, toProcessSteps, toStepRows, type StepRow } from '../processFlow'
 import { PRIORITIES } from '../labels'
 import { useCreateRfqMutation, useRfqQuery, useUpdateRfqMutation, type Priority, type RfqForm, type RfqView } from '../rfqApi'
 
-// Numbers are kept as typed text until saved.
 type FormState = Record<
   Exclude<keyof RfqForm, 'processSteps' | 'priority' | 'customerCompanyId'> | 'customerCompanyId',
   string
 > & { priority: Priority; steps: StepRow[] }
-
-const text = (value: string | number | null | undefined) => (value == null ? '' : String(value))
 
 function fromView(view: RfqView | undefined): FormState {
   const p = view?.part
@@ -48,20 +47,10 @@ function fromView(view: RfqView | undefined): FormState {
     customerRemarks: text(view?.customerRemarks),
     internalNotes: view?.audience === 'ERGO' ? text(view.internalNotes) : '',
     steps: view
-      ? view.part.processSteps.map((s) => ({
-          processId: text(s.process?.id),
-          stepName: s.stepName,
-          cycleTimeSeconds: text(s.cycleTimeSeconds),
-          sourcingType: s.sourcingType ?? '',
-          outsourcedSupplierName: text(s.outsourcedSupplierName),
-          remarks: text(s.remarks),
-        }))
+      ? toStepRows(view.part.processSteps.map((s) => ({ ...s, processId: s.process?.id ?? null })))
       : [{ ...EMPTY_STEP }, { ...EMPTY_STEP }], // SRS §5.5: starts with 2 rows
   }
 }
-
-const num = (value: string) => (value.trim() === '' ? null : Number(value))
-const str = (value: string) => value.trim() || null
 
 function toForm(state: FormState): RfqForm {
   return {
@@ -88,17 +77,7 @@ function toForm(state: FormState): RfqForm {
     sampleLeadTimeDays: num(state.sampleLeadTimeDays),
     productionLeadTimeDays: num(state.productionLeadTimeDays),
     moq: num(state.moq),
-    // empty rows are ignored
-    processSteps: state.steps
-      .filter((s) => s.stepName.trim() || s.processId)
-      .map((s) => ({
-        processId: num(s.processId),
-        stepName: s.stepName.trim(),
-        cycleTimeSeconds: num(s.cycleTimeSeconds),
-        sourcingType: s.sourcingType || null,
-        outsourcedSupplierName: str(s.outsourcedSupplierName),
-        remarks: str(s.remarks),
-      })),
+    processSteps: toProcessSteps(state.steps),
     customerRemarks: str(state.customerRemarks),
     internalNotes: str(state.internalNotes),
   }
@@ -120,11 +99,14 @@ function RfqFormEditor({ view }: { view: RfqView | undefined }) {
   const [createRfq, creating] = useCreateRfqMutation()
   const [updateRfq, updating] = useUpdateRfqMutation()
   const { data: companies = [] } = useCompaniesQuery(undefined, { skip: !isErgo || view !== undefined })
-  const { data: materials = [] } = useMasterOptionsQuery('materials')
-  const { data: coatings = [] } = useMasterOptionsQuery('coatings')
-  const { data: currencies = [] } = useMasterOptionsQuery('currencies')
-  const { data: paymentTerms = [] } = useMasterOptionsQuery('payment-terms')
-  const { data: processes = [] } = useMasterOptionsQuery('processes')
+  const lists = [
+    useMasterOptionsQuery('materials'),
+    useMasterOptionsQuery('coatings'),
+    useMasterOptionsQuery('currencies'),
+    useMasterOptionsQuery('payment-terms'),
+    useMasterOptionsQuery('processes'),
+  ]
+  const [materials, coatings, currencies, paymentTerms, processes] = lists.map((list) => list.data ?? [])
   const error = creating.error ?? updating.error
   // SRS §17.1: part number, revision and description are fixed once ERGO's review has started.
   const partLocked = view?.status === 'UNDER_REVIEW'
@@ -151,6 +133,9 @@ function RfqFormEditor({ view }: { view: RfqView | undefined }) {
       ],
       ...extra,
     })
+
+  // a select cannot show a saved value before its options arrive
+  if (lists.some((list) => list.isLoading)) return <LinearProgress />
 
   if (!view && !state.currencyId && currencies.length > 0) {
     const inr = currencies.find((c) => c.code === 'INR') ?? currencies[0]
@@ -223,7 +208,7 @@ function RfqFormEditor({ view }: { view: RfqView | undefined }) {
             Process flow
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            The planned process route. Each supplier fills in its own cycle times and sourcing when quoting.
+            The planned process route. Suppliers see only the process and step names; each fills in its own cycle times, sourcing and sub-suppliers when quoting.
           </Typography>
           <ProcessFlowTable steps={state.steps} processes={processes} onChange={(steps) => setState((s) => ({ ...s, steps }))} />
         </CardContent>
@@ -243,23 +228,5 @@ function RfqFormEditor({ view }: { view: RfqView | undefined }) {
         <Button onClick={() => navigate(view ? `/rfqs/${view.id}` : '/rfqs')}>Cancel</Button>
       </Stack>
     </Stack>
-  )
-}
-
-function Section({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
-  return (
-    <Card variant="outlined">
-      <CardContent sx={{ display: 'grid', gap: 1.5 }}>
-        <Typography variant="h6" component="h2">
-          {title}
-        </Typography>
-        {note && (
-          <Typography variant="body2" color="text.secondary">
-            {note}
-          </Typography>
-        )}
-        <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' } }}>{children}</Box>
-      </CardContent>
-    </Card>
   )
 }

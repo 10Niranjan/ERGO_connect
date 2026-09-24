@@ -16,6 +16,7 @@ import {
   Typography,
 } from '@mui/material'
 import { useRef, useState } from 'react'
+import { saveObjectUrl } from '../../../shared/download'
 import { problemMessage } from '../../../shared/problem'
 import { VISIBILITY, formatDate } from '../labels'
 import {
@@ -53,12 +54,7 @@ export function DocumentsPanel({ rfqId, canUpload, isErgo }: Props) {
 
   async function save(documentId: number, fileName: string) {
     try {
-      const url = await download({ id: rfqId, documentId }).unwrap()
-      const link = document.createElement('a')
-      link.href = url
-      link.download = fileName
-      link.click()
-      setTimeout(() => URL.revokeObjectURL(url), 1000)
+      saveObjectUrl(await download({ id: rfqId, documentId }).unwrap(), fileName)
     } catch (e) {
       setActionError(e)
     }

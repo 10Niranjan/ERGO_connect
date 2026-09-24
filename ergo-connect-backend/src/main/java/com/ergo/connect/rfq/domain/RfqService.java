@@ -11,7 +11,13 @@ import static com.ergo.connect.rfq.domain.RfqStatus.CANCELLED;
 import static com.ergo.connect.rfq.domain.RfqStatus.CLARIFICATION_REQUIRED;
 import static com.ergo.connect.rfq.domain.RfqStatus.CLOSED;
 import static com.ergo.connect.rfq.domain.RfqStatus.CUSTOMER_APPROVED;
+import static com.ergo.connect.rfq.domain.RfqStatus.CUSTOMER_REVISION_REQUESTED;
 import static com.ergo.connect.rfq.domain.RfqStatus.DRAFT;
+import static com.ergo.connect.rfq.domain.RfqStatus.QUOTES_COMPLETE;
+import static com.ergo.connect.rfq.domain.RfqStatus.QUOTES_PARTIAL;
+import static com.ergo.connect.rfq.domain.RfqStatus.SENT_TO_CUSTOMER;
+import static com.ergo.connect.rfq.domain.RfqStatus.SENT_TO_SUPPLIERS;
+import static com.ergo.connect.rfq.domain.RfqStatus.UNDER_COMPARISON;
 import static com.ergo.connect.rfq.domain.RfqStatus.SUBMITTED;
 import static com.ergo.connect.rfq.domain.RfqStatus.UNDER_REVIEW;
 import static com.ergo.connect.rfq.domain.RfqStatus.VALIDATED;
@@ -80,7 +86,7 @@ public class RfqService {
 	private static final Set<Role> CUSTOMER_EDITORS = EnumSet.of(CUSTOMER_RFQ, CUSTOMER_KAM, CUSTOMER_MANAGEMENT);
 
 	/** SRS §10.4 "RV" for ERGO NPD: approved RFQs heading to NPD. */
-	private static final Set<RfqStatus> NPD_VISIBLE = EnumSet.of(CUSTOMER_APPROVED, CLOSED);
+	private static final Set<RfqStatus> NPD_VISIBLE = EnumSet.of(CUSTOMER_APPROVED);
 
 	/** While the customer may still change the RFQ. */
 	private static final Set<RfqStatus> CUSTOMER_OPEN = EnumSet.of(DRAFT, SUBMITTED, CLARIFICATION_REQUIRED);
@@ -88,6 +94,14 @@ public class RfqService {
 	/** Before any supplier has seen it: files may still be removed, ERGO may still cancel. */
 	private static final Set<RfqStatus> BEFORE_FLOAT = EnumSet.of(DRAFT, SUBMITTED, UNDER_REVIEW,
 			CLARIFICATION_REQUIRED, VALIDATED);
+
+	/** SRS §17.1: cancel only before any supplier response. */
+	private static final Set<RfqStatus> ERGO_CANCELLABLE = EnumSet.of(DRAFT, SUBMITTED, UNDER_REVIEW,
+			CLARIFICATION_REQUIRED, VALIDATED, SENT_TO_SUPPLIERS);
+
+	/** Once suppliers have answered, an RFQ that goes no further is closed (with a reason), not cancelled. */
+	private static final Set<RfqStatus> CLOSABLE = EnumSet.of(QUOTES_PARTIAL, QUOTES_COMPLETE, UNDER_COMPARISON,
+			SENT_TO_CUSTOMER, CUSTOMER_REVISION_REQUESTED);
 
 	/** A downloadable file: metadata plus content. */
 	public record DocumentFile(DocumentInfo info, byte[] content) {
@@ -310,6 +324,16 @@ public class RfqService {
 		return view(rfq, me);
 	}
 
+	/** An RFQ that will not go further after suppliers have quoted (SRS §14.2 Closed). */
+	public RfqView close(long id, String reason) {
+		CurrentUser me = CurrentUser.get();
+		Rfq rfq = visible(me, id);
+		require(RfqAction.CLOSE, me, rfq);
+		audit.reason(required(reason, "A reason is required to close an RFQ"));
+		rfq.status = CLOSED;
+		return view(rfq, me);
+	}
+
 	/** SRS §17.1: only before any supplier response. */
 	public RfqView cancel(long id, String reason) {
 		CurrentUser me = CurrentUser.get();
@@ -374,7 +398,7 @@ public class RfqService {
 	// ---------------------------------------------------------------- rules
 
 	/** Record scope. Out-of-scope RFQs do not exist for the caller (404, not 403). */
-	private Rfq visible(CurrentUser me, long id) {
+	Rfq visible(CurrentUser me, long id) {
 		Rfq rfq = rfqs.findById(id).orElse(null);
 		boolean inScope = rfq != null && switch (me.role()) {
 			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_RFQ -> true;
@@ -404,7 +428,8 @@ public class RfqService {
 			case REQUEST_CLARIFICATION -> status == UNDER_REVIEW && ergo;
 			case VALIDATE -> status == UNDER_REVIEW && reviewer;
 			case REOPEN -> status == VALIDATED && (role == ERGO_ADMIN || role == ERGO_RFQ);
-			case CANCEL -> customer ? CUSTOMER_OPEN.contains(status) : ergo && BEFORE_FLOAT.contains(status);
+			case CANCEL -> customer ? CUSTOMER_OPEN.contains(status) : ergo && ERGO_CANCELLABLE.contains(status);
+			case CLOSE -> reviewer && CLOSABLE.contains(status);
 			case CLONE -> customer || ergo;
 			case UPLOAD -> customer ? CUSTOMER_OPEN.contains(status) || status == UNDER_REVIEW
 					: ergo && !RfqStatus.FINAL.contains(status);

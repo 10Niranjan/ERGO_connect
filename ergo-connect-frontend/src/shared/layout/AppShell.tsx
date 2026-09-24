@@ -17,7 +17,7 @@ import {
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router'
 import { useAppSelector } from '../../app/store'
-import { COMPANY_MANAGERS, EXTERNAL_ROLES, MASTER_DATA_VIEWERS, RFQ_VIEWERS } from '../../auth/access'
+import { COMPANY_MANAGERS, EXTERNAL_ROLES, MASTER_DATA_VIEWERS, RFQ_VIEWERS, SUPPLIER_QUOTERS } from '../../auth/access'
 import { useLogoutMutation, useSwitchRoleMutation } from '../../auth/authApi'
 import type { Role } from '../../auth/authSlice'
 
@@ -25,6 +25,7 @@ import type { Role } from '../../auth/authSlice'
 const NAV: { label: string; to: string; roles?: Role[] }[] = [
   { label: 'Dashboard', to: '/' },
   { label: 'RFQs', to: '/rfqs', roles: RFQ_VIEWERS },
+  { label: 'Assigned RFQs', to: '/quotes', roles: SUPPLIER_QUOTERS },
   { label: 'Customers & suppliers', to: '/companies', roles: COMPANY_MANAGERS },
   { label: 'Company profile', to: '/company', roles: EXTERNAL_ROLES },
   { label: 'Users', to: '/admin/users', roles: ['ERGO_ADMIN'] },

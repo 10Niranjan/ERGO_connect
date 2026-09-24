@@ -134,6 +134,12 @@ class RfqController {
 		return rfqs.reopen(id, body.comment());
 	}
 
+	@PostMapping("/{id}/close")
+	@PreAuthorize(REVIEWERS)
+	RfqView close(@PathVariable long id, @Valid @RequestBody CommentForm body) {
+		return rfqs.close(id, body.comment());
+	}
+
 	@PostMapping("/{id}/cancel")
 	@PreAuthorize(CREATORS)
 	RfqView cancel(@PathVariable long id, @Valid @RequestBody CommentForm body) {

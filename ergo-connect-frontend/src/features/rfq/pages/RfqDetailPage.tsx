@@ -19,11 +19,13 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import { useState, type ReactNode } from 'react'
+import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { AuditTrail } from '../../../shared/components/AuditTrail'
 import { CommentDialog } from '../../../shared/components/CommentDialog'
+import { Facts } from '../../../shared/components/Facts'
 import { problemMessage } from '../../../shared/problem'
+import { SuppliersPanel } from '../../quotation/components/SuppliersPanel'
 import { DocumentsPanel } from '../components/DocumentsPanel'
 import { PRIORITIES, STATUS, formatDate, formatMoney, formatNumber } from '../labels'
 import {
@@ -43,6 +45,7 @@ const COMMANDS: Record<Exclude<RfqCommand, 'start-review'>, { title: string; lab
   validate: { title: 'Validate RFQ', label: 'Comment (optional)', confirm: 'Validate', required: false },
   reopen: { title: 'Re-open RFQ', label: 'Reason for re-opening', confirm: 'Re-open', required: true },
   cancel: { title: 'Cancel RFQ', label: 'Reason for cancelling', confirm: 'Cancel RFQ', required: true, danger: true },
+  close: { title: 'Close RFQ', label: 'Reason for closing', confirm: 'Close RFQ', required: true },
 }
 
 export function RfqDetailPage() {
@@ -126,6 +129,7 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
           )}
           {can('REOPEN') && <Button onClick={() => setDialog('reopen')}>Re-open</Button>}
           {can('CLONE') && <Button onClick={() => void clone()}>Clone</Button>}
+          {can('CLOSE') && <Button onClick={() => setDialog('close')}>Close RFQ</Button>}
           {can('CANCEL') && (
             <Button color="error" onClick={() => setDialog('cancel')}>
               Cancel RFQ
@@ -151,6 +155,7 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
         <Tab value="overview" label="Overview" />
         <Tab value="process" label="Process flow" />
         <Tab value="documents" label="Documents" />
+        {isErgo && <Tab value="suppliers" label="Suppliers & quotes" />}
         {isErgo && <Tab value="history" label="Audit trail" />}
       </Tabs>
 
@@ -224,6 +229,7 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
       )}
 
       {tab === 'documents' && <DocumentsPanel rfqId={rfq.id} canUpload={can('UPLOAD')} isErgo={isErgo} />}
+      {tab === 'suppliers' && isErgo && <SuppliersPanel rfqId={rfq.id} />}
       {tab === 'history' && isErgo && <History rfqId={rfq.id} />}
 
       {dialog && (
@@ -241,31 +247,6 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
         />
       )}
     </Stack>
-  )
-}
-
-function Facts({ title, note, facts }: { title: string; note?: string; facts: [string, ReactNode][] }) {
-  return (
-    <Card variant="outlined">
-      <CardContent>
-        <Typography variant="h6" component="h2">
-          {title}
-        </Typography>
-        {note && (
-          <Typography variant="body2" color="text.secondary" gutterBottom>
-            {note}
-          </Typography>
-        )}
-        <Box sx={{ display: 'grid', gridTemplateColumns: facts.length === 1 && !facts[0][0] ? '1fr' : '170px 1fr', rowGap: 1, columnGap: 2, mt: 1 }}>
-          {facts.map(([label, value], index) => (
-            <Box key={index} sx={{ display: 'contents' }}>
-              {label && <Typography color="text.secondary">{label}</Typography>}
-              <Typography sx={{ whiteSpace: 'pre-wrap' }}>{value}</Typography>
-            </Box>
-          ))}
-        </Box>
-      </CardContent>
-    </Card>
   )
 }
 

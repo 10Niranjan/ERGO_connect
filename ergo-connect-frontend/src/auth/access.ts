@@ -22,7 +22,7 @@ export const COMPANY_MANAGERS: Role[] = ['ERGO_ADMIN', 'ERGO_MANAGEMENT', 'ERGO_
 
 export const COMPANY_CREATORS: Role[] = ['ERGO_ADMIN', 'ERGO_RFQ', 'ERGO_KAM']
 
-/** SRS §10.4: who works with RFQs (suppliers join when RFQs are sent to them, Phase 2b). */
+/** SRS §10.4: who works with RFQs. Suppliers never see RFQs as such, only the quotes ERGO asks them for. */
 export const RFQ_VIEWERS: Role[] = [
   'ERGO_ADMIN',
   'ERGO_MANAGEMENT',
@@ -35,6 +35,12 @@ export const RFQ_VIEWERS: Role[] = [
 ]
 
 export const RFQ_CREATORS: Role[] = ['ERGO_ADMIN', 'ERGO_MANAGEMENT', 'ERGO_RFQ', 'ERGO_KAM', 'CUSTOMER_RFQ', 'CUSTOMER_KAM', 'CUSTOMER_MANAGEMENT']
+
+/** SRS §10.5: supplier roles that quote. */
+export const SUPPLIER_QUOTERS: Role[] = ['SUPPLIER_RFQ', 'SUPPLIER_KAM']
+
+/** SRS §10.5: who opens a supplier quote (ERGO's RFQ scope still applies). */
+export const QUOTE_VIEWERS: Role[] = ['ERGO_ADMIN', 'ERGO_MANAGEMENT', 'ERGO_RFQ', 'ERGO_KAM', 'ERGO_NPD', ...SUPPLIER_QUOTERS]
 
 /** SRS §10.12 */
 export const MASTER_DATA_VIEWERS: Role[] = ['ERGO_ADMIN', 'ERGO_MANAGEMENT']

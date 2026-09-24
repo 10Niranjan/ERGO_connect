@@ -23,6 +23,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OrderColumn;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 /**
  * A request for quotation (SRS §13.3.1). Field changes are audited automatically; status changes only happen in
@@ -121,5 +122,10 @@ class Rfq {
 	@UpdateTimestamp
 	@AuditExclude
 	Instant updatedAt;
+
+	/** Optimistic lock: of two concurrent changes the later one fails (409) instead of overwriting the other. */
+	@Version
+	@AuditExclude
+	long rowVersion;
 
 }

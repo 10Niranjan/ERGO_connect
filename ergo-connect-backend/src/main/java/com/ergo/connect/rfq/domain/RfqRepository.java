@@ -13,6 +13,8 @@ interface RfqRepository extends Repository<Rfq, Long> {
 
 	Optional<Rfq> findById(Long id);
 
+	List<Rfq> findByIdIn(Collection<Long> ids);
+
 	List<Rfq> findAllByOrderByIdDesc();
 
 	List<Rfq> findByCustomerCompanyIdOrderByIdDesc(Long customerCompanyId);

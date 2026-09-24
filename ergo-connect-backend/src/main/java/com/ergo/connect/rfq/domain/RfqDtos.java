@@ -54,7 +54,7 @@ public final class RfqDtos {
 
 	/** Buttons the caller may use now, computed by the same rules that enforce them. */
 	public enum RfqAction {
-		EDIT, EDIT_NOTES, SUBMIT, START_REVIEW, REQUEST_CLARIFICATION, VALIDATE, REOPEN, CANCEL, CLONE, UPLOAD
+		EDIT, EDIT_NOTES, SUBMIT, START_REVIEW, REQUEST_CLARIFICATION, VALIDATE, REOPEN, CANCEL, CLOSE, CLONE, UPLOAD
 	}
 
 	public record Named(long id, String code, String name) {

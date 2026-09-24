@@ -1,6 +1,6 @@
 import type { CustomerRfqStatus, Priority, RfqStatus, Visibility } from './rfqApi'
 
-type ChipColor = 'default' | 'primary' | 'secondary' | 'success' | 'warning' | 'error' | 'info'
+export type ChipColor = 'default' | 'primary' | 'secondary' | 'success' | 'warning' | 'error' | 'info'
 
 export const STATUS: Record<RfqStatus | CustomerRfqStatus, { label: string; color: ChipColor }> = {
   DRAFT: { label: 'Draft', color: 'default' },
@@ -34,8 +34,9 @@ export const VISIBILITY: Record<Visibility, string> = {
   ALL: 'Customer and suppliers',
 }
 
+/** Date-only values (due dates, validity) are calendar days, not instants: they are read as local midnight. */
 export function formatDate(value: string | null): string {
-  return value ? new Date(value).toLocaleDateString() : '—'
+  return value ? new Date(value.length === 10 ? `${value}T00:00` : value).toLocaleDateString() : '—'
 }
 
 export function formatNumber(value: number | null, suffix = ''): string {
