@@ -8,19 +8,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 
-import com.ergo.connect.TestcontainersConfiguration;
+import com.ergo.connect.IntegrationTest;
 
 /** Phase 0 guarantees: app boots on real Postgres + Flyway, deny-by-default security, strict CORS, append-only audit log. */
-@SpringBootTest
-@AutoConfigureMockMvc
-@Import(TestcontainersConfiguration.class)
+@IntegrationTest
 class PlatformFoundationTests {
 
 	@Autowired
@@ -54,8 +49,8 @@ class PlatformFoundationTests {
 	@Test
 	void auditLogIsAppendOnly() {
 		Long id = jdbc.queryForObject("""
-				INSERT INTO audit_logs (module_name, record_id, event_type, source_channel)
-				VALUES ('test', 1, 'CREATE', 'SYSTEM') RETURNING audit_log_id""", Long.class);
+				INSERT INTO audit_logs (module_name, entity_name, record_id, event_type, source_channel)
+				VALUES ('test', 'Test', 1, 'CREATE', 'SYSTEM') RETURNING audit_log_id""", Long.class);
 		assertThat(id).isNotNull();
 
 		assertThatThrownBy(() -> jdbc.update("UPDATE audit_logs SET new_value = 'x' WHERE audit_log_id = ?", id))

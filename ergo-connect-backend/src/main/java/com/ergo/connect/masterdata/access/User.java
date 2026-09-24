@@ -1,0 +1,82 @@
+package com.ergo.connect.masterdata.access;
+
+import java.time.Instant;
+import java.util.EnumSet;
+import java.util.Set;
+
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
+
+import com.ergo.connect.common.audit.AuditExclude;
+import com.ergo.connect.common.audit.AuditMasked;
+import com.ergo.connect.common.security.Role;
+
+import jakarta.persistence.CollectionTable;
+import jakarta.persistence.Column;
+import jakarta.persistence.ElementCollection;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.Table;
+
+/** A login (SRS §13.2.2). Belongs to exactly one company for life (ARCHITECTURE.md §8). */
+@Entity
+@Table(name = "users")
+class User {
+
+	@Id
+	@GeneratedValue(strategy = GenerationType.IDENTITY)
+	@Column(name = "user_id")
+	Long id;
+
+	@Column(updatable = false)
+	Long companyId;
+
+	String firstName;
+
+	String lastName;
+
+	String email;
+
+	String mobile;
+
+	@AuditMasked
+	String passwordHash;
+
+	boolean mustChangePassword = true;
+
+	/** Mapped roles (user_role_mappings). Changes are audited explicitly as ROLE_ADDED / ROLE_REMOVED. */
+	@ElementCollection
+	@CollectionTable(name = "user_role_mappings", joinColumns = @JoinColumn(name = "user_id"))
+	@Enumerated(EnumType.STRING)
+	@Column(name = "role_code")
+	Set<Role> roles = EnumSet.noneOf(Role.class);
+
+	@Enumerated(EnumType.STRING)
+	@Column(name = "default_role_code")
+	Role defaultRole;
+
+	boolean active = true;
+
+	@AuditExclude
+	int failedLoginCount;
+
+	@AuditExclude
+	Instant lockedUntil;
+
+	@AuditExclude
+	Instant lastLoginAt;
+
+	@CreationTimestamp
+	@Column(updatable = false)
+	Instant createdAt;
+
+	@UpdateTimestamp
+	@AuditExclude
+	Instant updatedAt;
+
+}

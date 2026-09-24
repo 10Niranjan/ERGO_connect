@@ -23,6 +23,8 @@ docker compose -f docker/docker-compose.local.yml up -d
 # 2. backend → http://localhost:8080  (API docs: /swagger-ui.html)
 ./mvnw spring-boot:run
 
+# dev demo users (password ErgoDev#2026): admin@ergo.dev, rfq@ergo.dev, buyer@acme.dev, sales@precision.dev …
+
 # 3. frontend → http://localhost:5173  (proxies /api to the backend)
 cd ../ergo-connect-frontend
 npm install
@@ -38,6 +40,7 @@ CI (GitHub Actions) runs both on every push.
 
 ## Status
 - [x] Phase 0: foundation (scaffold, security shell, append-only audit log, module-boundary test, CI)
-- [ ] Phase 1: access model and master data
+- [x] Phase 1a: login, one active role per session, company-scoped access, user/company admin, audit trail
+- [ ] Phase 1b: master data (currencies, materials, processes, payment terms…) + customer/supplier management
 - [ ] Phase 2: RFQ + Quotation
 - [ ] Phases 3–8: NPD, OFP, Quality, Documents/Communication, Dashboards, Hardening (see `ARCHITECTURE.md` §6)

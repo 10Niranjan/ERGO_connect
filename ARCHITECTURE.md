@@ -28,13 +28,13 @@ ergo-connect-backend/
 │   ├── common/                     # shared kernel — no business logic
 │   │   ├── config/                 # SecurityConfig, KafkaConfig, RedisConfig, CorsConfig, OpenApiConfig
 │   │   ├── security/
-│   │   │   ├── jwt/                # JwtAuthFilter, JwtService, JwtProperties
-│   │   │   ├── rbac/               # RoleGuard annotations, @RequiresRole, @RequiresRecordScope
-│   │   │   └── CompanyScopeContext.java   # holds current user's companyId/role for record filtering
+│   │   │   ├── jwt/                # AccessTokens: issues/reads the JWT (the only place that knows claim names)
+│   │   │   ├── Role.java, CompanyType.java, SecurityProperties.java
+│   │   │   └── CurrentUser.java    # caller's user, company, active role + record scope (see §8)
 │   │   ├── audit/
-│   │   │   ├── AuditEntityListener.java
-│   │   │   ├── AuditLogService.java
-│   │   │   └── AuditLog.java (entity → audit_logs table)
+│   │   │   ├── AuditEntityListener.java    # Hibernate listener: every insert/update/delete, per field
+│   │   │   ├── AuditLogService.java        # writes audit_logs in the caller's transaction
+│   │   │   └── AuditExclude / AuditMasked  # opt-outs for noise and secrets
 │   │   ├── workflow/
 │   │   │   ├── WorkflowEngine.java         # generic status-transition + guard evaluation
 │   │   │   ├── WorkflowDefinition.java
@@ -44,10 +44,8 @@ ergo-connect-backend/
 │   │   └── util/
 │   │
 │   ├── masterdata/                  # companies, users, roles, currencies, materials, processes, incoterms...
-│   │   ├── api/                     # facade other modules may call (added, see §8)
-│   │   ├── company/
-│   │   ├── user/
-│   │   ├── role/
+│   │   ├── api/                     # controllers + facades other modules may call (added, see §8)
+│   │   ├── access/                  # companies, users, roles, login sessions, auth (one package, see §8)
 │   │   └── lookup/                  # materials, coatings, payment_terms, document_categories, etc.
 │   │
 │   ├── rfq/
@@ -257,3 +255,13 @@ Append-only. Record every decision that changes or clarifies this document, with
 | 2026-09-24 | **Errors use Spring's built-in RFC 9457 `ProblemDetail`** (`spring.mvc.problemdetails.enabled`); a `GlobalExceptionHandler` is added only when the first domain exception exists | No speculative code. |
 | 2026-09-24 | **Frontend talks to `/api` same-origin** (Vite proxy in dev) | Keeps the backend CORS allow-list strict; no backend URL baked into the bundle. |
 | 2026-09-24 | SRD converted to **`docs/SRS.md`** (tables preserved); the older draft appended at the end of the .docx is kept as a marked "superseded" appendix | Agents and devs can grep section numbers. The .docx remains the signed-off source. |
+| 2026-09-24 | **Client decision: only ERGO Admin manages users**: creates them, maps company and roles, activates/deactivates, resets passwords. Everyone else can only view users in their record scope and change their own password. No second approval is needed; every change is audited. | Resolves the conflict between SRS §8.2/§9.1 and table §10.1. Customer/supplier self-onboarding stays in Phase 3 (§16.3). |
+| 2026-09-24 | **Client decision: one active role per session.** The default role opens after login; users switch in the top bar, which issues a new token. Every audit row stores the role that was used. | SRS §12.4.2 was silent on this. Makes clear which capacity a person acted in (e.g. approvals, §15.3). |
+| 2026-09-24 | **One company per login.** Someone working with two companies gets two logins. ERGO KAMs reach customer accounts through account assignment (§13.2.5, Phase 2). So `user_role_mappings` has no `company_id`. | Keeps every company's data strictly separate. |
+| 2026-09-24 | **Auth design**: a 15-min HS256 access token (kept in browser memory) plus a server-side login session (`user_sessions`, 12 h absolute) in an HttpOnly + Secure + SameSite=Strict cookie scoped to `/api/auth`. Only the token's SHA-256 is stored. No rotation, because rotation adds little for an HttpOnly cookie and breaks multiple tabs. Logout, deactivation and password reset revoke sessions. Role and account changes reach open sessions within 15 min. | Revocable, XSS-resistant, and uses standard Spring Security resource-server code (no custom JWT filter). |
+| 2026-09-24 | **Login hardening**: the same error for unknown email and wrong password (with timing equalised by a dummy hash), a 15-min lock after 5 failures, bcrypt (DelegatingPasswordEncoder), and temporary passwords that must be changed at first sign-in. The Redis IP rate limiter from §4 moves to Phase 8. | Lockout covers per-account guessing now; IP limits matter once the app is exposed to the internet. |
+| 2026-09-24 | **The `roles` table is keyed by `role_code`** (no surrogate id). `audit_logs.changed_by_role_code` replaces `changed_by_role_id`, and `audit_logs.entity_name` was added. A DB trigger blocks giving a role to the wrong company type. Customer Management is seeded inactive (§9.2). | Codes are what the code and audit rows use. |
+| 2026-09-24 | **Automatic audit**: a Hibernate listener writes CREATE / UPDATE (one row per field) / DELETE rows for every entity in the same transaction. `@AuditExclude` skips noise, `@AuditMasked` hides secret values, and services add business events (e.g. `ROLE_ADDED`). | Principle 3 by construction; rollback removes the audit rows too (tested). |
+| 2026-09-24 | **Record-scope pattern** (replaces the planned generic `CompanyScopeFilter`): repositories are package-private and extend Spring Data `Repository` with explicit methods only. User-facing reads use scoped queries that take `CurrentUser.companyScope()`, and out-of-scope IDs return 404. | Hibernate filters don't apply to `findById`, and scope rules differ per entity (e.g. suppliers see RFQs through their assignments), so each module owns its scoped queries. |
+| 2026-09-24 | `masterdata/access` holds companies, users, roles, sessions and auth in one package (instead of the plan's company/user/role split). | Keeps entities and repositories package-private. |
+| 2026-09-24 | **Deferred**: 2FA (optional in SRS §12.4.1), "forgot password" email (needs email, Phase 6), first-admin bootstrap outside dev (Phase 8), ERGO KAM account assignments (Phase 2), customer/supplier management rules §10.2/§10.3 (Phase 1b). The dev profile seeds demo companies and users. | Nothing built before it is needed. |

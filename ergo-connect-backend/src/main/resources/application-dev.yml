@@ -4,3 +4,7 @@ spring:
     url: jdbc:postgresql://localhost:5432/ergo_connect
     username: ergo
     password: ergo
+
+ergo:
+  security:
+    jwt-secret: dev-only-jwt-secret-never-use-outside-local-dev

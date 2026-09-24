@@ -1,0 +1,3 @@
+ergo:
+  security:
+    jwt-secret: test-only-jwt-secret-0123456789abcdef

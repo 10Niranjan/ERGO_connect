@@ -21,3 +21,6 @@ ergo:
   cors:
     # Explicit allow-list, never "*" (ARCHITECTURE.md §4)
     allowed-origins: http://localhost:5173
+  security:
+    access-token-ttl: 15m # short: role/account changes reach every request within this window
+    session-ttl: 12h      # a login lasts one working day at most
