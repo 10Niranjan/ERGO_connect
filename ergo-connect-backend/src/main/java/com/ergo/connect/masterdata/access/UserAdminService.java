@@ -87,8 +87,8 @@ public class UserAdminService {
 
 	public CreatedUserResponse create(CreateUserRequest request) {
 		Company company = companies.findById(request.companyId())
-			.filter(c -> c.active)
-			.orElseThrow(() -> ApiException.unprocessable("Company not found or inactive"));
+			.filter(c -> c.status == CompanyStatus.ACTIVE)
+			.orElseThrow(() -> ApiException.unprocessable("Company not found or not active (approve it first)"));
 		requireUniqueEmail(request.email());
 		Role defaultRole = checkRoles(request.roles(), request.defaultRole(), company.type);
 
@@ -160,6 +160,32 @@ public class UserAdminService {
 		return new TemporaryPasswordResponse(temporaryPassword);
 	}
 
+	/** Which customer accounts an ERGO Key Account Manager covers (SRS §13.2.5). Also enforced by a DB trigger. */
+	public UserResponse setAccounts(long id, Set<Long> customerIds) {
+		User user = visible(id);
+		Company company = companyOf(user);
+		if (company.type != CompanyType.ERGO) {
+			throw ApiException.unprocessable("Only ERGO users can be assigned customer accounts");
+		}
+		List<Company> customers = companies.findByIdIn(customerIds);
+		if (customers.size() != customerIds.size() || customers.stream().anyMatch(c -> c.type != CompanyType.CUSTOMER)) {
+			throw ApiException.unprocessable("Accounts must be existing customer companies");
+		}
+		for (Long account : user.accountIds) {
+			if (!customerIds.contains(account)) {
+				audit.record(User.class, user.id, "ACCOUNT_UNASSIGNED", "accounts", String.valueOf(account), null);
+			}
+		}
+		for (Long account : customerIds) {
+			if (!user.accountIds.contains(account)) {
+				audit.record(User.class, user.id, "ACCOUNT_ASSIGNED", "accounts", null, String.valueOf(account));
+			}
+		}
+		user.accountIds.retainAll(customerIds);
+		user.accountIds.addAll(customerIds);
+		return toResponse(user, company);
+	}
+
 	private User visible(long id) {
 		return users.findVisible(id, CurrentUser.get().companyScope())
 			.orElseThrow(() -> ApiException.notFound("User"));
@@ -215,7 +241,7 @@ public class UserAdminService {
 	private static UserResponse toResponse(User user, Company company) {
 		return new UserResponse(user.id, company.id, company.name, company.type, user.firstName, user.lastName,
 				user.email, user.mobile, user.active, user.roles.stream().sorted().toList(), user.defaultRole,
-				user.lastLoginAt);
+				user.accountIds.stream().sorted().toList(), user.lastLoginAt);
 	}
 
 }

@@ -4,6 +4,8 @@ import java.util.Optional;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
@@ -20,24 +22,52 @@ public class AuditLogService {
 
 	private static final String BASE_PACKAGE = "com.ergo.connect.";
 
+	private static final Object REASON = new Object();
+
 	private final JdbcTemplate jdbc;
 
 	AuditLogService(JdbcTemplate jdbc) {
 		this.jdbc = jdbc;
 	}
 
+	/**
+	 * Why the current transaction changes what it changes (approval comment, rejection or reopen reason). Stored on
+	 * every audit row the transaction writes, including the automatic field changes flushed at commit.
+	 */
+	public void reason(String reason) {
+		if (TransactionSynchronizationManager.hasResource(REASON)) {
+			TransactionSynchronizationManager.unbindResource(REASON);
+		}
+		else {
+			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+				@Override
+				public void afterCompletion(int status) {
+					TransactionSynchronizationManager.unbindResourceIfPossible(REASON);
+				}
+			});
+		}
+		TransactionSynchronizationManager.bindResource(REASON, reason);
+	}
+
 	/** Explicit business event, e.g. ROLE_ADDED on a user. Module and entity names come from the entity class. */
 	public void record(Class<?> entity, long recordId, String eventType, String field, String oldValue,
+			String newValue) {
+		record(moduleOf(entity), entity.getSimpleName(), recordId, eventType, field, oldValue, newValue);
+	}
+
+	/** For records written without JPA (e.g. master lists), which the automatic entity listener cannot see. */
+	public void record(String module, String entity, long recordId, String eventType, String field, String oldValue,
 			String newValue) {
 		Optional<CurrentUser> actor = CurrentUser.find();
 		HttpServletRequest request = RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes a
 				? a.getRequest() : null;
 		jdbc.update("""
 				INSERT INTO audit_logs (module_name, entity_name, record_id, event_type, field_name, old_value, new_value,
-				                        changed_by_user_id, changed_by_role_code, changed_by_company_id, source_channel,
-				                        ip_address)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-				moduleOf(entity), entity.getSimpleName(), recordId, eventType, field, oldValue, newValue,
+				                        action_reason, changed_by_user_id, changed_by_role_code, changed_by_company_id,
+				                        source_channel, ip_address)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+				module, entity, recordId, eventType, field, oldValue, newValue,
+				TransactionSynchronizationManager.getResource(REASON),
 				actor.map(CurrentUser::userId).orElse(null), actor.map(u -> u.role().name()).orElse(null),
 				actor.map(CurrentUser::companyId).orElse(null), channel(request),
 				request == null ? null : request.getRemoteAddr());

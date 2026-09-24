@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.ergo.connect.masterdata.access.AuthDtos.RoleOption;
 import com.ergo.connect.masterdata.access.UserAdminService;
+import com.ergo.connect.masterdata.access.UserDtos.AccountsRequest;
 import com.ergo.connect.masterdata.access.UserDtos.ActiveRequest;
 import com.ergo.connect.masterdata.access.UserDtos.CreateUserRequest;
 import com.ergo.connect.masterdata.access.UserDtos.CreatedUserResponse;
@@ -79,6 +80,12 @@ class UserController {
 	@PreAuthorize(ERGO_ADMIN)
 	UserResponse setActive(@PathVariable long id, @Valid @RequestBody ActiveRequest body) {
 		return users.setActive(id, body.active());
+	}
+
+	@PutMapping("/users/{id}/accounts")
+	@PreAuthorize(ERGO_ADMIN)
+	UserResponse setAccounts(@PathVariable long id, @Valid @RequestBody AccountsRequest body) {
+		return users.setAccounts(id, body.customerIds());
 	}
 
 	@PostMapping("/users/{id}/reset-password")

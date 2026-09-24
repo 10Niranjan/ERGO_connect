@@ -20,7 +20,7 @@ public final class UserDtos {
 
 	public record UserResponse(long id, long companyId, String companyName, CompanyType companyType,
 			String firstName, String lastName, String email, String mobile, boolean active, List<Role> roles,
-			Role defaultRole, Instant lastLoginAt) {
+			Role defaultRole, List<Long> accountIds, Instant lastLoginAt) {
 	}
 
 	public record CreateUserRequest(@NotNull Long companyId, @NotBlank @Size(max = 100) String firstName,
@@ -37,6 +37,10 @@ public final class UserDtos {
 	}
 
 	public record ActiveRequest(@NotNull Boolean active) {
+	}
+
+	/** An ERGO Key Account Manager's customer accounts. Replaces the current list. */
+	public record AccountsRequest(@NotNull Set<@NotNull Long> customerIds) {
 	}
 
 	/** The temporary password is shown to the ERGO Admin once and never stored in plain text. */

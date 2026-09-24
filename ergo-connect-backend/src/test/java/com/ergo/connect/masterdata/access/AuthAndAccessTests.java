@@ -218,26 +218,20 @@ class AuthAndAccessTests {
 	}
 
 	@Test
-	void onlyErgoAdminManagesUsersAndCompanies() throws Exception {
+	void onlyErgoAdminManagesUsers() throws Exception {
 		User target = accounts.user(customerA, Role.CUSTOMER_RFQ);
 		String newUser = """
 				{"companyId": %d, "firstName": "New", "lastName": "User", "email": "new.user@test.dev",
 				 "roles": ["CUSTOMER_RFQ"]}""".formatted(customerA.id);
-		String newCompany = """
-				{"code": "NEWCO", "name": "New Co", "type": "SUPPLIER"}""";
 
 		for (Role role : new Role[] { Role.ERGO_MANAGEMENT, Role.ERGO_RFQ, Role.ERGO_KAM }) {
-			assertAdminOnly(accounts.bearer(accounts.user(ergo, role)), target, newUser, newCompany);
+			assertAdminOnly(accounts.bearer(accounts.user(ergo, role)), target, newUser);
 		}
-		assertAdminOnly(accounts.bearer(accounts.user(customerA, Role.CUSTOMER_KAM)), target, newUser, newCompany);
-		assertAdminOnly(accounts.bearer(accounts.user(supplierX, Role.SUPPLIER_KAM)), target, newUser, newCompany);
-
-		mvc.perform(get("/api/companies").header(HttpHeaders.AUTHORIZATION,
-					accounts.bearer(accounts.user(customerA, Role.CUSTOMER_KAM))))
-			.andExpect(status().isForbidden());
+		assertAdminOnly(accounts.bearer(accounts.user(customerA, Role.CUSTOMER_KAM)), target, newUser);
+		assertAdminOnly(accounts.bearer(accounts.user(supplierX, Role.SUPPLIER_KAM)), target, newUser);
 	}
 
-	private void assertAdminOnly(String token, User target, String newUser, String newCompany) throws Exception {
+	private void assertAdminOnly(String token, User target, String newUser) throws Exception {
 		mvc.perform(json(post("/api/users"), newUser, token)).andExpect(status().isForbidden());
 		mvc.perform(json(put("/api/users/{id}/roles", target.id), "{\"roles\": [\"CUSTOMER_KAM\"]}", token))
 			.andExpect(status().isForbidden());
@@ -245,7 +239,8 @@ class AuthAndAccessTests {
 			.andExpect(status().isForbidden());
 		mvc.perform(post("/api/users/{id}/reset-password", target.id).header(HttpHeaders.AUTHORIZATION, token))
 			.andExpect(status().isForbidden());
-		mvc.perform(json(post("/api/companies"), newCompany, token)).andExpect(status().isForbidden());
+		mvc.perform(json(put("/api/users/{id}/accounts", target.id), "{\"customerIds\": []}", token))
+			.andExpect(status().isForbidden());
 	}
 
 	@Test

@@ -22,7 +22,7 @@ interface UserRepository extends Repository<User, Long> {
 
 	/** Record scope lives in the query: companyId null = every company (ERGO roles), else only that company. */
 	@Query("""
-			select u from User u left join fetch u.roles
+			select u from User u left join fetch u.roles left join fetch u.accountIds
 			where (:companyId is null or u.companyId = :companyId)
 			order by u.firstName, u.lastName""")
 	List<User> findAllVisible(Long companyId);

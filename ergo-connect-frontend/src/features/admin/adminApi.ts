@@ -13,6 +13,8 @@ export interface User {
   active: boolean
   roles: Role[]
   defaultRole: Role | null
+  /** Customer accounts of an ERGO Key Account Manager */
+  accountIds: number[]
   lastLoginAt: string | null
 }
 
@@ -23,28 +25,31 @@ export interface UserProfile {
   mobile: string | null
 }
 
-export interface Company {
+export interface MasterField {
+  key: string
+  label: string
+  maxLength: number
+  /** Non-empty = required choice */
+  choices: string[]
+}
+
+export interface MasterList {
+  key: string
+  title: string
+  fields: MasterField[]
+}
+
+export interface MasterEntry {
   id: number
   code: string
   name: string
-  type: CompanyType
-  addressLine1: string | null
-  addressLine2: string | null
-  city: string | null
-  state: string | null
-  country: string | null
-  postalCode: string | null
-  taxId: string | null
-  website: string | null
-  primaryContactName: string | null
-  primaryContactEmail: string | null
-  primaryContactPhone: string | null
   active: boolean
+  fields: Record<string, string | null>
 }
 
-export type CompanyInput = Omit<Company, 'id'>
+export type MasterEntryInput = Omit<MasterEntry, 'id'> & { list: string }
 
-const adminApi = api.enhanceEndpoints({ addTagTypes: ['User', 'Company'] }).injectEndpoints({
+const adminApi = api.enhanceEndpoints({ addTagTypes: ['User', 'MasterData'] }).injectEndpoints({
   endpoints: (build) => ({
     users: build.query<User[], void>({ query: () => '/users', providesTags: ['User'] }),
     roles: build.query<RoleOption[], void>({ query: () => '/roles' }),
@@ -63,6 +68,10 @@ const adminApi = api.enhanceEndpoints({ addTagTypes: ['User', 'Company'] }).inje
       query: ({ id, ...body }) => ({ url: `/users/${id}/roles`, method: 'PUT', body }),
       invalidatesTags: ['User'],
     }),
+    setUserAccounts: build.mutation<User, { id: number; customerIds: number[] }>({
+      query: ({ id, ...body }) => ({ url: `/users/${id}/accounts`, method: 'PUT', body }),
+      invalidatesTags: ['User'],
+    }),
     setUserActive: build.mutation<User, { id: number; active: boolean }>({
       query: ({ id, ...body }) => ({ url: `/users/${id}/active`, method: 'PUT', body }),
       invalidatesTags: ['User'],
@@ -71,14 +80,18 @@ const adminApi = api.enhanceEndpoints({ addTagTypes: ['User', 'Company'] }).inje
       query: (id) => ({ url: `/users/${id}/reset-password`, method: 'POST' }),
       invalidatesTags: ['User'],
     }),
-    companies: build.query<Company[], void>({ query: () => '/companies', providesTags: ['Company'] }),
-    createCompany: build.mutation<Company, CompanyInput>({
-      query: (body) => ({ url: '/companies', method: 'POST', body }),
-      invalidatesTags: ['Company'],
+    masterLists: build.query<MasterList[], void>({ query: () => '/master-data' }),
+    masterEntries: build.query<MasterEntry[], string>({
+      query: (list) => `/master-data/${list}`,
+      providesTags: (_result, _error, list) => [{ type: 'MasterData', id: list }],
     }),
-    updateCompany: build.mutation<Company, Company>({
-      query: ({ id, ...body }) => ({ url: `/companies/${id}`, method: 'PUT', body }),
-      invalidatesTags: ['Company', 'User'], // user rows show company names
+    createMasterEntry: build.mutation<MasterEntry, MasterEntryInput>({
+      query: ({ list, ...body }) => ({ url: `/master-data/${list}`, method: 'POST', body }),
+      invalidatesTags: (_result, _error, { list }) => [{ type: 'MasterData', id: list }],
+    }),
+    updateMasterEntry: build.mutation<MasterEntry, MasterEntryInput & { id: number }>({
+      query: ({ list, id, ...body }) => ({ url: `/master-data/${list}/${id}`, method: 'PUT', body }),
+      invalidatesTags: (_result, _error, { list }) => [{ type: 'MasterData', id: list }],
     }),
   }),
 })
@@ -89,9 +102,11 @@ export const {
   useCreateUserMutation,
   useUpdateUserMutation,
   useSetUserRolesMutation,
+  useSetUserAccountsMutation,
   useSetUserActiveMutation,
   useResetUserPasswordMutation,
-  useCompaniesQuery,
-  useCreateCompanyMutation,
-  useUpdateCompanyMutation,
+  useMasterListsQuery,
+  useMasterEntriesQuery,
+  useCreateMasterEntryMutation,
+  useUpdateMasterEntryMutation,
 } = adminApi

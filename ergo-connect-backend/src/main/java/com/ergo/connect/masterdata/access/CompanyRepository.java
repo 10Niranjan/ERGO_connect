@@ -8,7 +8,7 @@ import org.springframework.data.repository.Repository;
 
 /**
  * Package-private and declared method by method (no JpaRepository), so nothing outside this package can read
- * companies unscoped. ponytail: reads are ERGO-only for now; scoped customer/supplier views arrive with SRS §10.2/10.3.
+ * companies unscoped. Record scope is applied by CompanyService.
  */
 interface CompanyRepository extends Repository<Company, Long> {
 
@@ -17,6 +17,8 @@ interface CompanyRepository extends Repository<Company, Long> {
 	Optional<Company> findById(Long id);
 
 	List<Company> findByIdIn(Collection<Long> ids);
+
+	List<Company> findByIdInOrderByNameAsc(Collection<Long> ids);
 
 	List<Company> findAllByOrderByNameAsc();
 

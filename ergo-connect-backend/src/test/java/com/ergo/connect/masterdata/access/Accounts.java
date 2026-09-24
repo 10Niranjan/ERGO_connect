@@ -46,6 +46,7 @@ class Accounts {
 		company.code = "T" + SEQ.incrementAndGet();
 		company.name = "Test " + type + " " + company.code;
 		company.type = type;
+		company.status = CompanyStatus.ACTIVE;
 		return companies.save(company);
 	}
 

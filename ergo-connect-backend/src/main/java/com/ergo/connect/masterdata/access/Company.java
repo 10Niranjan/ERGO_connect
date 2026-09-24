@@ -62,7 +62,12 @@ class Company {
 
 	String primaryContactPhone;
 
-	boolean active = true;
+	/** Changed only through CompanyService's approval and activation actions (audited with their comment). */
+	@Enumerated(EnumType.STRING)
+	CompanyStatus status;
+
+	@Column(updatable = false)
+	Long createdByUserId;
 
 	@CreationTimestamp
 	@Column(updatable = false)

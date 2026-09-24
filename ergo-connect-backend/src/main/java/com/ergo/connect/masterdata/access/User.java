@@ -2,6 +2,7 @@ package com.ergo.connect.masterdata.access;
 
 import java.time.Instant;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.Set;
 
 import org.hibernate.annotations.CreationTimestamp;
@@ -59,6 +60,12 @@ class User {
 	@Enumerated(EnumType.STRING)
 	@Column(name = "default_role_code")
 	Role defaultRole;
+
+	/** ERGO Key Account Manager's customer accounts (user_account_assignments). Audited explicitly. */
+	@ElementCollection
+	@CollectionTable(name = "user_account_assignments", joinColumns = @JoinColumn(name = "user_id"))
+	@Column(name = "customer_company_id")
+	Set<Long> accountIds = new HashSet<>();
 
 	boolean active = true;
 

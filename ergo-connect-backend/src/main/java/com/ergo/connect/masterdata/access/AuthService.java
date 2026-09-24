@@ -90,7 +90,7 @@ public class AuthService {
 			throw ApiException.unauthorized(INVALID_LOGIN);
 		}
 		Company company = companyOf(user);
-		if (!user.active || !company.active) {
+		if (!user.active || company.status != CompanyStatus.ACTIVE) {
 			throw ApiException.unauthorized(INVALID_LOGIN);
 		}
 		Role role = startingRole(user, null);
@@ -107,7 +107,7 @@ public class AuthService {
 			.orElseThrow(() -> ApiException.unauthorized(SESSION_EXPIRED));
 		User user = users.findById(session.userId()).orElseThrow();
 		Company company = companyOf(user);
-		if (!user.active || !company.active) {
+		if (!user.active || company.status != CompanyStatus.ACTIVE) {
 			sessions.revoke(sessionToken);
 			throw ApiException.unauthorized(SESSION_EXPIRED);
 		}

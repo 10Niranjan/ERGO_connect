@@ -1,7 +1,10 @@
 package com.ergo.connect.masterdata.access;
 
+import java.util.Set;
+
 import com.ergo.connect.common.security.CompanyType;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -13,20 +16,29 @@ public final class CompanyDtos {
 	private CompanyDtos() {
 	}
 
-	/** Code and type are fixed once the company exists. {@code active} null means "unchanged" (true on create). */
-	public record CompanyRequest(@NotBlank @Pattern(regexp = "[A-Z0-9][A-Z0-9_-]{1,29}") String code,
-			@NotBlank @Size(max = 200) String name, @NotNull CompanyType type, @Size(max = 200) String addressLine1,
+	/** The editable part of a company (SRS §13.2.1). Code, type and status are never edited through it. */
+	public record CompanyProfile(@NotBlank @Size(max = 200) String name, @Size(max = 200) String addressLine1,
 			@Size(max = 200) String addressLine2, @Size(max = 100) String city, @Size(max = 100) String state,
 			@Size(max = 100) String country, @Size(max = 20) String postalCode, @Size(max = 50) String taxId,
 			@Size(max = 200) String website, @Size(max = 200) String primaryContactName,
-			@Email @Size(max = 254) String primaryContactEmail, @Size(max = 30) String primaryContactPhone,
-			Boolean active) {
+			@Email @Size(max = 254) String primaryContactEmail, @Size(max = 30) String primaryContactPhone) {
 	}
 
-	public record CompanyResponse(long id, String code, String name, CompanyType type, String addressLine1,
-			String addressLine2, String city, String state, String country, String postalCode, String taxId,
-			String website, String primaryContactName, String primaryContactEmail, String primaryContactPhone,
-			boolean active) {
+	public record CompanyRequest(@NotBlank @Pattern(regexp = "[A-Z0-9][A-Z0-9_-]{1,29}") String code,
+			@NotNull CompanyType type, @NotNull @Valid CompanyProfile profile) {
+	}
+
+	/** Comment is required to reject and optional to approve; it is stored with the audit trail. */
+	public record ReviewRequest(@Size(max = 1000) String comment) {
+	}
+
+	/** What the caller may do with this company now (by role and status), so the UI shows only valid buttons. */
+	public enum CompanyAction {
+		EDIT, APPROVE, REJECT, RESUBMIT, ACTIVATE, DEACTIVATE
+	}
+
+	public record CompanyResponse(long id, String code, CompanyType type, CompanyStatus status,
+			CompanyProfile profile, Set<CompanyAction> actions) {
 	}
 
 }

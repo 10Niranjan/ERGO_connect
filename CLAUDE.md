@@ -14,7 +14,7 @@ Production B2B platform for ERGO: RFQ → Quotation → NPD → OFP → Quality 
 
 ## Build order (do not skip ahead)
 
-Phase 0 foundation ✅ → 1a access model (login, roles, company scope, audit) ✅ → 1b master data + customer/supplier management → 2 RFQ + Quotation → 3 NPD (manual conversion queue) → 4 OFP → 5 Quality → 6 Documents + Communication → 7 Dashboards + audit refinement → 8 hardening/deploy. Before starting a module, check that its prerequisites exist. For example, RFQ needs companies, users, roles, currencies and payment terms.
+Phase 0 foundation ✅ → 1a access model (login, roles, company scope, audit) ✅ → 1b master data + customer/supplier management ✅ → 2 RFQ + Quotation → 3 NPD (manual conversion queue) → 4 OFP → 5 Quality → 6 Documents + Communication → 7 Dashboards + audit refinement → 8 hardening/deploy. Before starting a module, check that its prerequisites exist. For example, RFQ needs companies, users, roles, currencies and payment terms.
 
 ## Non-negotiables (every change)
 
@@ -26,6 +26,7 @@ Phase 0 foundation ✅ → 1a access model (login, roles, company scope, audit) 
 - **RFQ → NPD is manual.** Approval only puts the RFQ in the "ready for conversion" queue.
 - **Currency is tagged on every money row** (INR/USD/EUR/RMB).
 - Modules talk only via `<module>.api`. `ModuleBoundaryTest` fails the build otherwise.
+- Record responses list the caller's allowed actions (see `CompanyDtos.CompanyAction`), computed by the same checks that enforce them. The UI renders only those buttons.
 - Flyway migrations are immutable once committed. Add a new `V<n>__<module>_<change>.sql` instead.
 - No secrets in the repo. Prod config reads env vars only.
 
@@ -38,8 +39,9 @@ The backend needs **JDK 21**. If `JAVA_HOME` points to 17, prefix commands with 
 ./mvnw verify                                             # all tests
 docker compose -f docker/docker-compose.local.yml up -d   # local Postgres + Redis
 ./mvnw spring-boot:run                                    # http://localhost:8080 (swagger: /swagger-ui.html)
-# dev profile seeds demo users, all with password ErgoDev#2026: admin@ergo.dev, rfq@ergo.dev (2 roles),
-# buyer@acme.dev, buyer@bharat.dev, sales@precision.dev, sales@shakti.dev
+# dev profile seeds demo users, all with password ErgoDev#2026: admin@ergo.dev, management@ergo.dev,
+# rfq@ergo.dev (2 roles), kam@ergo.dev (KAM for Acme only), buyer@acme.dev, buyer@bharat.dev,
+# sales@precision.dev, sales@shakti.dev, plus sample materials, processes, coatings and payment terms
 
 # frontend (from ergo-connect-frontend/)
 npm run dev      # http://localhost:5173, proxies /api → :8080
