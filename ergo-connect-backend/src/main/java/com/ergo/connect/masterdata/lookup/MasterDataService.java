@@ -4,6 +4,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -72,6 +73,24 @@ public class MasterDataService {
 		return jdbc.query("SELECT %s, %s, %s FROM %s WHERE active ORDER BY %s".formatted(list.idColumn,
 				list.codeColumn, list.nameColumn, list.table, list.codeColumn),
 				(rs, n) -> new Option(rs.getLong(1), rs.getString(2), rs.getString(3)));
+	}
+
+	public boolean isActive(MasterList list, long id) {
+		return Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS (SELECT 1 FROM %s WHERE %s = ? AND active)"
+			.formatted(list.table, list.idColumn), Boolean.class, id));
+	}
+
+	/** Code and name by id, inactive entries included. */
+	public Map<Long, Option> describe(MasterList list, Collection<Long> ids) {
+		if (ids.isEmpty()) {
+			return Map.of();
+		}
+		Map<Long, Option> result = new LinkedHashMap<>();
+		jdbc.query("SELECT %s, %s, %s FROM %s WHERE %s = ANY (?)".formatted(list.idColumn, list.codeColumn,
+				list.nameColumn, list.table, list.idColumn), rs -> {
+					result.put(rs.getLong(1), new Option(rs.getLong(1), rs.getString(2), rs.getString(3)));
+				}, (Object) ids.toArray(Long[]::new));
+		return result;
 	}
 
 	public Entry create(MasterList list, EntryRequest request) {

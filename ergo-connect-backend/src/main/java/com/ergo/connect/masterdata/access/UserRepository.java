@@ -1,5 +1,6 @@
 package com.ergo.connect.masterdata.access;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -19,6 +20,8 @@ interface UserRepository extends Repository<User, Long> {
 	Optional<User> findByEmail(String email);
 
 	boolean existsByEmailIgnoreCase(String email);
+
+	List<User> findByIdIn(Collection<Long> ids);
 
 	/** Record scope lives in the query: companyId null = every company (ERGO roles), else only that company. */
 	@Query("""

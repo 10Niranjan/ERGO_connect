@@ -1,5 +1,8 @@
 package com.ergo.connect.common.audit;
 
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -23,6 +26,11 @@ public class AuditLogService {
 	private static final String BASE_PACKAGE = "com.ergo.connect.";
 
 	private static final Object REASON = new Object();
+
+	/** One row of a record's audit trail (SRS §15.5): when, who, in which role, what changed and why. */
+	public record AuditEntry(Instant at, String user, String role, String event, String field, String oldValue,
+			String newValue, String reason, String channel) {
+	}
 
 	private final JdbcTemplate jdbc;
 
@@ -71,6 +79,18 @@ public class AuditLogService {
 				actor.map(CurrentUser::userId).orElse(null), actor.map(u -> u.role().name()).orElse(null),
 				actor.map(CurrentUser::companyId).orElse(null), channel(request),
 				request == null ? null : request.getRemoteAddr());
+	}
+
+	/** The audit trail of one record, oldest first. Callers decide who may read it. */
+	public List<AuditEntry> history(String module, String entity, long recordId) {
+		return jdbc.query("""
+				SELECT a.changed_at, u.first_name || ' ' || u.last_name AS user_name, a.changed_by_role_code, a.event_type,
+				       a.field_name, a.old_value, a.new_value, a.action_reason, a.source_channel
+				FROM audit_logs a LEFT JOIN users u ON u.user_id = a.changed_by_user_id
+				WHERE a.module_name = ? AND a.entity_name = ? AND a.record_id = ?
+				ORDER BY a.audit_log_id""", (rs, n) -> new AuditEntry(rs.getObject(1, OffsetDateTime.class).toInstant(),
+				rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5), rs.getString(6), rs.getString(7),
+				rs.getString(8), rs.getString(9)), module, entity, recordId);
 	}
 
 	private static String moduleOf(Class<?> entity) {

@@ -22,5 +22,19 @@ export const COMPANY_MANAGERS: Role[] = ['ERGO_ADMIN', 'ERGO_MANAGEMENT', 'ERGO_
 
 export const COMPANY_CREATORS: Role[] = ['ERGO_ADMIN', 'ERGO_RFQ', 'ERGO_KAM']
 
+/** SRS §10.4: who works with RFQs (suppliers join when RFQs are sent to them, Phase 2b). */
+export const RFQ_VIEWERS: Role[] = [
+  'ERGO_ADMIN',
+  'ERGO_MANAGEMENT',
+  'ERGO_RFQ',
+  'ERGO_KAM',
+  'ERGO_NPD',
+  'CUSTOMER_RFQ',
+  'CUSTOMER_KAM',
+  'CUSTOMER_MANAGEMENT',
+]
+
+export const RFQ_CREATORS: Role[] = ['ERGO_ADMIN', 'ERGO_MANAGEMENT', 'ERGO_RFQ', 'ERGO_KAM', 'CUSTOMER_RFQ', 'CUSTOMER_KAM', 'CUSTOMER_MANAGEMENT']
+
 /** SRS §10.12 */
 export const MASTER_DATA_VIEWERS: Role[] = ['ERGO_ADMIN', 'ERGO_MANAGEMENT']

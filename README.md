@@ -43,5 +43,6 @@ CI (GitHub Actions) runs both on every push.
 - [x] Phase 0: foundation (scaffold, security shell, append-only audit log, module-boundary test, CI)
 - [x] Phase 1a: login, one active role per session, company-scoped access, user/company admin, audit trail
 - [x] Phase 1b: master data (currencies, materials, processes, coatings, payment terms, incoterms) + customer/supplier management with approval, KAM account scope, self-service company profile
-- [ ] Phase 2: RFQ + Quotation
+- [x] Phase 2a: RFQs: create (customer or ERGO), process flow, drawings with visibility, ERGO review, clarification, validation, audit trail
+- [ ] Phase 2b/2c: supplier quotes, comparison, ERGO quote to customer, customer decision
 - [ ] Phases 3–8: NPD, OFP, Quality, Documents/Communication, Dashboards, Hardening (see `ARCHITECTURE.md` §6)

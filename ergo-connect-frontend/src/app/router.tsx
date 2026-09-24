@@ -1,5 +1,5 @@
 import { createBrowserRouter, Navigate } from 'react-router'
-import { COMPANY_MANAGERS, EXTERNAL_ROLES, MASTER_DATA_VIEWERS } from '../auth/access'
+import { COMPANY_MANAGERS, EXTERNAL_ROLES, MASTER_DATA_VIEWERS, RFQ_CREATORS, RFQ_VIEWERS } from '../auth/access'
 import { ChangePasswordPage } from '../auth/pages/ChangePasswordPage'
 import { LoginPage } from '../auth/pages/LoginPage'
 import { RoleSelectPage } from '../auth/pages/RoleSelectPage'
@@ -10,6 +10,9 @@ import { UsersPage } from '../features/admin/pages/UsersPage'
 import { CompaniesPage } from '../features/companies/pages/CompaniesPage'
 import { MyCompanyPage } from '../features/companies/pages/MyCompanyPage'
 import { DashboardPage } from '../features/dashboard/pages/DashboardPage'
+import { RfqDetailPage } from '../features/rfq/pages/RfqDetailPage'
+import { RfqEditPage } from '../features/rfq/pages/RfqEditPage'
+import { RfqListPage } from '../features/rfq/pages/RfqListPage'
 import { AppShell } from '../shared/layout/AppShell'
 
 // Route guards only hide screens; the backend enforces every permission and record scope itself.
@@ -24,6 +27,20 @@ export const router = createBrowserRouter([
         element: <AppShell />,
         children: [
           { index: true, element: <DashboardPage /> },
+          {
+            element: <RequireRole roles={RFQ_VIEWERS} />,
+            children: [
+              { path: '/rfqs', element: <RfqListPage /> },
+              { path: '/rfqs/:id', element: <RfqDetailPage /> },
+            ],
+          },
+          {
+            element: <RequireRole roles={RFQ_CREATORS} />,
+            children: [
+              { path: '/rfqs/new', element: <RfqEditPage /> },
+              { path: '/rfqs/:id/edit', element: <RfqEditPage /> },
+            ],
+          },
           {
             element: <RequireRole roles={COMPANY_MANAGERS} />,
             children: [{ path: '/companies', element: <CompaniesPage /> }],

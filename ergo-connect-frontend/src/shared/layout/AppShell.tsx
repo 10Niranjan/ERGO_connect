@@ -17,13 +17,14 @@ import {
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router'
 import { useAppSelector } from '../../app/store'
-import { COMPANY_MANAGERS, EXTERNAL_ROLES, MASTER_DATA_VIEWERS } from '../../auth/access'
+import { COMPANY_MANAGERS, EXTERNAL_ROLES, MASTER_DATA_VIEWERS, RFQ_VIEWERS } from '../../auth/access'
 import { useLogoutMutation, useSwitchRoleMutation } from '../../auth/authApi'
 import type { Role } from '../../auth/authSlice'
 
 // Menu entries per active role (SRS 12.15). Modules add their entries as they are built.
 const NAV: { label: string; to: string; roles?: Role[] }[] = [
   { label: 'Dashboard', to: '/' },
+  { label: 'RFQs', to: '/rfqs', roles: RFQ_VIEWERS },
   { label: 'Customers & suppliers', to: '/companies', roles: COMPANY_MANAGERS },
   { label: 'Company profile', to: '/company', roles: EXTERNAL_ROLES },
   { label: 'Users', to: '/admin/users', roles: ['ERGO_ADMIN'] },
@@ -64,7 +65,7 @@ export function AppShell() {
                 key={item.to}
                 component={NavLink}
                 to={item.to}
-                end
+                end={item.to === '/'}
                 color="inherit"
                 sx={{ '&.active': { bgcolor: 'rgba(255,255,255,0.16)' } }}
               >

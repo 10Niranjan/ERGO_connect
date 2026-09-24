@@ -14,7 +14,7 @@ Production B2B platform for ERGO: RFQ → Quotation → NPD → OFP → Quality 
 
 ## Build order (do not skip ahead)
 
-Phase 0 foundation ✅ → 1a access model (login, roles, company scope, audit) ✅ → 1b master data + customer/supplier management ✅ → 2 RFQ + Quotation → 3 NPD (manual conversion queue) → 4 OFP → 5 Quality → 6 Documents + Communication → 7 Dashboards + audit refinement → 8 hardening/deploy. Before starting a module, check that its prerequisites exist. For example, RFQ needs companies, users, roles, currencies and payment terms.
+Phase 0 foundation ✅ → 1a access model (login, roles, company scope, audit) ✅ → 1b master data + customer/supplier management ✅ → 2 RFQ + Quotation (2a RFQ core ✅, 2b supplier quotes, 2c comparison + customer decision) → 3 NPD (manual conversion queue) → 4 OFP → 5 Quality → 6 Documents + Communication → 7 Dashboards + audit refinement → 8 hardening/deploy. Before starting a module, check that its prerequisites exist. For example, RFQ needs companies, users, roles, currencies and payment terms.
 
 ## Non-negotiables (every change)
 

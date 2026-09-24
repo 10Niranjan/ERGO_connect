@@ -10,6 +10,10 @@ spring:
   mvc:
     problemdetails:
       enabled: true # RFC 9457 error bodies, no stack traces
+  servlet:
+    multipart:
+      max-file-size: 50MB # drawings and 3D models; files are held in memory while stored
+      max-request-size: 51MB
 
 management:
   endpoints:
