@@ -1,5 +1,5 @@
 import { createBrowserRouter, Navigate } from 'react-router'
-import { COMPANY_MANAGERS, EXTERNAL_ROLES, MASTER_DATA_VIEWERS, QUOTE_VIEWERS, RFQ_CREATORS, RFQ_VIEWERS, SUPPLIER_QUOTERS } from '../auth/access'
+import { COMPANY_MANAGERS, EXTERNAL_ROLES, MASTER_DATA_VIEWERS, NPD_VIEWERS, QUOTE_VIEWERS, RFQ_CREATORS, RFQ_VIEWERS, SUPPLIER_QUOTERS } from '../auth/access'
 import { ChangePasswordPage } from '../auth/pages/ChangePasswordPage'
 import { LoginPage } from '../auth/pages/LoginPage'
 import { RoleSelectPage } from '../auth/pages/RoleSelectPage'
@@ -10,6 +10,9 @@ import { UsersPage } from '../features/admin/pages/UsersPage'
 import { CompaniesPage } from '../features/companies/pages/CompaniesPage'
 import { MyCompanyPage } from '../features/companies/pages/MyCompanyPage'
 import { DashboardPage } from '../features/dashboard/pages/DashboardPage'
+import { ConversionQueuePage } from '../features/npd/pages/ConversionQueuePage'
+import { NpdDetailPage } from '../features/npd/pages/NpdDetailPage'
+import { NpdListPage } from '../features/npd/pages/NpdListPage'
 import { AssignedRfqsPage } from '../features/quotation/pages/AssignedRfqsPage'
 import { QuotePage } from '../features/quotation/pages/QuotePage'
 import { RfqDetailPage } from '../features/rfq/pages/RfqDetailPage'
@@ -45,6 +48,14 @@ export const router = createBrowserRouter([
           },
           { element: <RequireRole roles={SUPPLIER_QUOTERS} />, children: [{ path: '/quotes', element: <AssignedRfqsPage /> }] },
           { element: <RequireRole roles={QUOTE_VIEWERS} />, children: [{ path: '/quotes/:id', element: <QuotePage /> }] },
+          {
+            element: <RequireRole roles={NPD_VIEWERS} />,
+            children: [
+              { path: '/npd', element: <NpdListPage /> },
+              { path: '/npd/conversion-queue', element: <ConversionQueuePage /> },
+              { path: '/npd/:id', element: <NpdDetailPage /> },
+            ],
+          },
           {
             element: <RequireRole roles={COMPANY_MANAGERS} />,
             children: [{ path: '/companies', element: <CompaniesPage /> }],

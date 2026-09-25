@@ -28,6 +28,7 @@ import com.ergo.connect.common.security.CurrentUser;
 import com.ergo.connect.documents.api.DocumentStore;
 import com.ergo.connect.documents.api.DocumentStore.DocumentInfo;
 import com.ergo.connect.documents.api.DocumentStore.Visibility;
+import com.ergo.connect.masterdata.api.Directory;
 import com.ergo.connect.masterdata.api.MasterDataApi;
 import com.ergo.connect.masterdata.api.MasterDataApi.Named;
 import com.ergo.connect.masterdata.api.MasterDataApi.Ref;
@@ -63,11 +64,15 @@ class RfqApiService implements RfqApi {
 
 	private final DocumentStore documents;
 
-	RfqApiService(RfqRepository rfqs, RfqService rfqService, MasterDataApi masterData, DocumentStore documents) {
+	private final Directory directory;
+
+	RfqApiService(RfqRepository rfqs, RfqService rfqService, MasterDataApi masterData, DocumentStore documents,
+			Directory directory) {
 		this.rfqs = rfqs;
 		this.rfqService = rfqService;
 		this.masterData = masterData;
 		this.documents = documents;
+		this.directory = directory;
 	}
 
 	@Override
@@ -183,6 +188,28 @@ class RfqApiService implements RfqApi {
 			case REVISION_REQUESTED -> CUSTOMER_REVISION_REQUESTED;
 			case DECLINED -> CUSTOMER_DECLINED;
 		};
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public List<ApprovedRfq> customerApproved() {
+		CurrentUser me = CurrentUser.get();
+		List<Rfq> approved = switch (me.role()) {
+			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_RFQ, ERGO_NPD ->
+				rfqs.findByStatusInOrderByIdDesc(Set.of(CUSTOMER_APPROVED));
+			case ERGO_KAM -> {
+				Set<Long> accounts = directory.accountsOf(me.userId());
+				yield accounts.isEmpty() ? List.of()
+						: rfqs.findByStatusInOrderByIdDesc(Set.of(CUSTOMER_APPROVED)).stream()
+							.filter(r -> accounts.contains(r.customerCompanyId))
+							.toList();
+			}
+			default -> List.of(); // no RFQ visibility for this role, so nothing to convert either
+		};
+		return approved.stream()
+			.map(r -> new ApprovedRfq(r.id, r.number, r.customerCompanyId, r.partNumber, r.revision, r.description,
+					r.updatedAt))
+			.toList();
 	}
 
 	private static Set<Long> ids(Collection<Rfq> rfqs, Function<Rfq, Long> field) {

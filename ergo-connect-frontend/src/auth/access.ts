@@ -44,3 +44,8 @@ export const QUOTE_VIEWERS: Role[] = ['ERGO_ADMIN', 'ERGO_MANAGEMENT', 'ERGO_RFQ
 
 /** SRS §10.12 */
 export const MASTER_DATA_VIEWERS: Role[] = ['ERGO_ADMIN', 'ERGO_MANAGEMENT']
+
+/** SRS §10.6: ERGO-only in 3a — no customer/supplier NPD screen exists yet. */
+export const NPD_VIEWERS: Role[] = ['ERGO_ADMIN', 'ERGO_MANAGEMENT', 'ERGO_RFQ', 'ERGO_KAM', 'ERGO_NPD']
+
+export const NPD_EDITORS: Role[] = ['ERGO_ADMIN', 'ERGO_NPD']

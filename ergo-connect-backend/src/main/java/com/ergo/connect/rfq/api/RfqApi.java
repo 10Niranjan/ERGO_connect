@@ -1,6 +1,7 @@
 package com.ergo.connect.rfq.api;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -81,5 +82,20 @@ public interface RfqApi {
 
 	/** SRS §14.4: the customer's answer (customer approved / revision requested / declined); 409 if not awaited. */
 	void customerResponded(long rfqId, CustomerResponse response);
+
+	/**
+	 * A customer-approved RFQ, eligible for manual NPD conversion (SRS §12.8.2, §14.5). {@code approvedAt} is the RFQ's
+	 * last-updated time while approved: an approximation (the RFQ has no dedicated approval timestamp), close enough
+	 * for the conversion queue's display and safe to use since nothing else changes a customer-approved RFQ in 3a.
+	 */
+	record ApprovedRfq(long id, String number, long customerCompanyId, String partNumber, String revision,
+			String description, Instant approvedAt) {
+	}
+
+	/**
+	 * Customer-approved RFQs in the caller's ERGO scope, for the "ready for NPD conversion" queue. Empty for anyone
+	 * else (customers, suppliers, and ERGO roles with no RFQ visibility).
+	 */
+	List<ApprovedRfq> customerApproved();
 
 }

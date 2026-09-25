@@ -46,4 +46,5 @@ CI (GitHub Actions) runs both on every push.
 - [x] Phase 2a: RFQs: create (customer or ERGO), process flow, drawings with visibility, ERGO review, clarification, validation, audit trail
 - [x] Phase 2b: supplier float (invite with due date), supplier quotes (tooling lines, cost breakdown, own process route), clarification, regret, re-open with reason, immutable versions with a change view, RFQ close
 - [x] Phase 2c: exchange rates, quote comparison (converted prices, best-value highlighting, scores, shortlist/select), quotes to the customer (supplier quote as-is or ERGO quote with hidden margin), customer approve/revise/decline
-- [ ] Phases 3–8: NPD, OFP, Quality, Documents/Communication, Dashboards, Hardening (see `ARCHITECTURE.md` §6)
+- [x] Phase 3a: NPD — manual RFQ→NPD conversion queue, 9-stage workflow (Pending Conversion → Closed), stage history, ERGO-only activities with mandatory-gate on Close Stage, project edit (owner, risk, sample dates)
+- [ ] Phases 3b–8: NPD supplier/customer participation, OFP, Quality, Documents/Communication, Dashboards, Hardening (see `ARCHITECTURE.md` §6)
