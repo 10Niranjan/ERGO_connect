@@ -16,4 +16,15 @@ public enum QuoteStatus {
 	/** The supplier may still work on its quote. */
 	static final Set<QuoteStatus> EDITABLE = EnumSet.of(NOT_STARTED, DRAFT_SAVED, CLARIFICATION_REQUESTED, REOPENED);
 
+	/** ERGO's evaluation of a submitted quote (SRS §17.3). ERGO-internal. */
+	static final Set<QuoteStatus> DECIDED = EnumSet.of(SHORTLISTED, SELECTED_FOR_CUSTOMER, NOT_SELECTED);
+
+	/**
+	 * The status a supplier sees: ERGO's shortlisting and selection are internal rankings (CLAUDE.md), so a supplier
+	 * sees its quote as submitted, or resubmitted from the second version on.
+	 */
+	public QuoteStatus forSupplier(int version) {
+		return DECIDED.contains(this) ? (version > 1 ? RESUBMITTED : SUBMITTED) : this;
+	}
+
 }

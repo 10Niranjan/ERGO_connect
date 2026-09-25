@@ -8,14 +8,33 @@ import java.util.Map;
 import com.ergo.connect.documents.api.DocumentStore.DocumentInfo;
 
 /**
- * What other modules may ask of the RFQ module (the quotation module, for supplier work). Implemented inside
- * rfq.domain. The RFQ module applies its own record scope and status rules behind these calls.
+ * What other modules may ask of the RFQ module (the quotation module: supplier work, comparison, quotes to the
+ * customer). Implemented inside rfq.domain, which applies its own record scope and status rules behind these calls.
  */
 public interface RfqApi {
 
-	/** An RFQ as an ERGO user in whose scope it is sees it for supplier work. */
+	/**
+	 * An RFQ as an ERGO user in whose scope it is sees it for quotation work. {@code evaluating}: ERGO may score and
+	 * shortlist quotes; {@code offering}: ERGO may send the customer a quote (not while one awaits an answer).
+	 */
 	record RfqRef(long id, String number, long customerCompanyId, String partNumber, String revision,
-			String description, long currencyId, boolean acceptsInvitations, boolean quotingOpen) {
+			String description, long currencyId, boolean acceptsInvitations, boolean quotingOpen, boolean evaluating,
+			boolean offering, Targets targets) {
+	}
+
+	/** The customer's targets, in the RFQ currency. ERGO-internal: never shown to suppliers. */
+	record Targets(BigDecimal toolingCost, BigDecimal ppapPiecePrice, BigDecimal productionPiecePrice,
+			Long paymentTermId, Integer moq, Integer materialLeadTimeWeeks, Integer toolingLeadTimeDays,
+			Integer sampleLeadTimeDays, Integer productionLeadTimeDays) {
+	}
+
+	/** An RFQ as its own customer sees it for ERGO's quotes. {@code awaitingAnswer}: a sent quote may be answered. */
+	record CustomerRfqRef(long id, String number, long customerCompanyId, boolean awaitingAnswer) {
+	}
+
+	/** SRS §14.4 customer responses. */
+	enum CustomerResponse {
+		APPROVED, REVISION_REQUESTED, DECLINED
 	}
 
 	/** What a supplier may see of an RFQ. Client decision: no customer name, no targets, no notes, no remarks. */
@@ -34,6 +53,9 @@ public interface RfqApi {
 	/** For the current ERGO user; 404 when the RFQ is outside their scope. */
 	RfqRef forErgo(long rfqId);
 
+	/** For the current customer user; 404 unless it is their own company's RFQ. */
+	CustomerRfqRef forCustomer(long rfqId);
+
 	/** Callers must have checked the supplier's invitation first. */
 	SupplierRfq forSupplier(long rfqId);
 
@@ -50,5 +72,14 @@ public interface RfqApi {
 	 * {@code awaited}: suppliers still working (not yet submitted, or re-opened).
 	 */
 	void quoteProgress(long rfqId, int received, int awaited);
+
+	/** SRS §14.2 Under Comparison: ERGO has started evaluating the quotes. */
+	void comparing(long rfqId);
+
+	/** SRS §14.2 Sent to Customer; 409 unless the RFQ is ready for a quote to the customer. */
+	void sentToCustomer(long rfqId);
+
+	/** SRS §14.4: the customer's answer (customer approved / revision requested / declined); 409 if not awaited. */
+	void customerResponded(long rfqId, CustomerResponse response);
 
 }

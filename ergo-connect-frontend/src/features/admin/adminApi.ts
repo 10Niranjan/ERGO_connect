@@ -1,5 +1,6 @@
 import { api } from '../../app/store'
 import type { CompanyType, Role, RoleOption } from '../../auth/authSlice'
+import type { MasterOption } from '../../shared/masterData'
 
 export interface User {
   id: number
@@ -49,9 +50,30 @@ export interface MasterEntry {
 
 export type MasterEntryInput = Omit<MasterEntry, 'id'> & { list: string }
 
-const adminApi = api.enhanceEndpoints({ addTagTypes: ['User', 'MasterData'] }).injectEndpoints({
+/** 1 `from` = `rate` `to`, from `rateDate` on. */
+export interface ExchangeRate {
+  id: number
+  from: MasterOption
+  to: MasterOption
+  rateDate: string
+  rate: number
+  source: string | null
+  createdAt: string
+}
+
+const adminApi = api.enhanceEndpoints({ addTagTypes: ['User', 'MasterData', 'ExchangeRate'] }).injectEndpoints({
   endpoints: (build) => ({
     users: build.query<User[], void>({ query: () => '/users', providesTags: ['User'] }),
+    exchangeRates: build.query<ExchangeRate[], void>({ query: () => '/master-data/exchange-rates', providesTags: ['ExchangeRate'] }),
+    // rates feed the comparison's converted prices (tag shared with the comparison query)
+    createExchangeRate: build.mutation<ExchangeRate, { fromCurrencyId: number; toCurrencyId: number; rateDate: string; rate: number; source: string | null }>({
+      query: (body) => ({ url: '/master-data/exchange-rates', method: 'POST', body }),
+      invalidatesTags: ['ExchangeRate'],
+    }),
+    deleteExchangeRate: build.mutation<void, number>({
+      query: (id) => ({ url: `/master-data/exchange-rates/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['ExchangeRate'],
+    }),
     roles: build.query<RoleOption[], void>({ query: () => '/roles' }),
     createUser: build.mutation<
       { user: User; temporaryPassword: string },
@@ -97,6 +119,9 @@ const adminApi = api.enhanceEndpoints({ addTagTypes: ['User', 'MasterData'] }).i
 })
 
 export const {
+  useExchangeRatesQuery,
+  useCreateExchangeRateMutation,
+  useDeleteExchangeRateMutation,
   useUsersQuery,
   useRolesQuery,
   useCreateUserMutation,

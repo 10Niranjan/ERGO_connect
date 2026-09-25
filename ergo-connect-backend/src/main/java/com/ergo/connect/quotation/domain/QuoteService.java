@@ -12,7 +12,10 @@ import static com.ergo.connect.quotation.domain.QuoteStatus.DRAFT_SAVED;
 import static com.ergo.connect.quotation.domain.QuoteStatus.NOT_STARTED;
 import static com.ergo.connect.quotation.domain.QuoteStatus.REGRETTED;
 import static com.ergo.connect.quotation.domain.QuoteStatus.REOPENED;
+import static com.ergo.connect.quotation.domain.QuoteStatus.NOT_SELECTED;
 import static com.ergo.connect.quotation.domain.QuoteStatus.RESUBMITTED;
+import static com.ergo.connect.quotation.domain.QuoteStatus.SELECTED_FOR_CUSTOMER;
+import static com.ergo.connect.quotation.domain.QuoteStatus.SHORTLISTED;
 import static com.ergo.connect.quotation.domain.QuoteStatus.SUBMITTED;
 
 import java.math.BigDecimal;
@@ -22,14 +25,12 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -50,7 +51,9 @@ import com.ergo.connect.masterdata.api.Directory.CompanyRef;
 import com.ergo.connect.masterdata.api.Directory.UserRef;
 import com.ergo.connect.masterdata.api.MasterDataApi;
 import com.ergo.connect.masterdata.api.MasterDataApi.Ref;
+import com.ergo.connect.quotation.domain.ComparisonDtos.ResponseStatus;
 import com.ergo.connect.quotation.domain.QuoteDtos.CostBreakdown;
+import com.ergo.connect.quotation.domain.QuoteDtos.Decision;
 import com.ergo.connect.quotation.domain.QuoteDtos.DocumentView;
 import com.ergo.connect.quotation.domain.QuoteDtos.ErgoQuoteRow;
 import com.ergo.connect.quotation.domain.QuoteDtos.ErgoQuoteView;
@@ -88,8 +91,20 @@ public class QuoteService {
 	/** SRS §9.1: ERGO RFQ runs the float and controls supplier quote edit permission (with Admin, Management). */
 	private static final Set<Role> ERGO_BUYERS = EnumSet.of(ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_RFQ);
 
+	/** SRS §9.1/§10.5: ERGO RFQ (and Admin) compare quotes and submit them to the customer. */
+	static final Set<Role> EVALUATORS = EnumSet.of(ERGO_ADMIN, ERGO_RFQ);
+
 	/** SRS §10.5: Supplier RFQ and Supplier KAM create, edit (when open) and submit quotes. */
 	private static final Set<Role> SUPPLIER_QUOTERS = EnumSet.of(SUPPLIER_RFQ, SUPPLIER_KAM);
+
+	/** The RFQ-side facts the rule book needs; a supplier only ever learns whether quoting is open. */
+	record RfqState(boolean quotingOpen, boolean evaluating, boolean offering) {
+
+		static RfqState of(RfqRef rfq) {
+			return new RfqState(rfq.quotingOpen(), rfq.evaluating(), rfq.offering());
+		}
+
+	}
 
 	/** A downloadable file: metadata plus content. */
 	public record DocumentFile(DocumentInfo info, byte[] content) {
@@ -113,9 +128,13 @@ public class QuoteService {
 
 	private final JsonMapper json;
 
+	private final QuoteReader reader;
+
+	private final CustomerQuoteRepository customerQuotes;
+
 	QuoteService(InvitationRepository invitations, SupplierQuoteRepository quotes, RfqApi rfqs, Directory directory,
 			MasterDataApi masterData, DocumentStore documents, AuditLogService audit, JdbcTemplate jdbc,
-			JsonMapper json) {
+			JsonMapper json, QuoteReader reader, CustomerQuoteRepository customerQuotes) {
 		this.invitations = invitations;
 		this.quotes = quotes;
 		this.rfqs = rfqs;
@@ -125,6 +144,8 @@ public class QuoteService {
 		this.audit = audit;
 		this.jdbc = jdbc;
 		this.json = json;
+		this.reader = reader;
+		this.customerQuotes = customerQuotes;
 	}
 
 	// ---------------------------------------------------------------- ERGO: the suppliers of an RFQ
@@ -134,8 +155,8 @@ public class QuoteService {
 		CurrentUser me = CurrentUser.get();
 		RfqRef rfq = rfqs.forErgo(rfqId);
 		List<Invitation> list = invitations.findByRfqIdOrderById(rfqId);
-		Map<Long, SupplierQuote> byInvitation = quotesOf(list);
-		Map<Long, QuoteData> submitted = lastSubmitted(byInvitation.values());
+		Map<Long, SupplierQuote> byInvitation = reader.byInvitation(list);
+		Map<Long, QuoteData> submitted = reader.lastSubmitted(byInvitation.values());
 		Map<Long, CompanyRef> suppliers = directory.companies(list.stream().map(i -> i.supplierCompanyId).toList());
 		List<ErgoQuoteRow> rows = list.stream().map(i -> {
 			SupplierQuote q = byInvitation.get(i.id);
@@ -191,12 +212,13 @@ public class QuoteService {
 		CurrentUser me = CurrentUser.get();
 		List<Invitation> mine = invitations.findBySupplierCompanyIdOrderByIdDesc(me.companyId());
 		Map<Long, SupplierRfq> rfqInfo = rfqs.forSupplier(mine.stream().map(i -> i.rfqId).collect(Collectors.toSet()));
-		Map<Long, SupplierQuote> byInvitation = quotesOf(mine);
+		Map<Long, SupplierQuote> byInvitation = reader.byInvitation(mine);
 		return mine.stream().map(i -> {
 			SupplierRfq r = rfqInfo.get(i.rfqId);
 			SupplierQuote q = byInvitation.get(i.id);
+			int version = q == null ? 0 : q.currentVersion;
 			return new SupplierQuoteRow(i.id, r.number(), r.partNumber(), r.revision(), r.description(),
-					i.responseDueDate, i.status, q == null ? 0 : q.currentVersion, q == null ? null : q.submittedAt,
+					i.responseDueDate, i.status.forSupplier(version), version, q == null ? null : q.submittedAt,
 					r.quotingOpen());
 		}).toList();
 	}
@@ -317,6 +339,32 @@ public class QuoteService {
 		return view(me, invitation);
 	}
 
+	/**
+	 * SRS §14.3 / §17.3: ERGO shortlists a quote, selects it for the customer or marks it not selected (with a
+	 * reason, audited); CLEAR_DECISION puts it back to submitted. Suppliers keep seeing "submitted" throughout. Frozen
+	 * while a quote is with the customer, so the decision behind an answered quote can never change underneath it.
+	 */
+	public QuoteView decide(long id, Decision decision, String comment) {
+		CurrentUser me = CurrentUser.get();
+		Invitation invitation = visible(me, id);
+		require(QuoteAction.valueOf(decision.name()), me, invitation);
+		if (!customerQuotes.findByAssignmentIdAndResponseStatus(invitation.id, ResponseStatus.WAITING).isEmpty()) {
+			throw ApiException.conflict("This quote is with the customer; its decision can change once they respond");
+		}
+		if (decision == Decision.MARK_NOT_SELECTED) {
+			audit.reason(required(comment, "Give a reason this quote was not selected"));
+		}
+		invitation.status = switch (decision) {
+			case SHORTLIST -> SHORTLISTED;
+			case SELECT_FOR_CUSTOMER -> SELECTED_FOR_CUSTOMER;
+			case MARK_NOT_SELECTED -> NOT_SELECTED;
+			case CLEAR_DECISION -> quotes.findByAssignmentId(invitation.id).orElseThrow().currentVersion > 1 ? RESUBMITTED
+					: SUBMITTED;
+		};
+		rfqs.comparing(invitation.rfqId);
+		return view(me, invitation);
+	}
+
 	// ---------------------------------------------------------------- versions and files
 
 	@Transactional(readOnly = true)
@@ -425,38 +473,51 @@ public class QuoteService {
 		return invitation;
 	}
 
-	/** The rule book: SRS §10.5 rights, §14.3 statuses and §17.2 edit rules (edit only while open). */
-	private static boolean allowed(QuoteAction action, CurrentUser me, Invitation i, boolean quotingOpen) {
+	/**
+	 * The rule book: SRS §10.5 rights, §14.3 statuses, §17.2 edit rules (edit only while open) and §17.3 comparison
+	 * actions. Also yields each caller's buttons.
+	 */
+	static boolean allowed(QuoteAction action, CurrentUser me, Invitation i, RfqState rfq) {
 		boolean supplier = SUPPLIER_QUOTERS.contains(me.role());
 		boolean buyer = ERGO_BUYERS.contains(me.role());
+		boolean evaluator = EVALUATORS.contains(me.role()) && rfq.evaluating();
+		boolean submitted = QuoteStatus.SUBMITTED_STATES.contains(i.status);
 		QuoteStatus status = i.status;
 		return switch (action) {
-			case EDIT, SUBMIT -> supplier && quotingOpen && i.quoteEditOpen && QuoteStatus.EDITABLE.contains(status);
-			case REGRET -> supplier && quotingOpen && (status == NOT_STARTED || status == DRAFT_SAVED
+			case EDIT, SUBMIT -> supplier && rfq.quotingOpen() && i.quoteEditOpen
+					&& QuoteStatus.EDITABLE.contains(status);
+			case REGRET -> supplier && rfq.quotingOpen() && (status == NOT_STARTED || status == DRAFT_SAVED
 					|| status == CLARIFICATION_REQUESTED && i.statusBeforeClarification != REOPENED);
-			case REQUEST_CLARIFICATION -> supplier && quotingOpen
+			case REQUEST_CLARIFICATION -> supplier && rfq.quotingOpen()
 					&& (status == NOT_STARTED || status == DRAFT_SAVED || status == REOPENED);
 			case ANSWER_CLARIFICATION -> buyer && status == CLARIFICATION_REQUESTED;
-			case REOPEN -> buyer && quotingOpen && (status == SUBMITTED || status == RESUBMITTED);
-			case UPLOAD -> supplier ? quotingOpen && i.quoteEditOpen && QuoteStatus.EDITABLE.contains(status)
+			case REOPEN -> buyer && rfq.quotingOpen() && submitted; // "request revision" in the comparison too
+			case UPLOAD -> supplier ? rfq.quotingOpen() && i.quoteEditOpen && QuoteStatus.EDITABLE.contains(status)
 					: buyer && status != REGRETTED;
+			case EVALUATE -> evaluator && (submitted || status == REOPENED);
+			case SHORTLIST -> evaluator && submitted && status != SHORTLISTED;
+			case SELECT_FOR_CUSTOMER -> evaluator && submitted && status != SELECTED_FOR_CUSTOMER;
+			case MARK_NOT_SELECTED -> evaluator && submitted && status != NOT_SELECTED;
+			case CLEAR_DECISION -> evaluator && QuoteStatus.DECIDED.contains(status);
+			case SEND_TO_CUSTOMER -> EVALUATORS.contains(me.role()) && rfq.offering() && status == SELECTED_FOR_CUSTOMER;
 		};
 	}
 
+	static Set<QuoteAction> actions(CurrentUser me, Invitation invitation, RfqState rfq) {
+		return Arrays.stream(QuoteAction.values()).filter(a -> allowed(a, me, invitation, rfq))
+			.collect(Collectors.toCollection(() -> EnumSet.noneOf(QuoteAction.class)));
+	}
+
 	private void require(QuoteAction action, CurrentUser me, Invitation invitation) {
-		if (!allowed(action, me, invitation, quotingOpen(me, invitation))) {
+		if (!allowed(action, me, invitation, rfqState(me, invitation))) {
 			throw ApiException.conflict("This action is not available for this quote right now");
 		}
 	}
 
-	private Set<QuoteAction> actions(CurrentUser me, Invitation invitation, boolean quotingOpen) {
-		return Arrays.stream(QuoteAction.values()).filter(a -> allowed(a, me, invitation, quotingOpen))
-			.collect(Collectors.toCollection(() -> EnumSet.noneOf(QuoteAction.class)));
-	}
-
-	private boolean quotingOpen(CurrentUser me, Invitation invitation) {
-		return me.companyType() == CompanyType.SUPPLIER ? rfqs.forSupplier(invitation.rfqId).quotingOpen()
-				: rfqs.forErgo(invitation.rfqId).quotingOpen();
+	private RfqState rfqState(CurrentUser me, Invitation invitation) {
+		return me.companyType() == CompanyType.SUPPLIER
+				? new RfqState(rfqs.forSupplier(invitation.rfqId).quotingOpen(), false, false)
+				: RfqState.of(rfqs.forErgo(invitation.rfqId));
 	}
 
 	/** SRS §17.2: currency, prices, MOQ, lead time and the full cost breakdown before submission. */
@@ -552,7 +613,7 @@ public class QuoteService {
 	 */
 	private void progress(long rfqId) {
 		List<Invitation> all = invitations.findByRfqIdOrderById(rfqId);
-		Map<Long, SupplierQuote> byInvitation = quotesOf(all);
+		Map<Long, SupplierQuote> byInvitation = reader.byInvitation(all);
 		int received = (int) all.stream().filter(i -> i.status != REGRETTED && byInvitation.containsKey(i.id)
 				&& byInvitation.get(i.id).currentVersion > 0).count();
 		int awaited = (int) all.stream()
@@ -568,19 +629,19 @@ public class QuoteService {
 		String reopenReason = q == null ? null : q.reopenReason;
 		if (me.companyType() == CompanyType.SUPPLIER) {
 			SupplierRfq rfq = rfqs.forSupplier(i.rfqId);
-			return new SupplierQuoteView("SUPPLIER", i.id, i.status, i.responseDueDate, rfq, data, version, submittedAt,
-					reopenReason, i.clarificationQuestion, i.clarificationAnswer, i.regretReason,
-					actions(me, i, rfq.quotingOpen()));
+			return new SupplierQuoteView("SUPPLIER", i.id, i.status.forSupplier(version), i.responseDueDate, rfq, data,
+					version, submittedAt, reopenReason, i.clarificationQuestion, i.clarificationAnswer, i.regretReason,
+					actions(me, i, new RfqState(rfq.quotingOpen(), false, false)));
 		}
 		RfqRef rfq = rfqs.forErgo(i.rfqId);
 		CompanyRef supplier = directory.company(i.supplierCompanyId).orElseThrow();
 		Map<Long, UserRef> users = directory.users(List.of(i.assignedByUserId));
 		// ERGO sees the last submitted version, never the supplier's unsent changes
-		QuoteData ergoData = q == null ? null : lastSubmitted(List.of(q)).get(q.id);
+		QuoteData ergoData = q == null ? null : reader.lastSubmitted(List.of(q)).get(q.id);
 		return new ErgoQuoteView("ERGO", i.id, i.status, i.responseDueDate, rfq.id(), rfq.number(),
 				new Named(supplier.id(), supplier.code(), supplier.name()), userName(users, i.assignedByUserId),
 				i.createdAt, ergoData, version, submittedAt, reopenReason, i.clarificationQuestion,
-				i.clarificationAnswer, i.regretReason, actions(me, i, rfq.quotingOpen()));
+				i.clarificationAnswer, i.regretReason, actions(me, i, RfqState.of(rfq)));
 	}
 
 	private QuoteData data(SupplierQuote q) {
@@ -613,7 +674,7 @@ public class QuoteService {
 
 	/** Own files, never one submitted with a version: suppliers while the quote is editable, ERGO buyers any time. */
 	private boolean mayDeleteOwnFiles(CurrentUser me, Invitation i) {
-		return SUPPLIER_QUOTERS.contains(me.role()) ? allowed(QuoteAction.EDIT, me, i, quotingOpen(me, i))
+		return SUPPLIER_QUOTERS.contains(me.role()) ? allowed(QuoteAction.EDIT, me, i, rfqState(me, i))
 				: ERGO_BUYERS.contains(me.role());
 	}
 
@@ -626,29 +687,6 @@ public class QuoteService {
 	}
 
 	// ---------------------------------------------------------------- small helpers
-
-	/** The last submitted version of each quote, by quote id (quotes never submitted are absent). */
-	private Map<Long, QuoteData> lastSubmitted(Collection<SupplierQuote> list) {
-		List<Long> ids = list.stream().filter(q -> q.currentVersion > 0).map(q -> q.id).toList();
-		if (ids.isEmpty()) {
-			return Map.of();
-		}
-		Map<Long, QuoteData> result = new java.util.HashMap<>();
-		jdbc.query("""
-				SELECT DISTINCT ON (supplier_quote_id) supplier_quote_id, snapshot::text FROM supplier_quote_versions
-				WHERE supplier_quote_id = ANY (?) ORDER BY supplier_quote_id, version_no DESC""",
-				rs -> { result.put(rs.getLong(1), json.readValue(rs.getString(2), QuoteData.class)); },
-				(Object) ids.toArray(Long[]::new));
-		return result;
-	}
-
-	private Map<Long, SupplierQuote> quotesOf(Collection<Invitation> list) {
-		if (list.isEmpty()) {
-			return Map.of();
-		}
-		return quotes.findByAssignmentIdIn(list.stream().map(i -> i.id).toList()).stream()
-			.collect(Collectors.toMap(q -> q.assignmentId, Function.identity()));
-	}
 
 	private static QuoteStep clean(QuoteStep step) {
 		return new QuoteStep(step.processId(), step.stepName().trim(), step.cycleTimeSeconds(), step.sourcingType(),
@@ -665,12 +703,13 @@ public class QuoteService {
 		return n == null ? null : new Named(n.id(), n.code(), n.name());
 	}
 
-	private static String userName(Map<Long, UserRef> users, Long id) {
+	static String userName(Map<Long, UserRef> users, Long id) {
 		UserRef user = id == null ? null : users.get(id);
 		return user == null ? null : user.name();
 	}
 
-	private static String text(String value) {
+	/** Trimmed text; null when blank. */
+	static String text(String value) {
 		return value == null || value.isBlank() ? null : value.trim();
 	}
 

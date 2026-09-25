@@ -5,12 +5,14 @@ import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasItems;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.not;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -24,6 +26,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import com.ergo.connect.IntegrationTest;
+import com.ergo.connect.TestUsers;
+import com.ergo.connect.masterdata.api.MasterDataApi;
 import com.jayway.jsonpath.JsonPath;
 
 /** SRS §10.12: ERGO Admin maintains master lists, ERGO Management views them, everyone reads active options. */
@@ -37,6 +41,9 @@ class MasterDataTests {
 
 	@Autowired
 	JdbcTemplate jdbc;
+
+	@Autowired
+	MasterDataApi masterDataApi;
 
 	String asAdmin;
 
@@ -138,6 +145,63 @@ class MasterDataTests {
 			.andExpect(status().isOk());
 		mvc.perform(get("/api/master-data/no-such-list/options").header(HttpHeaders.AUTHORIZATION, asSupplier))
 			.andExpect(status().isNotFound());
+	}
+
+	@Test
+	void exchangeRatesApplyFromTheirDateInBothDirections() throws Exception {
+		// fresh currencies: rates are global and other tests convert with the seeded ones
+		TestUsers data = new TestUsers(jdbc, mvc);
+		long x = data.masterEntry("currencies", "currency");
+		long y = data.masterEntry("currencies", "currency");
+		String rate = """
+				{"fromCurrencyId": %d, "toCurrencyId": %d, "rateDate": "%s", "rate": %s, "source": "Test bank"}""";
+
+		for (String token : new String[] { asManagement, asErgoRfq, asSupplier }) {
+			mvc.perform(json(post("/api/master-data/exchange-rates"), rate.formatted(x, y, "2026-01-10", "2"), token))
+				.andExpect(status().isForbidden());
+		}
+		mvc.perform(json(post("/api/master-data/exchange-rates"), rate.formatted(x, x, "2026-01-10", "1"), asAdmin))
+			.andExpect(status().isUnprocessableContent());
+		mvc.perform(json(post("/api/master-data/exchange-rates"), rate.formatted(x, y, "2026-01-10", "-2"), asAdmin))
+			.andExpect(status().isBadRequest());
+		mvc.perform(json(post("/api/master-data/exchange-rates"), rate.formatted(x, y, "2026-01-10", "2"), asAdmin))
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.rate").value(2));
+		mvc.perform(json(post("/api/master-data/exchange-rates"), rate.formatted(x, y, "2026-01-10", "3"), asAdmin))
+			.andExpect(status().isConflict());
+		long later = JsonPath.<Number>read(mvc
+			.perform(json(post("/api/master-data/exchange-rates"), rate.formatted(x, y, "2026-02-01", "2.5"), asAdmin))
+			.andReturn()
+			.getResponse()
+			.getContentAsString(), "$.id").longValue();
+
+		assertThat(masterDataApi.rate(x, y, LocalDate.parse("2025-12-31"))).isEmpty();
+		assertThat(masterDataApi.rate(x, y, LocalDate.parse("2026-01-20"))).hasValueSatisfying(r -> assertThat(r).isEqualByComparingTo("2"));
+		assertThat(masterDataApi.rate(x, y, LocalDate.parse("2026-03-01"))).hasValueSatisfying(r -> assertThat(r).isEqualByComparingTo("2.5"));
+		assertThat(masterDataApi.rate(y, x, LocalDate.parse("2026-03-01"))).hasValueSatisfying(r -> assertThat(r).isEqualByComparingTo("0.4"));
+		assertThat(masterDataApi.rate(x, x, LocalDate.parse("2026-03-01"))).hasValueSatisfying(r -> assertThat(r).isEqualByComparingTo("1"));
+
+		// the newest rate wins, whichever way round it was entered
+		mvc.perform(json(post("/api/master-data/exchange-rates"), rate.formatted(y, x, "2026-02-15", "0.5"), asAdmin))
+			.andExpect(status().isCreated());
+		assertThat(masterDataApi.rate(x, y, LocalDate.parse("2026-03-01"))).hasValueSatisfying(r -> assertThat(r).isEqualByComparingTo("2"));
+
+		mvc.perform(get("/api/master-data/exchange-rates").header(HttpHeaders.AUTHORIZATION, asManagement))
+			.andExpect(status().isOk());
+		mvc.perform(get("/api/master-data/exchange-rates").header(HttpHeaders.AUTHORIZATION, asErgoRfq))
+			.andExpect(status().isForbidden());
+		mvc.perform(delete("/api/master-data/exchange-rates/{id}", later).header(HttpHeaders.AUTHORIZATION, asManagement))
+			.andExpect(status().isForbidden());
+		mvc.perform(delete("/api/master-data/exchange-rates/{id}", later).header(HttpHeaders.AUTHORIZATION, asAdmin))
+			.andExpect(status().isNoContent());
+		assertThat(jdbc.queryForList("""
+				SELECT event_type || ':' || coalesce(old_value, '') FROM audit_logs
+				WHERE entity_name = 'ExchangeRate' AND record_id = ? ORDER BY audit_log_id""", String.class, later))
+			.containsExactly("CREATE:", "DELETE:1 %s = 2.5 %s from 2026-02-01".formatted(code(x), code(y)));
+	}
+
+	private String code(long currencyId) {
+		return jdbc.queryForObject("SELECT currency_code FROM currencies WHERE currency_id = ?", String.class, currencyId);
 	}
 
 	/** A fresh company + user with this role, signed in (password set directly for the test). */

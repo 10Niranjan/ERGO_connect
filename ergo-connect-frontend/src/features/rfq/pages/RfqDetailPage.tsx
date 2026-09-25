@@ -25,6 +25,8 @@ import { AuditTrail } from '../../../shared/components/AuditTrail'
 import { CommentDialog } from '../../../shared/components/CommentDialog'
 import { Facts } from '../../../shared/components/Facts'
 import { problemMessage } from '../../../shared/problem'
+import { ComparisonPanel } from '../../quotation/components/ComparisonPanel'
+import { CustomerQuotesPanel } from '../../quotation/components/CustomerQuotesPanel'
 import { SuppliersPanel } from '../../quotation/components/SuppliersPanel'
 import { DocumentsPanel } from '../components/DocumentsPanel'
 import { PRIORITIES, STATUS, formatDate, formatMoney, formatNumber } from '../labels'
@@ -139,6 +141,11 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
       </Stack>
 
       {actionError != null && <Alert severity="error">{problemMessage(actionError)}</Alert>}
+      {rfq.status === 'QUOTE_RECEIVED' && (
+        <Alert severity="info" action={<Button color="inherit" size="small" onClick={() => setTab('quotes')}>Open quote</Button>}>
+          ERGO has sent you a quote. Approve it, ask for a revision or decline it.
+        </Alert>
+      )}
       {rfq.clarificationQuestion && (
         <Alert severity={rfq.status === 'CLARIFICATION_REQUIRED' ? 'warning' : 'info'}>
           <strong>ERGO asked:</strong> {rfq.clarificationQuestion}
@@ -155,7 +162,9 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
         <Tab value="overview" label="Overview" />
         <Tab value="process" label="Process flow" />
         <Tab value="documents" label="Documents" />
+        {!isErgo && <Tab value="quotes" label="Quotes" />}
         {isErgo && <Tab value="suppliers" label="Suppliers & quotes" />}
+        {isErgo && <Tab value="comparison" label="Comparison" />}
         {isErgo && <Tab value="history" label="Audit trail" />}
       </Tabs>
 
@@ -229,7 +238,9 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
       )}
 
       {tab === 'documents' && <DocumentsPanel rfqId={rfq.id} canUpload={can('UPLOAD')} isErgo={isErgo} />}
+      {tab === 'quotes' && !isErgo && <CustomerQuotesPanel rfqId={rfq.id} />}
       {tab === 'suppliers' && isErgo && <SuppliersPanel rfqId={rfq.id} />}
+      {tab === 'comparison' && isErgo && <ComparisonPanel rfqId={rfq.id} />}
       {tab === 'history' && isErgo && <History rfqId={rfq.id} />}
 
       {dialog && (

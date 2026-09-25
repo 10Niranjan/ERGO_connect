@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.ergo.connect.quotation.domain.QuoteDtos.CommentForm;
+import com.ergo.connect.quotation.domain.QuoteDtos.DecisionForm;
 import com.ergo.connect.quotation.domain.QuoteDtos.DocumentView;
 import com.ergo.connect.quotation.domain.QuoteDtos.InviteForm;
 import com.ergo.connect.quotation.domain.QuoteDtos.QuoteForm;
@@ -45,6 +46,8 @@ class QuoteController {
 			+ "'ERGO_NPD')";
 
 	private static final String ERGO_BUYERS = "hasAnyRole('ERGO_ADMIN', 'ERGO_MANAGEMENT', 'ERGO_RFQ')";
+
+	private static final String EVALUATORS = "hasAnyRole('ERGO_ADMIN', 'ERGO_RFQ')";
 
 	private static final String SUPPLIERS = "hasAnyRole('SUPPLIER_RFQ', 'SUPPLIER_KAM')";
 
@@ -123,6 +126,13 @@ class QuoteController {
 	@PreAuthorize(ERGO_BUYERS)
 	QuoteView reopen(@PathVariable long id, @Valid @RequestBody CommentForm body) {
 		return quotes.reopen(id, body.comment());
+	}
+
+	/** SRS §17.3 shortlist / select for customer / not selected. */
+	@PostMapping("/api/quotes/{id}/decision")
+	@PreAuthorize(EVALUATORS)
+	QuoteView decide(@PathVariable long id, @Valid @RequestBody DecisionForm body) {
+		return quotes.decide(id, body.decision(), body.comment());
 	}
 
 	@GetMapping("/api/quotes/{id}/versions")

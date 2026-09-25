@@ -47,7 +47,7 @@ public class MasterDataService {
 			@NotBlank @Size(max = 200) String name, Boolean active, Map<String, String> fields) {
 	}
 
-	private static final String MODULE = "masterdata";
+	static final String MODULE = "masterdata";
 
 	private final JdbcTemplate jdbc;
 

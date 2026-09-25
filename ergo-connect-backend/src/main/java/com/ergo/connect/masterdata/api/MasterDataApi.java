@@ -1,16 +1,20 @@
 package com.ergo.connect.masterdata.api;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.Collection;
 import java.util.Map;
+import java.util.Optional;
 
 import org.springframework.stereotype.Service;
 
 import com.ergo.connect.common.exception.ApiException;
+import com.ergo.connect.masterdata.lookup.ExchangeRateService;
 import com.ergo.connect.masterdata.lookup.MasterDataService;
 import com.ergo.connect.masterdata.lookup.MasterDataService.Option;
 import com.ergo.connect.masterdata.lookup.MasterList;
 
-/** What other modules may ask about master lists: validate a chosen entry, and show its code and name. */
+/** What other modules may ask about master lists: validate a chosen entry, show its code and name, convert currency. */
 @Service
 public class MasterDataApi {
 
@@ -32,8 +36,11 @@ public class MasterDataApi {
 
 	private final MasterDataService masterData;
 
-	MasterDataApi(MasterDataService masterData) {
+	private final ExchangeRateService exchangeRates;
+
+	MasterDataApi(MasterDataService masterData, ExchangeRateService exchangeRates) {
 		this.masterData = masterData;
+		this.exchangeRates = exchangeRates;
 	}
 
 	/** Accepts null (nothing chosen); otherwise the entry must exist and be active. */
@@ -47,6 +54,11 @@ public class MasterDataApi {
 	public Map<Long, Named> describe(Ref ref, Collection<Long> ids) {
 		return masterData.describe(ref.list, ids).entrySet().stream().collect(java.util.stream.Collectors.toMap(
 				Map.Entry::getKey, e -> named(e.getValue())));
+	}
+
+	/** One unit of {@code fromCurrencyId} in {@code toCurrencyId} on {@code day}; empty when ERGO has entered no rate. */
+	public Optional<BigDecimal> rate(long fromCurrencyId, long toCurrencyId, LocalDate day) {
+		return exchangeRates.rate(fromCurrencyId, toCurrencyId, day);
 	}
 
 	private static Named named(Option option) {

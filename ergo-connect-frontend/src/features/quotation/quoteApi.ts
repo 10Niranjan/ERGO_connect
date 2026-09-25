@@ -15,7 +15,20 @@ export type QuoteStatus =
   | 'REGRETTED'
 
 /** Buttons the backend allows for this user, role and status right now. */
-export type QuoteAction = 'EDIT' | 'SUBMIT' | 'REGRET' | 'REQUEST_CLARIFICATION' | 'ANSWER_CLARIFICATION' | 'REOPEN' | 'UPLOAD'
+export type QuoteAction =
+  | 'EDIT'
+  | 'SUBMIT'
+  | 'REGRET'
+  | 'REQUEST_CLARIFICATION'
+  | 'ANSWER_CLARIFICATION'
+  | 'REOPEN'
+  | 'UPLOAD'
+  | 'EVALUATE'
+  | 'SHORTLIST'
+  | 'SELECT_FOR_CUSTOMER'
+  | 'MARK_NOT_SELECTED'
+  | 'CLEAR_DECISION'
+  | 'SEND_TO_CUSTOMER'
 
 export interface ToolingLine {
   toolName: string

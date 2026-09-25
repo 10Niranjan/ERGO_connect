@@ -19,14 +19,17 @@ import { useState } from 'react'
 import { useAppSelector } from '../../../app/store'
 import { problemMessage } from '../../../shared/problem'
 import { useMasterEntriesQuery, useMasterListsQuery, type MasterEntry } from '../adminApi'
+import { ExchangeRatesPanel } from '../components/ExchangeRatesPanel'
 import { MasterEntryDialog } from '../components/MasterEntryDialog'
+
+const RATES = 'exchange-rates'
 
 // SRS §12.13.3 master data screens. ERGO Admin maintains; ERGO Management views (SRS §10.12).
 export function MasterDataPage() {
   const canEdit = useAppSelector((state) => state.auth.session?.activeRole === 'ERGO_ADMIN')
   const { data: lists = [] } = useMasterListsQuery()
   const [key, setKey] = useState('currencies')
-  const { data: entries = [], isFetching, error } = useMasterEntriesQuery(key)
+  const { data: entries = [], isFetching, error } = useMasterEntriesQuery(key, { skip: key === RATES })
   const [editing, setEditing] = useState<MasterEntry | 'new' | null>(null)
   const list = lists.find((l) => l.key === key)
 
@@ -47,51 +50,55 @@ export function MasterDataPage() {
           {lists.map((l) => (
             <Tab key={l.key} value={l.key} label={l.title} />
           ))}
+          <Tab value={RATES} label="Exchange rates" />
         </Tabs>
       )}
+      {key === RATES && <ExchangeRatesPanel canEdit={canEdit} />}
       {error && <Alert severity="error">{problemMessage(error)}</Alert>}
-      <TableContainer component={Paper} variant="outlined">
-        {isFetching && <LinearProgress />}
-        <Table size="small">
-          <TableHead>
-            <TableRow>
-              <TableCell>Code</TableCell>
-              <TableCell>Name</TableCell>
-              {list?.fields.map((field) => <TableCell key={field.key}>{field.label}</TableCell>)}
-              <TableCell>Status</TableCell>
-              {canEdit && <TableCell align="right">Actions</TableCell>}
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {entries.map((entry) => (
-              <TableRow key={entry.id} hover sx={{ opacity: entry.active ? 1 : 0.6 }}>
-                <TableCell>{entry.code}</TableCell>
-                <TableCell>{entry.name}</TableCell>
-                {list?.fields.map((field) => (
-                  <TableCell key={field.key}>{entry.fields[field.key] ?? '—'}</TableCell>
-                ))}
-                <TableCell>
-                  <Chip size="small" color={entry.active ? 'success' : 'default'} label={entry.active ? 'Active' : 'Inactive'} />
-                </TableCell>
-                {canEdit && (
-                  <TableCell align="right">
-                    <Button size="small" onClick={() => setEditing(entry)}>
-                      Edit
-                    </Button>
-                  </TableCell>
-                )}
-              </TableRow>
-            ))}
-            {!isFetching && entries.length === 0 && (
+      {key !== RATES && (
+        <TableContainer component={Paper} variant="outlined">
+          {isFetching && <LinearProgress />}
+          <Table size="small">
+            <TableHead>
               <TableRow>
-                <TableCell colSpan={(list?.fields.length ?? 0) + 4} sx={{ color: 'text.secondary' }}>
-                  No entries yet.
-                </TableCell>
+                <TableCell>Code</TableCell>
+                <TableCell>Name</TableCell>
+                {list?.fields.map((field) => <TableCell key={field.key}>{field.label}</TableCell>)}
+                <TableCell>Status</TableCell>
+                {canEdit && <TableCell align="right">Actions</TableCell>}
               </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </TableContainer>
+            </TableHead>
+            <TableBody>
+              {entries.map((entry) => (
+                <TableRow key={entry.id} hover sx={{ opacity: entry.active ? 1 : 0.6 }}>
+                  <TableCell>{entry.code}</TableCell>
+                  <TableCell>{entry.name}</TableCell>
+                  {list?.fields.map((field) => (
+                    <TableCell key={field.key}>{entry.fields[field.key] ?? '—'}</TableCell>
+                  ))}
+                  <TableCell>
+                    <Chip size="small" color={entry.active ? 'success' : 'default'} label={entry.active ? 'Active' : 'Inactive'} />
+                  </TableCell>
+                  {canEdit && (
+                    <TableCell align="right">
+                      <Button size="small" onClick={() => setEditing(entry)}>
+                        Edit
+                      </Button>
+                    </TableCell>
+                  )}
+                </TableRow>
+              ))}
+              {!isFetching && entries.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={(list?.fields.length ?? 0) + 4} sx={{ color: 'text.secondary' }}>
+                    No entries yet.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
       {editing && list && (
         <MasterEntryDialog list={list} entry={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />
       )}

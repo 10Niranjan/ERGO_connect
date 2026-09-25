@@ -51,7 +51,17 @@ public final class QuoteDtos {
 
 	/** Buttons the caller may use now, computed by the same rules that enforce them. */
 	public enum QuoteAction {
-		EDIT, SUBMIT, REGRET, REQUEST_CLARIFICATION, ANSWER_CLARIFICATION, REOPEN, UPLOAD
+		EDIT, SUBMIT, REGRET, REQUEST_CLARIFICATION, ANSWER_CLARIFICATION, REOPEN, UPLOAD, EVALUATE, SHORTLIST,
+		SELECT_FOR_CUSTOMER, MARK_NOT_SELECTED, CLEAR_DECISION, SEND_TO_CUSTOMER
+	}
+
+	/** ERGO's comparison decisions on a submitted quote (the same names as their actions). */
+	public enum Decision {
+		SHORTLIST, SELECT_FOR_CUSTOMER, MARK_NOT_SELECTED, CLEAR_DECISION
+	}
+
+	/** {@code comment} is required for MARK_NOT_SELECTED (SRS §14.1: a rejection needs a reason) and audited only. */
+	public record DecisionForm(@NotNull Decision decision, @Size(max = 2000) String comment) {
 	}
 
 	public record Named(long id, String code, String name) {

@@ -1,5 +1,6 @@
 import { formatDate, formatMoney, formatNumber, type ChipColor } from '../rfq/labels'
 import type { SourcingType } from '../rfq/rfqApi'
+import type { CustomerSupplierQuote, ErgoQuoteTerms, ResponseStatus } from './comparisonApi'
 import type { QuoteData, QuoteStatus } from './quoteApi'
 
 export const QUOTE_STATUS: Record<QuoteStatus, { label: string; color: ChipColor }> = {
@@ -16,6 +17,14 @@ export const QUOTE_STATUS: Record<QuoteStatus, { label: string; color: ChipColor
 }
 
 export const SOURCING: Record<SourcingType, string> = { INHOUSE: 'In-house', OUTSOURCED: 'Outsourced' }
+
+/** SRS §14.4. `customer` is how the customer reads the same state. */
+export const RESPONSE_STATUS: Record<ResponseStatus, { label: string; customer: string; color: ChipColor }> = {
+  WAITING: { label: 'Waiting for the customer', customer: 'Waiting for your answer', color: 'info' },
+  APPROVED: { label: 'Approved by the customer', customer: 'Approved', color: 'success' },
+  REVISION_REQUESTED: { label: 'Revision requested', customer: 'Revision requested', color: 'warning' },
+  DECLINED: { label: 'Declined by the customer', customer: 'Declined', color: 'error' },
+}
 
 const named = (value: { code: string; name: string } | null) => (value ? `${value.code} – ${value.name}` : '—')
 
@@ -102,4 +111,86 @@ export function quoteChanges(before: QuoteData, after: QuoteData): { field: stri
   return flat(after)
     .filter(([field, value]) => old.get(field) !== value)
     .map(([field, to]) => ({ field, from: old.get(field) ?? '—', to }))
+}
+
+/** A forwarded supplier quote as the customer sees it: name (shown separately), prices and cost breakdown only. */
+export function customerSupplierQuoteSections(q: CustomerSupplierQuote): { title: string; facts: [string, string][] }[] {
+  const money = (value: number | null) => formatMoney(value, q.currency?.code)
+  return [
+    {
+      title: 'Commercial terms',
+      facts: [
+        ['Valid until', formatDate(q.validityDate)],
+        ['Currency', named(q.currency)],
+        ['Incoterm', named(q.incoterm)],
+        ['Payment terms', q.paymentTerm?.name ?? '—'],
+        ['MOQ', formatNumber(q.moq, ' pcs')],
+      ],
+    },
+    {
+      title: 'Prices',
+      facts: [
+        ['Production piece price', money(q.productionPiecePrice)],
+        ['PPAP piece price', money(q.ppapPiecePrice)],
+        ['Tooling cost', money(q.toolingCostTotal)],
+      ],
+    },
+    {
+      title: 'Cost breakdown per piece',
+      facts: [
+        ['Raw material', money(q.costs.rawMaterialCost)],
+        ['Processing', money(q.costs.processingCost)],
+        ['Overhead', money(q.costs.overheadCost)],
+        ['Packaging', money(q.costs.packagingCost)],
+        ['Profit', money(q.costs.profit)],
+      ],
+    },
+    {
+      title: 'Lead times',
+      facts: [
+        ['Material', formatNumber(q.materialLeadTimeWeeks, ' weeks')],
+        ['Tooling', formatNumber(q.toolingLeadTimeDays, ' days')],
+        ['Samples', formatNumber(q.sampleLeadTimeDays, ' days')],
+        ['Production from PO', formatNumber(q.productionLeadTimeDays, ' days')],
+      ],
+    },
+    {
+      title: 'Process route',
+      facts: [['', q.processSteps.map((s, i) => `${i + 1}. ${s.stepName}${s.processName ? ` (${s.processName})` : ''}`).join('\n') || '—']],
+    },
+  ]
+}
+
+/** ERGO's own quote as the customer sees it. */
+export function ergoQuoteSections(q: ErgoQuoteTerms): { title: string; facts: [string, string][] }[] {
+  const money = (value: number | null) => formatMoney(value, q.currency.code)
+  return [
+    {
+      title: 'Prices',
+      facts: [
+        ['Production piece price', money(q.productionPiecePrice)],
+        ['PPAP piece price', money(q.ppapPiecePrice)],
+        ['Tooling cost', money(q.toolingCost)],
+      ],
+    },
+    {
+      title: 'Terms',
+      facts: [
+        ['Currency', named(q.currency)],
+        ['Payment terms', q.paymentTerm?.name ?? '—'],
+        ['Incoterm', named(q.incoterm)],
+        ['MOQ', formatNumber(q.moq, ' pcs')],
+        ['Valid until', formatDate(q.validityDate)],
+      ],
+    },
+    {
+      title: 'Lead times',
+      facts: [
+        ['Material', formatNumber(q.materialLeadTimeWeeks, ' weeks')],
+        ['Tooling', formatNumber(q.toolingLeadTimeDays, ' days')],
+        ['Samples', formatNumber(q.sampleLeadTimeDays, ' days')],
+        ['Production from PO', formatNumber(q.productionLeadTimeDays, ' days')],
+      ],
+    },
+  ]
 }

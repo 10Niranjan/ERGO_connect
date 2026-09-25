@@ -1,8 +1,11 @@
 package com.ergo.connect.rfq.domain;
 
+import static com.ergo.connect.rfq.domain.RfqStatus.CUSTOMER_APPROVED;
+import static com.ergo.connect.rfq.domain.RfqStatus.CUSTOMER_DECLINED;
 import static com.ergo.connect.rfq.domain.RfqStatus.CUSTOMER_REVISION_REQUESTED;
 import static com.ergo.connect.rfq.domain.RfqStatus.QUOTES_COMPLETE;
 import static com.ergo.connect.rfq.domain.RfqStatus.QUOTES_PARTIAL;
+import static com.ergo.connect.rfq.domain.RfqStatus.SENT_TO_CUSTOMER;
 import static com.ergo.connect.rfq.domain.RfqStatus.SENT_TO_SUPPLIERS;
 import static com.ergo.connect.rfq.domain.RfqStatus.UNDER_COMPARISON;
 import static com.ergo.connect.rfq.domain.RfqStatus.VALIDATED;
@@ -44,6 +47,14 @@ class RfqApiService implements RfqApi {
 	/** Statuses driven by the quotes; from comparison on, ERGO's actions drive the status. */
 	private static final Set<RfqStatus> PROGRESS = EnumSet.of(SENT_TO_SUPPLIERS, QUOTES_PARTIAL, QUOTES_COMPLETE);
 
+	/** ERGO evaluates quotes once some are in, until the customer has decided. */
+	static final Set<RfqStatus> EVALUATING = EnumSet.of(QUOTES_PARTIAL, QUOTES_COMPLETE, UNDER_COMPARISON,
+			SENT_TO_CUSTOMER, CUSTOMER_REVISION_REQUESTED);
+
+	/** ERGO may send the customer a quote: quotes are in and no earlier one awaits the customer's answer. */
+	static final Set<RfqStatus> OFFERING = EnumSet.of(QUOTES_PARTIAL, QUOTES_COMPLETE, UNDER_COMPARISON,
+			CUSTOMER_REVISION_REQUESTED);
+
 	private final RfqRepository rfqs;
 
 	private final RfqService rfqService;
@@ -68,7 +79,21 @@ class RfqApiService implements RfqApi {
 		}
 		Rfq r = rfqService.visible(me, rfqId);
 		return new RfqRef(r.id, r.number, r.customerCompanyId, r.partNumber, r.revision, r.description, r.currencyId,
-				INVITING.contains(r.status), QUOTING.contains(r.status));
+				INVITING.contains(r.status), QUOTING.contains(r.status), EVALUATING.contains(r.status),
+				OFFERING.contains(r.status), new Targets(r.targetToolingCost, r.targetPpapPiecePrice,
+						r.targetProductionPiecePrice, r.paymentTermId, r.moq, r.materialLeadTimeWeeks,
+						r.toolingLeadTimeDays, r.sampleLeadTimeDays, r.productionLeadTimeDays));
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public CustomerRfqRef forCustomer(long rfqId) {
+		CurrentUser me = CurrentUser.get();
+		if (me.companyType() != CompanyType.CUSTOMER) {
+			throw ApiException.notFound("RFQ");
+		}
+		Rfq r = rfqService.visible(me, rfqId);
+		return new CustomerRfqRef(r.id, r.number, r.customerCompanyId, r.status == SENT_TO_CUSTOMER);
 	}
 
 	@Override
@@ -127,6 +152,37 @@ class RfqApiService implements RfqApi {
 		if (PROGRESS.contains(rfq.status)) {
 			rfq.status = received == 0 ? SENT_TO_SUPPLIERS : awaited == 0 ? QUOTES_COMPLETE : QUOTES_PARTIAL;
 		}
+	}
+
+	@Override
+	public void comparing(long rfqId) {
+		Rfq rfq = rfqs.findById(rfqId).orElseThrow();
+		if (rfq.status == QUOTES_PARTIAL || rfq.status == QUOTES_COMPLETE) {
+			rfq.status = UNDER_COMPARISON;
+		}
+	}
+
+	@Override
+	public void sentToCustomer(long rfqId) {
+		Rfq rfq = rfqs.findById(rfqId).orElseThrow();
+		if (!OFFERING.contains(rfq.status)) {
+			throw ApiException.conflict("A quote can go to the customer once quotes are in, and not while the customer "
+					+ "is deciding on an earlier one");
+		}
+		rfq.status = SENT_TO_CUSTOMER;
+	}
+
+	@Override
+	public void customerResponded(long rfqId, CustomerResponse response) {
+		Rfq rfq = rfqs.findById(rfqId).orElseThrow();
+		if (rfq.status != SENT_TO_CUSTOMER) {
+			throw ApiException.conflict("This RFQ is no longer waiting for your answer");
+		}
+		rfq.status = switch (response) {
+			case APPROVED -> CUSTOMER_APPROVED; // appears in the ready-for-NPD queue; never converted automatically
+			case REVISION_REQUESTED -> CUSTOMER_REVISION_REQUESTED;
+			case DECLINED -> CUSTOMER_DECLINED;
+		};
 	}
 
 	private static Set<Long> ids(Collection<Rfq> rfqs, Function<Rfq, Long> field) {
