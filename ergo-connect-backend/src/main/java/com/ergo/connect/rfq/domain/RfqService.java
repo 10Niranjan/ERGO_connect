@@ -2,6 +2,8 @@ package com.ergo.connect.rfq.domain;
 
 import static com.ergo.connect.common.security.Role.CUSTOMER_KAM;
 import static com.ergo.connect.common.security.Role.CUSTOMER_MANAGEMENT;
+import static com.ergo.connect.common.security.Role.CUSTOMER_NPD;
+import static com.ergo.connect.common.security.Role.CUSTOMER_QUALITY;
 import static com.ergo.connect.common.security.Role.CUSTOMER_RFQ;
 import static com.ergo.connect.common.security.Role.ERGO_ADMIN;
 import static com.ergo.connect.common.security.Role.ERGO_KAM;
@@ -397,14 +399,18 @@ public class RfqService {
 
 	// ---------------------------------------------------------------- rules
 
-	/** Record scope. Out-of-scope RFQs do not exist for the caller (404, not 403). */
+	/** Record scope. Out-of-scope RFQs do not exist for the caller (404, not 403). {@code CUSTOMER_NPD}/
+	 * {@code CUSTOMER_QUALITY} are read-only here (SRS §10.6 NPD, not §10.4 RFQ rights): {@link #allowed} still never
+	 * grants them an RFQ action, this only lets NPD's own {@code RfqApi.forCustomer} calls on their own project's RFQ
+	 * resolve instead of always 404ing (npd.domain.NpdService, ARCHITECTURE.md §8 2026-09-26 3b). */
 	Rfq visible(CurrentUser me, long id) {
 		Rfq rfq = rfqs.findById(id).orElse(null);
 		boolean inScope = rfq != null && switch (me.role()) {
 			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_RFQ -> true;
 			case ERGO_KAM -> directory.accountsOf(me.userId()).contains(rfq.customerCompanyId);
 			case ERGO_NPD -> NPD_VISIBLE.contains(rfq.status);
-			case CUSTOMER_RFQ, CUSTOMER_KAM, CUSTOMER_MANAGEMENT -> rfq.customerCompanyId == me.companyId();
+			case CUSTOMER_RFQ, CUSTOMER_KAM, CUSTOMER_MANAGEMENT, CUSTOMER_NPD, CUSTOMER_QUALITY ->
+				rfq.customerCompanyId == me.companyId();
 			default -> false;
 		};
 		if (!inScope) {

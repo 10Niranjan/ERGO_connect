@@ -1,5 +1,17 @@
 import { createBrowserRouter, Navigate } from 'react-router'
-import { COMPANY_MANAGERS, EXTERNAL_ROLES, MASTER_DATA_VIEWERS, NPD_VIEWERS, QUOTE_VIEWERS, RFQ_CREATORS, RFQ_VIEWERS, SUPPLIER_QUOTERS } from '../auth/access'
+import {
+  COMPANY_MANAGERS,
+  EXTERNAL_ROLES,
+  MASTER_DATA_VIEWERS,
+  NPD_CUSTOMER_ROLES,
+  NPD_DETAIL_VIEWERS,
+  NPD_SUPPLIER_ROLES,
+  NPD_VIEWERS,
+  QUOTE_VIEWERS,
+  RFQ_CREATORS,
+  RFQ_VIEWERS,
+  SUPPLIER_QUOTERS,
+} from '../auth/access'
 import { ChangePasswordPage } from '../auth/pages/ChangePasswordPage'
 import { LoginPage } from '../auth/pages/LoginPage'
 import { RoleSelectPage } from '../auth/pages/RoleSelectPage'
@@ -11,6 +23,7 @@ import { CompaniesPage } from '../features/companies/pages/CompaniesPage'
 import { MyCompanyPage } from '../features/companies/pages/MyCompanyPage'
 import { DashboardPage } from '../features/dashboard/pages/DashboardPage'
 import { ConversionQueuePage } from '../features/npd/pages/ConversionQueuePage'
+import { MyNpdProjectsPage } from '../features/npd/pages/MyNpdProjectsPage'
 import { NpdDetailPage } from '../features/npd/pages/NpdDetailPage'
 import { NpdListPage } from '../features/npd/pages/NpdListPage'
 import { AssignedRfqsPage } from '../features/quotation/pages/AssignedRfqsPage'
@@ -53,8 +66,15 @@ export const router = createBrowserRouter([
             children: [
               { path: '/npd', element: <NpdListPage /> },
               { path: '/npd/conversion-queue', element: <ConversionQueuePage /> },
-              { path: '/npd/:id', element: <NpdDetailPage /> },
             ],
+          },
+          {
+            element: <RequireRole roles={[...NPD_CUSTOMER_ROLES, ...NPD_SUPPLIER_ROLES]} />,
+            children: [{ path: '/npd/mine', element: <MyNpdProjectsPage /> }],
+          },
+          {
+            element: <RequireRole roles={NPD_DETAIL_VIEWERS} />,
+            children: [{ path: '/npd/:id', element: <NpdDetailPage /> }],
           },
           {
             element: <RequireRole roles={COMPANY_MANAGERS} />,

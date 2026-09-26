@@ -20,9 +20,10 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 
 /**
- * One item of an NPD project's activity board (SRS §13.4.3). 3a is ERGO-only: owner_organization_type is always
- * ERGO and only ERGO roles create or edit an activity here; 3b adds customer/supplier-owned activities. Field
- * changes are audited automatically.
+ * One item of an NPD project's activity board (SRS §13.4.3). Only ERGO Admin/NPD create or edit an activity's own
+ * fields (owner, name, dates, mandatory/approval flags); the owning company (customer or supplier) may only update
+ * its own progress fields (status, actual date, issue/risk flags, remarks) via updateOwnActivity. Field changes are
+ * audited automatically.
  */
 @Entity
 @Table(name = "npd_activities")
@@ -75,8 +76,18 @@ class NpdActivity {
 	/** Gates Close Stage: every mandatory activity of the current stage must be DONE. Defaults true (V8). */
 	boolean mandatoryFlag = true;
 
-	/** Unused by 3a; wired up in 3b. */
+	/** Wired into the Close Stage gate in 3b: also needs an APPROVED npd_approvals row once set. */
 	boolean approvalRequiredFlag;
+
+	/** The kind of approval that must be APPROVED (not just any approved approval linked to this activity) before
+	 * this gate counts as cleared (V11). Non-null exactly when {@code approvalRequiredFlag} is true; server-forced,
+	 * never trusted from the client as-is (NpdDtos.ActivityForm/NpdService.apply). */
+	@Enumerated(EnumType.STRING)
+	ApprovalType requiredApprovalType;
+
+	/** The owning company's own free-text note (V10), set only by updateOwnActivity; ERGO's own add/edit form never
+	 * touches it. */
+	String remarks;
 
 	@CreationTimestamp
 	@Column(updatable = false)

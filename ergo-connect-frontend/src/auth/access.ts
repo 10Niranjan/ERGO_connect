@@ -45,7 +45,16 @@ export const QUOTE_VIEWERS: Role[] = ['ERGO_ADMIN', 'ERGO_MANAGEMENT', 'ERGO_RFQ
 /** SRS §10.12 */
 export const MASTER_DATA_VIEWERS: Role[] = ['ERGO_ADMIN', 'ERGO_MANAGEMENT']
 
-/** SRS §10.6: ERGO-only in 3a — no customer/supplier NPD screen exists yet. */
+/** SRS §10.6: the ERGO project list, conversion queue and full detail view. */
 export const NPD_VIEWERS: Role[] = ['ERGO_ADMIN', 'ERGO_MANAGEMENT', 'ERGO_RFQ', 'ERGO_KAM', 'ERGO_NPD']
 
 export const NPD_EDITORS: Role[] = ['ERGO_ADMIN', 'ERGO_NPD']
+
+/** SRS §12.15's customer "NPD" nav entry — reaches only /npd/mine and /npd/:id, never the ERGO project list. */
+export const NPD_CUSTOMER_ROLES: Role[] = ['CUSTOMER_NPD', 'CUSTOMER_QUALITY']
+
+/** SRS §12.15's supplier "NPD Tasks" nav entry — same reach as above. */
+export const NPD_SUPPLIER_ROLES: Role[] = ['SUPPLIER_NPD', 'SUPPLIER_OFP', 'SUPPLIER_QUALITY', 'SUPPLIER_KAM']
+
+/** /npd/:id only: NPD_VIEWERS (the ERGO roles) plus every customer/supplier role with any NPD access at all. */
+export const NPD_DETAIL_VIEWERS: Role[] = [...NPD_VIEWERS, ...NPD_CUSTOMER_ROLES, ...NPD_SUPPLIER_ROLES]
