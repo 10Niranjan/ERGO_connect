@@ -22,7 +22,8 @@ public enum MasterList {
 			Field.text("specification", "specification", "Specification", 500)),
 	PAYMENT_TERMS("payment_terms", "payment_term", "PaymentTerm", "Payment terms",
 			Field.text("description", "description", "Description", 500)),
-	INCOTERMS("incoterms", "incoterm", "Incoterm", "Incoterms");
+	INCOTERMS("incoterms", "incoterm", "Incoterm", "Incoterms"),
+	SHIPMENT_MODES("shipment_modes", "shipment_mode", "ShipmentMode", "Shipment modes");
 
 	/** An extra column. Choice fields are required; text fields are optional. */
 	public record Field(String key, String column, String label, int maxLength, List<String> choices) {
