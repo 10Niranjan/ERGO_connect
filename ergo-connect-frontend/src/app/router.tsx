@@ -7,6 +7,11 @@ import {
   NPD_DETAIL_VIEWERS,
   NPD_SUPPLIER_ROLES,
   NPD_VIEWERS,
+  OFP_CUSTOMER_ROLES,
+  OFP_DETAIL_VIEWERS,
+  OFP_EDITORS,
+  OFP_SUPPLIER_ROLES,
+  OFP_VIEWERS,
   QUOTE_VIEWERS,
   RFQ_CREATORS,
   RFQ_VIEWERS,
@@ -26,6 +31,9 @@ import { ConversionQueuePage } from '../features/npd/pages/ConversionQueuePage'
 import { MyNpdProjectsPage } from '../features/npd/pages/MyNpdProjectsPage'
 import { NpdDetailPage } from '../features/npd/pages/NpdDetailPage'
 import { NpdListPage } from '../features/npd/pages/NpdListPage'
+import { OrderCreatePage } from '../features/ofp/pages/OrderCreatePage'
+import { OrderDetailPage } from '../features/ofp/pages/OrderDetailPage'
+import { OrderListPage } from '../features/ofp/pages/OrderListPage'
 import { AssignedRfqsPage } from '../features/quotation/pages/AssignedRfqsPage'
 import { QuotePage } from '../features/quotation/pages/QuotePage'
 import { RfqDetailPage } from '../features/rfq/pages/RfqDetailPage'
@@ -75,6 +83,20 @@ export const router = createBrowserRouter([
           {
             element: <RequireRole roles={NPD_DETAIL_VIEWERS} />,
             children: [{ path: '/npd/:id', element: <NpdDetailPage /> }],
+          },
+          {
+            // /ofp's own single list/detail endpoints already scope by caller, so one route set serves every
+            // audience (ERGO, the four supplier roles and Customer OFP) rather than NPD's separate ERGO/"mine" split.
+            element: <RequireRole roles={[...OFP_VIEWERS, ...OFP_SUPPLIER_ROLES, ...OFP_CUSTOMER_ROLES]} />,
+            children: [{ path: '/ofp', element: <OrderListPage /> }],
+          },
+          {
+            element: <RequireRole roles={OFP_EDITORS} />,
+            children: [{ path: '/ofp/new', element: <OrderCreatePage /> }],
+          },
+          {
+            element: <RequireRole roles={OFP_DETAIL_VIEWERS} />,
+            children: [{ path: '/ofp/:id', element: <OrderDetailPage /> }],
           },
           {
             element: <RequireRole roles={COMPANY_MANAGERS} />,

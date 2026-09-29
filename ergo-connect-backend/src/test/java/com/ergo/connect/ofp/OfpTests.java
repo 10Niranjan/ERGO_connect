@@ -769,7 +769,7 @@ class OfpTests {
 			.getContentAsString();
 		assertThat(supplierDetail).doesNotContain(distinctiveName).doesNotContain(customerName);
 
-		// the customer also never sees the raw POD reference, but may download the file via its own endpoint
+		// the customer also never sees the raw POD reference, and is refused the file itself (403)
 		Login customerOfp = users.login(customerA, "CUSTOMER_OFP");
 		String customerDetail = call(get("/api/ofp/orders/{id}", orderId), customerOfp, null)
 			.andExpect(status().isOk())
@@ -781,8 +781,7 @@ class OfpTests {
 		assertThat(customerDetail).doesNotContain(distinctiveName);
 
 		mvc.perform(get("/api/ofp/shipments/{id}/pod", shipmentId).header(HttpHeaders.AUTHORIZATION, customerOfp.bearer()))
-			.andExpect(status().isOk())
-			.andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, containsString(distinctiveName)));
+			.andExpect(status().isForbidden());
 
 		// ERGO's own view keeps the full POD reference
 		call(get("/api/ofp/orders/{id}", orderId), ergoOfp, null)

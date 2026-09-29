@@ -66,11 +66,10 @@ class OrderController {
 	private static final String VIEWERS = "hasAnyRole('ERGO_ADMIN', 'ERGO_MANAGEMENT', 'ERGO_OFP', 'ERGO_KAM', "
 			+ "'ERGO_NPD', 'SUPPLIER_NPD', 'SUPPLIER_OFP', 'SUPPLIER_QUALITY', 'SUPPLIER_KAM', 'CUSTOMER_OFP')";
 
-	/** L5 fix (ARCHITECTURE.md §8 2026-09-29): every ERGO role that may read orders at all, plus Customer OFP for
-	 * its own order — deliberately excludes every supplier role, consistent with H1 removing their POD visibility
-	 * from the shipment view entirely. */
+	/** ERGO roles only. Suppliers and customers get no POD file: it carries the supplier's letterhead/file name, which
+	 * would break the customer-never-sees-supplier rule. Customers see receipt fields only (ARCHITECTURE.md §8). */
 	private static final String POD_READERS = "hasAnyRole('ERGO_ADMIN', 'ERGO_MANAGEMENT', 'ERGO_OFP', 'ERGO_KAM', "
-			+ "'ERGO_NPD', 'CUSTOMER_OFP')";
+			+ "'ERGO_NPD')";
 
 	private final OrderService orders;
 

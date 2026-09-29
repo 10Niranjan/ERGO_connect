@@ -58,3 +58,19 @@ export const NPD_SUPPLIER_ROLES: Role[] = ['SUPPLIER_NPD', 'SUPPLIER_OFP', 'SUPP
 
 /** /npd/:id only: NPD_VIEWERS (the ERGO roles) plus every customer/supplier role with any NPD access at all. */
 export const NPD_DETAIL_VIEWERS: Role[] = [...NPD_VIEWERS, ...NPD_CUSTOMER_ROLES, ...NPD_SUPPLIER_ROLES]
+
+/** SRS §10.7: the ERGO roles OrderService.list()/get() actually give a real (non-empty) order scope to. */
+export const OFP_VIEWERS: Role[] = ['ERGO_ADMIN', 'ERGO_MANAGEMENT', 'ERGO_OFP', 'ERGO_KAM', 'ERGO_NPD']
+
+/** SRS §10.7 "E**": create/edit/workflow rights, same grant OrderController's EDITORS gives. */
+export const OFP_EDITORS: Role[] = ['ERGO_ADMIN', 'ERGO_OFP']
+
+/** SRS §10.7 "E**": the four supplier roles reaching their own assigned orders (production progress/packaging only;
+ * OrderService itself confines the actual write rights further). */
+export const OFP_SUPPLIER_ROLES: Role[] = ['SUPPLIER_NPD', 'SUPPLIER_OFP', 'SUPPLIER_QUALITY', 'SUPPLIER_KAM']
+
+/** SRS §10.7 "RV": Customer OFP's own company's orders, pure read-only. */
+export const OFP_CUSTOMER_ROLES: Role[] = ['CUSTOMER_OFP']
+
+/** /ofp/:id: everyone /ofp's own single list endpoint gives a real scope to. */
+export const OFP_DETAIL_VIEWERS: Role[] = [...OFP_VIEWERS, ...OFP_SUPPLIER_ROLES, ...OFP_CUSTOMER_ROLES]
