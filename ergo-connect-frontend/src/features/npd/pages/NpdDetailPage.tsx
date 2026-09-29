@@ -28,6 +28,9 @@ import {
   Typography,
 } from '@mui/material'
 import { useState } from 'react'
+import { useAppSelector } from '../../../app/store'
+import { OFP_EDITORS } from '../../../auth/access'
+import { HandoverDialog } from '../../ofp/components/HandoverDialog'
 import { Link as RouterLink, useParams } from 'react-router'
 import { useUsersQuery, type User } from '../../admin/adminApi'
 import { CommentDialog } from '../../../shared/components/CommentDialog'
@@ -99,6 +102,9 @@ function NpdDetail({ npd }: { npd: NpdView }) {
   const delayDays = npd.delayDays
   const [tab, setTab] = useState('overview')
   const [closing, setClosing] = useState(false)
+  const [handingOver, setHandingOver] = useState(false)
+  // Server enforces stage + role + once-only; this only avoids showing the button where it can never work.
+  const canHandover = useAppSelector((state) => OFP_EDITORS.includes(state.auth.session?.activeRole ?? 'CUSTOMER_RFQ')) && npd.audience === 'ERGO' && npd.stage === 'APPROVED_FOR_PRODUCTION_HANDOVER'
   const [editingProject, setEditingProject] = useState(false)
   const [closeStage, closeState] = useCloseNpdStageMutation()
   // Only ERGO Admin/NPD ever hold UPDATE_PROJECT; skipped otherwise so the users list is never fetched for nothing.
@@ -169,6 +175,7 @@ function NpdDetail({ npd }: { npd: NpdView }) {
         </Stack>
         <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', alignItems: 'flex-start' }}>
           {ergo && ergo.actions.includes('UPDATE_PROJECT') && <Button onClick={() => setEditingProject(true)}>Edit project</Button>}
+          {canHandover && <Button variant="contained" onClick={() => setHandingOver(true)}>Handover to OFP</Button>}
           {npd.actions.includes('CLOSE_STAGE') && (
             <Button variant="contained" onClick={() => setClosing(true)}>
               Close stage
@@ -204,6 +211,7 @@ function NpdDetail({ npd }: { npd: NpdView }) {
         <ProjectEditDialog npd={ergo} ergoUsers={ergoUsers} usersLoading={usersLoading} onClose={() => setEditingProject(false)} />
       )}
 
+      {handingOver && <HandoverDialog npdProjectId={npd.id} onClose={() => setHandingOver(false)} />}
       {closing && (
         <CommentDialog
           title="Close current stage"
