@@ -31,6 +31,11 @@ class NpdApiService implements NpdApi {
 			throw ApiException.notFound("NPD project");
 		}
 		NpdProject project = projects.findById(npdProjectId).orElseThrow(() -> ApiException.notFound("NPD project"));
+		// Security review M1 (ARCHITECTURE.md §8 2026-09-29): a project must actually have reached the stage that
+		// gates production handover before OFP can create an order from it, not just "any ERGO-visible project".
+		if (project.stage != NpdStage.APPROVED_FOR_PRODUCTION_HANDOVER) {
+			throw ApiException.conflict("This NPD project is not yet approved for production handover");
+		}
 		if (project.handoverReadyFlag) {
 			throw ApiException.conflict("This NPD project has already been handed over to OFP");
 		}

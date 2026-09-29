@@ -1,6 +1,7 @@
 package com.ergo.connect.ofp;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -30,7 +31,9 @@ import com.jayway.jsonpath.JsonPath;
 /**
  * Phase 4a: ERGO-only order core, both creation paths (NPD handover and direct standalone create), record scope
  * (SRS §10.7, §8.2), the linear workflow up to Packaging in Progress plus Hold/Release (SRS §14.6), and material
- * status / production progress tracking.
+ * status / production progress tracking. Phase 4b: the assigned supplier's own scoped edits (production progress,
+ * packaging/dispatch), scope isolation between suppliers, and the ERGO-only, inspection-gated Dispatch Ready
+ * transition (SRS §10.7 "E**", §14.6, §17.5).
  */
 @IntegrationTest
 class OfpTests {
@@ -106,9 +109,20 @@ class OfpTests {
 	}
 
 	@Test
+	void handoverIsRejectedWhenTheNpdProjectIsNotYetApprovedForProductionHandover() throws Exception {
+		long rfqId = approvedRfq(buyerA, "89");
+		long projectId = convert(rfqId); // still at PLANNING
+		call(post("/api/ofp/orders/handover/{id}", projectId), ergoOfp,
+				"{\"orderedQuantity\": 500, \"dueDate\": \"%s\"}".formatted(LocalDate.now().plusDays(45)))
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.detail").value("This NPD project is not yet approved for production handover"));
+	}
+
+	@Test
 	void handoverCopiesTheNpdProjectsOwnDataAndCannotBeRepeated() throws Exception {
 		long rfqId = approvedRfq(buyerA, "90");
 		long projectId = convert(rfqId);
+		advanceToHandoverReady(projectId);
 
 		String order = call(post("/api/ofp/orders/handover/{id}", projectId), ergoOfp,
 				"{\"orderedQuantity\": 1000, \"dueDate\": \"%s\"}".formatted(LocalDate.now().plusDays(45)))
@@ -144,6 +158,7 @@ class OfpTests {
 		long orderB = createStandalone(customerB);
 		long rfqId = approvedRfq(buyerA, "90");
 		long projectId = convert(rfqId);
+		advanceToHandoverReady(projectId);
 		long handoverOrder = handover(projectId);
 
 		call(get("/api/ofp/orders"), ergoKam, null).andExpect(jsonPath("$[*].id", hasItem((int) orderA)))
@@ -275,7 +290,285 @@ class OfpTests {
 			.andExpect(jsonPath("$.owner").exists());
 	}
 
+	// ---------------------------------------------------------------- Phase 4b: supplier participation
+
+	@Test
+	void supplierMayEditProductionProgressAndPackagingDispatchOnlyOnItsOwnAssignedOrder() throws Exception {
+		long orderId = createStandalone(customerA);
+		Login supplierOfp = users.login(supplier, "SUPPLIER_OFP");
+		long otherSupplier = users.company("SUPPLIER");
+		Login otherSupplierOfp = users.login(otherSupplier, "SUPPLIER_OFP");
+
+		// the assigned supplier sees its own order and may update production progress / packaging & dispatch
+		call(get("/api/ofp/orders"), supplierOfp, null).andExpect(jsonPath("$[*].id", hasItem((int) orderId)));
+		call(get("/api/ofp/orders/{id}", orderId), supplierOfp, null).andExpect(status().isOk());
+
+		String withProgress = call(post("/api/ofp/orders/{id}/production-progress", orderId), supplierOfp,
+				productionProgressForm("IN_PROGRESS", null)).andExpect(status().isCreated())
+			.andExpect(jsonPath("$.productionProgress[0].status").value("IN_PROGRESS"))
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		long progressId = ((Number) JsonPath.read(withProgress, "$.productionProgress[0].id")).longValue();
+		call(put("/api/ofp/production-progress/{id}", progressId), supplierOfp, productionProgressForm("DONE", null))
+			.andExpect(jsonPath("$.productionProgress[0].status").value("DONE"));
+
+		String withDispatch = call(post("/api/ofp/orders/{id}/packaging-dispatch", orderId), supplierOfp,
+				packagingDispatchForm("IN_PROGRESS", false)).andExpect(status().isCreated())
+			.andExpect(jsonPath("$.packagingDispatch[0].packagingStatus").value("IN_PROGRESS"))
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		long dispatchId = ((Number) JsonPath.read(withDispatch, "$.packagingDispatch[0].id")).longValue();
+		call(put("/api/ofp/packaging-dispatch/{id}", dispatchId), supplierOfp, packagingDispatchForm("PACKED", true))
+			.andExpect(jsonPath("$.packagingDispatch[0].packagingStatus").value("PACKED"))
+			.andExpect(jsonPath("$.packagingDispatch[0].dispatchReadyFlag").value(true));
+
+		// a different supplier's order does not exist for this one (404, not 403): scope, not a role gap
+		call(get("/api/ofp/orders/{id}", orderId), otherSupplierOfp, null).andExpect(status().isNotFound());
+		call(post("/api/ofp/orders/{id}/production-progress", orderId), otherSupplierOfp,
+				productionProgressForm("IN_PROGRESS", null)).andExpect(status().isNotFound());
+		call(post("/api/ofp/orders/{id}/packaging-dispatch", orderId), otherSupplierOfp,
+				packagingDispatchForm("IN_PROGRESS", false)).andExpect(status().isNotFound());
+		call(put("/api/ofp/production-progress/{id}", progressId), otherSupplierOfp, productionProgressForm("DONE", null))
+			.andExpect(status().isNotFound());
+		call(put("/api/ofp/packaging-dispatch/{id}", dispatchId), otherSupplierOfp, packagingDispatchForm("PACKED", true))
+			.andExpect(status().isNotFound());
+		call(get("/api/ofp/orders"), otherSupplierOfp, null).andExpect(jsonPath("$[*].id", not(hasItem((int) orderId))));
+	}
+
+	@Test
+	void supplierCannotTouchMaterialStatusOrderHeaderOrWorkflowActions() throws Exception {
+		long orderId = createStandalone(customerA);
+		Login supplierOfp = users.login(supplier, "SUPPLIER_OFP");
+		String withMaterial = call(post("/api/ofp/orders/{id}/material-status", orderId), ergoOfp,
+				materialStatusForm("ORDERED")).andExpect(status().isCreated())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		long statusId = ((Number) JsonPath.read(withMaterial, "$.materialStatus[0].id")).longValue();
+
+		call(post("/api/ofp/orders"), supplierOfp, orderForm(customerA, supplier)).andExpect(status().isForbidden());
+		call(put("/api/ofp/orders/{id}", orderId), supplierOfp,
+				"{\"ownerUserId\": %d}".formatted(ergoOfp.userId())).andExpect(status().isForbidden());
+		call(post("/api/ofp/orders/{id}/material-status", orderId), supplierOfp, materialStatusForm("ORDERED"))
+			.andExpect(status().isForbidden());
+		call(put("/api/ofp/material-status/{id}", statusId), supplierOfp, materialStatusForm("RECEIVED"))
+			.andExpect(status().isForbidden());
+		call(post("/api/ofp/orders/{id}/advance", orderId), supplierOfp, "{}").andExpect(status().isForbidden());
+		call(post("/api/ofp/orders/{id}/hold", orderId), supplierOfp, "{\"comment\": \"x\"}")
+			.andExpect(status().isForbidden());
+		call(post("/api/ofp/orders/{id}/release", orderId), supplierOfp, "{}").andExpect(status().isForbidden());
+		call(post("/api/ofp/orders/{id}/dispatch-ready", orderId), supplierOfp, "{}").andExpect(status().isForbidden());
+	}
+
+	@Test
+	void everySupplierEditorRoleNotJustSupplierOfpCanEditItsOwnOrder() throws Exception {
+		long orderId = createStandalone(customerA);
+		// SRS §10.7 "E**" names all four supplier roles; confirm the grant isn't accidentally SUPPLIER_OFP-only
+		Login supplierNpd = users.login(supplier, "SUPPLIER_NPD");
+		call(post("/api/ofp/orders/{id}/production-progress", orderId), supplierNpd,
+				productionProgressForm("IN_PROGRESS", null)).andExpect(status().isCreated())
+			.andExpect(jsonPath("$.productionProgress[0].status").value("IN_PROGRESS"));
+		call(post("/api/ofp/orders/{id}/packaging-dispatch", orderId), supplierNpd,
+				packagingDispatchForm("IN_PROGRESS", false)).andExpect(status().isCreated())
+			.andExpect(jsonPath("$.packagingDispatch[0].packagingStatus").value("IN_PROGRESS"));
+	}
+
+	@Test
+	void supplierActionsAreExactlyProductionProgressAndPackagingDispatchNeverDispatchReady() throws Exception {
+		long orderId = advanceToPackagingInProgress(customerA);
+		call(post("/api/ofp/orders/{id}/material-status", orderId), ergoOfp, materialStatusForm("RECEIVED", "PASSED"))
+			.andExpect(status().isCreated()); // gate met: PACKAGING_IN_PROGRESS + one PASSED row
+		Login supplierOfp = users.login(supplier, "SUPPLIER_OFP");
+
+		call(get("/api/ofp/orders/{id}", orderId), supplierOfp, null)
+			.andExpect(jsonPath("$.actions",
+					containsInAnyOrder("UPDATE_PRODUCTION_PROGRESS", "UPDATE_PACKAGING_DISPATCH")));
+	}
+
+	@Test
+	void supplierSettingDispatchReadyFlagNeverChangesOrderStatus() throws Exception {
+		long orderId = createStandalone(customerA);
+		Login supplierOfp = users.login(supplier, "SUPPLIER_OFP");
+		call(post("/api/ofp/orders/{id}/packaging-dispatch", orderId), supplierOfp,
+				packagingDispatchForm("PACKED", true)).andExpect(status().isCreated())
+			.andExpect(jsonPath("$.packagingDispatch[0].dispatchReadyFlag").value(true))
+			.andExpect(jsonPath("$.currentStatus").value("ORDER_CREATED"));
+		assertThat(jdbc.queryForObject("SELECT current_status FROM orders WHERE order_id = ?", String.class, orderId))
+			.isEqualTo("ORDER_CREATED");
+	}
+
+	@Test
+	void packagingDispatchCreateAndUpdateAreAudited() throws Exception {
+		long orderId = createStandalone(customerA);
+		String withDispatch = call(post("/api/ofp/orders/{id}/packaging-dispatch", orderId), ergoOfp,
+				packagingDispatchForm("PENDING", false)).andExpect(status().isCreated())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		long dispatchId = ((Number) JsonPath.read(withDispatch, "$.packagingDispatch[0].id")).longValue();
+		assertThat(jdbc.queryForObject("""
+				SELECT count(*) FROM audit_logs WHERE entity_name = 'OrderPackagingDispatch' AND record_id = ?
+				AND event_type = 'CREATE'""", Integer.class, dispatchId)).isEqualTo(1);
+
+		call(put("/api/ofp/packaging-dispatch/{id}", dispatchId), ergoOfp, packagingDispatchForm("PACKED", true))
+			.andExpect(status().isOk());
+		assertThat(jdbc.queryForObject("""
+				SELECT new_value FROM audit_logs WHERE entity_name = 'OrderPackagingDispatch' AND record_id = ?
+				AND event_type = 'UPDATE' AND field_name = 'packagingStatus'""", String.class, dispatchId))
+			.isEqualTo("PACKED");
+	}
+
+	@Test
+	void releaseIsRefusedWhenDispatchReadyGateNoLongerHoldsAndSupplierWriteIsBlockedWhileOnHold() throws Exception {
+		long orderId = advanceToPackagingInProgress(customerA);
+		String withMaterial = call(post("/api/ofp/orders/{id}/material-status", orderId), ergoOfp,
+				materialStatusForm("RECEIVED", "PASSED")).andExpect(status().isCreated())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		long statusId = ((Number) JsonPath.read(withMaterial, "$.materialStatus[0].id")).longValue();
+		call(post("/api/ofp/orders/{id}/dispatch-ready", orderId), ergoOfp, "{}")
+			.andExpect(jsonPath("$.currentStatus").value("DISPATCH_READY"));
+
+		call(post("/api/ofp/orders/{id}/hold", orderId), ergoOfp, "{\"comment\": \"pending customer sign-off\"}")
+			.andExpect(jsonPath("$.currentStatus").value("ON_HOLD"));
+
+		// L2: a supplier's own write is now blocked while the order is ON_HOLD (ERGO's own writes are unaffected)
+		Login supplierOfp = users.login(supplier, "SUPPLIER_OFP");
+		call(post("/api/ofp/orders/{id}/production-progress", orderId), supplierOfp,
+				productionProgressForm("IN_PROGRESS", null)).andExpect(status().isConflict());
+		call(post("/api/ofp/orders/{id}/packaging-dispatch", orderId), supplierOfp,
+				packagingDispatchForm("IN_PROGRESS", false)).andExpect(status().isConflict());
+		call(post("/api/ofp/orders/{id}/production-progress", orderId), ergoOfp,
+				productionProgressForm("IN_PROGRESS", null)).andExpect(status().isCreated());
+
+		// M2: the material inspection that made Dispatch Ready reachable no longer holds
+		call(put("/api/ofp/material-status/{id}", statusId), ergoOfp, materialStatusForm("RECEIVED", "FAILED"))
+			.andExpect(status().isOk());
+		call(post("/api/ofp/orders/{id}/release", orderId), ergoOfp, "{}").andExpect(status().isConflict())
+			.andExpect(jsonPath("$.detail")
+				.value("Cannot release back to Dispatch Ready - not every material inspection has passed anymore"));
+
+		// fix it and release succeeds
+		call(put("/api/ofp/material-status/{id}", statusId), ergoOfp, materialStatusForm("RECEIVED", "PASSED"))
+			.andExpect(status().isOk());
+		call(post("/api/ofp/orders/{id}/release", orderId), ergoOfp, "{}")
+			.andExpect(jsonPath("$.currentStatus").value("DISPATCH_READY"));
+	}
+
+	@Test
+	void dispatchReadyIsGatedOnEveryMaterialInspectionPassingAndIsErgoOfpAdminOnly() throws Exception {
+		long orderId = advanceToPackagingInProgress(customerA);
+
+		// zero material-status rows: not dispatch-ready (an unchecked order has not "passed")
+		call(post("/api/ofp/orders/{id}/dispatch-ready", orderId), ergoOfp, "{}")
+			.andExpect(status().isUnprocessableContent())
+			.andExpect(jsonPath("$.detail")
+				.value("All material inspections must pass before the order can be marked dispatch ready."));
+
+		// one FAILED row: still not dispatch-ready
+		String withMaterial = call(post("/api/ofp/orders/{id}/material-status", orderId), ergoOfp,
+				materialStatusForm("RECEIVED", "FAILED")).andExpect(status().isCreated())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		long statusId = ((Number) JsonPath.read(withMaterial, "$.materialStatus[0].id")).longValue();
+		call(post("/api/ofp/orders/{id}/dispatch-ready", orderId), ergoOfp, "{}")
+			.andExpect(status().isUnprocessableContent());
+
+		// only ERGO OFP/Admin may attempt the transition, gate met or not
+		Login supplierOfp = users.login(supplier, "SUPPLIER_OFP");
+		call(post("/api/ofp/orders/{id}/dispatch-ready", orderId), supplierOfp, "{}")
+			.andExpect(status().isForbidden());
+		call(post("/api/ofp/orders/{id}/dispatch-ready", orderId), ergoManagement, "{}")
+			.andExpect(status().isForbidden());
+
+		// one PASSED row (the FAILED one corrected): gate now met
+		call(put("/api/ofp/material-status/{id}", statusId), ergoOfp, materialStatusForm("RECEIVED", "PASSED"))
+			.andExpect(status().isOk());
+		call(post("/api/ofp/orders/{id}/dispatch-ready", orderId), ergoOfp, "{}")
+			.andExpect(jsonPath("$.currentStatus").value("DISPATCH_READY"));
+
+		// cannot be repeated once already Dispatch Ready
+		call(post("/api/ofp/orders/{id}/dispatch-ready", orderId), ergoOfp, "{}").andExpect(status().isConflict());
+	}
+
+	@Test
+	void supplierListAndDetailNeverIdentifyTheCustomer() throws Exception {
+		long orderId = createStandalone(customerA);
+		String customerName = jdbc.queryForObject("SELECT company_name FROM companies WHERE company_id = ?",
+				String.class, customerA);
+		call(put("/api/ofp/orders/{id}", orderId), ergoOfp, """
+				{"customerPoNo": "CUSTPO-SECRET-1", "supplierPoNo": "SPO-7", "ownerUserId": %d}"""
+			.formatted(ergoOfp.userId())).andExpect(status().isOk());
+		// ERGO-typed free text naming the customer: must not reach the supplier (NPD H1 precedent)
+		call(post("/api/ofp/orders/{id}/material-status", orderId), ergoOfp, """
+				{"materialStatus": "RECEIVED", "inspectionStatus": "PENDING", "remarks": "for %s"}"""
+			.formatted(customerName)).andExpect(status().isCreated());
+		Login supplierOfp = users.login(supplier, "SUPPLIER_OFP");
+
+		String list = call(get("/api/ofp/orders"), supplierOfp, null).andExpect(status().isOk())
+			.andExpect(jsonPath("$[0].id").value((int) orderId))
+			.andExpect(jsonPath("$[0].supplierPoNo").value("SPO-7"))
+			.andExpect(jsonPath("$[0].customer").doesNotExist())
+			.andExpect(jsonPath("$[0].customerPoNo").doesNotExist())
+			.andExpect(jsonPath("$[0].owner").doesNotExist())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		assertThat(list).doesNotContain(customerName).doesNotContain("CUSTPO-SECRET-1");
+
+		String detail = call(get("/api/ofp/orders/{id}", orderId), supplierOfp, null).andExpect(status().isOk())
+			.andExpect(jsonPath("$.supplierPoNo").value("SPO-7"))
+			.andExpect(jsonPath("$.materialStatus[0].inspectionStatus").value("PENDING"))
+			.andExpect(jsonPath("$.materialStatus[0].remarks").doesNotExist())
+			.andExpect(jsonPath("$.customer").doesNotExist())
+			.andExpect(jsonPath("$.customerPoNo").doesNotExist())
+			.andExpect(jsonPath("$.linkedRfqId").doesNotExist())
+			.andExpect(jsonPath("$.linkedNpdProjectId").doesNotExist())
+			.andExpect(jsonPath("$.owner").doesNotExist())
+			.andExpect(jsonPath("$.ownerUserId").doesNotExist())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		assertThat(detail).doesNotContain(customerName).doesNotContain("CUSTPO-SECRET-1");
+
+		// the supplier's own writes answer with the same supplier-safe shape
+		String afterWrite = call(post("/api/ofp/orders/{id}/packaging-dispatch", orderId), supplierOfp,
+				packagingDispatchForm("PENDING", false)).andExpect(status().isCreated())
+			.andExpect(jsonPath("$.customer").doesNotExist())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		assertThat(afterWrite).doesNotContain(customerName).doesNotContain("CUSTPO-SECRET-1");
+
+		// ERGO keeps the full view
+		call(get("/api/ofp/orders/{id}", orderId), ergoOfp, null).andExpect(jsonPath("$.customer").value(customerName))
+			.andExpect(jsonPath("$.customerPoNo").value("CUSTPO-SECRET-1"))
+			.andExpect(jsonPath("$.materialStatus[0].remarks").value("for " + customerName));
+	}
+
+	@Test
+	void customerRoleHasZeroOfpAccessEvenForCustomerOfp() throws Exception {
+		long orderId = createStandalone(customerA);
+		Login customerOfp = users.login(customerA, "CUSTOMER_OFP"); // SRS §10.7 RV, deferred to 4c
+		call(get("/api/ofp/orders"), customerOfp, null).andExpect(status().isForbidden());
+		call(get("/api/ofp/orders/{id}", orderId), customerOfp, null).andExpect(status().isForbidden());
+		call(post("/api/ofp/orders/{id}/production-progress", orderId), customerOfp,
+				productionProgressForm("IN_PROGRESS", null)).andExpect(status().isForbidden());
+	}
+
 	// ---------------------------------------------------------------- helpers
+
+	private long advanceToPackagingInProgress(long customerCompanyId) throws Exception {
+		long orderId = createStandalone(customerCompanyId);
+		for (int i = 0; i < 5; i++) {
+			call(post("/api/ofp/orders/{id}/advance", orderId), ergoOfp, "{}").andExpect(status().isOk());
+		}
+		return orderId;
+	}
 
 	private long createStandalone(long customerCompanyId) throws Exception {
 		return JsonPath
@@ -305,6 +598,15 @@ class OfpTests {
 			.<Number>read(call(post("/api/npd/convert/{id}", rfqId), ergoNpd, "{}").andExpect(status().isCreated())
 				.andReturn().getResponse().getContentAsString(), "$.id")
 			.longValue();
+	}
+
+	/** Closes every remaining NPD stage (no mandatory activities were added, so each Close Stage succeeds
+	 * immediately) from PLANNING to APPROVED_FOR_PRODUCTION_HANDOVER, the stage the security review's M1 fix now
+	 * requires before {@code NpdApi#handover} will hand a project to OFP. */
+	private void advanceToHandoverReady(long projectId) throws Exception {
+		for (int i = 0; i < 7; i++) {
+			call(post("/api/npd/{id}/close-stage", projectId), ergoNpd, "{}").andExpect(status().isOk());
+		}
 	}
 
 	/** Full RFQ->quotation flow up to CUSTOMER_APPROVED with one supplier's quote approved (SRS §14.2-14.4),
@@ -362,8 +664,17 @@ class OfpTests {
 	}
 
 	private static String materialStatusForm(String materialStatus) {
+		return materialStatusForm(materialStatus, "PENDING");
+	}
+
+	private static String materialStatusForm(String materialStatus, String inspectionStatus) {
 		return """
-				{"materialStatus": "%s", "inspectionStatus": "PENDING"}""".formatted(materialStatus);
+				{"materialStatus": "%s", "inspectionStatus": "%s"}""".formatted(materialStatus, inspectionStatus);
+	}
+
+	private static String packagingDispatchForm(String packagingStatus, boolean dispatchReadyFlag) {
+		return """
+				{"packagingStatus": "%s", "dispatchReadyFlag": %s}""".formatted(packagingStatus, dispatchReadyFlag);
 	}
 
 	private static String productionProgressForm(String status, String blockerReason) {

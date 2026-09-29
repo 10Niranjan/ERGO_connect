@@ -4,9 +4,11 @@ import java.util.List;
 
 /**
  * SRS §13.5.1/§14.6 order lifecycle. Phase 4a drives the linear sequence up to {@link #PACKAGING_IN_PROGRESS} only
- * ({@link #SEQUENCE}); {@link #DISPATCH_READY} onward is 4b/4c. {@link #ON_HOLD} is a side-transition reachable from
- * any non-terminal status, released back to whatever status it was held from (recovered from the automatic audit
- * trail rather than a new column, ARCHITECTURE.md §8 2026-09-28).
+ * ({@link #SEQUENCE}). Phase 4b adds a single further, ERGO-only, inspection-gated step to {@link #DISPATCH_READY}
+ * ({@code OrderService.dispatchReady}) — deliberately kept out of {@link #SEQUENCE} so {@code advance()}'s generic
+ * per-step walk can never reach it without that gate; {@link #DISPATCHED} onward is 4c. {@link #ON_HOLD} is a
+ * side-transition reachable from any non-terminal status, released back to whatever status it was held from
+ * (recovered from the automatic audit trail rather than a new column, ARCHITECTURE.md §8 2026-09-28).
  */
 public enum OrderStatus {
 

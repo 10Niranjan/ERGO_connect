@@ -5,6 +5,10 @@ import static com.ergo.connect.common.security.Role.ERGO_KAM;
 import static com.ergo.connect.common.security.Role.ERGO_MANAGEMENT;
 import static com.ergo.connect.common.security.Role.ERGO_NPD;
 import static com.ergo.connect.common.security.Role.ERGO_OFP;
+import static com.ergo.connect.common.security.Role.SUPPLIER_KAM;
+import static com.ergo.connect.common.security.Role.SUPPLIER_NPD;
+import static com.ergo.connect.common.security.Role.SUPPLIER_OFP;
+import static com.ergo.connect.common.security.Role.SUPPLIER_QUALITY;
 
 import java.math.BigDecimal;
 import java.time.Year;
@@ -36,21 +40,32 @@ import com.ergo.connect.npd.api.NpdApi.HandoverProject;
 import com.ergo.connect.ofp.domain.OfpDtos.MaterialStatusForm;
 import com.ergo.connect.ofp.domain.OfpDtos.MaterialStatusView;
 import com.ergo.connect.ofp.domain.OfpDtos.OrderAction;
+import com.ergo.connect.ofp.domain.OfpDtos.OrderDetail;
+import com.ergo.connect.ofp.domain.OfpDtos.OrderSummary;
+import com.ergo.connect.ofp.domain.OfpDtos.SupplierMaterialStatusView;
+import com.ergo.connect.ofp.domain.OfpDtos.SupplierOrderRow;
+import com.ergo.connect.ofp.domain.OfpDtos.SupplierOrderView;
 import com.ergo.connect.ofp.domain.OfpDtos.OrderForm;
 import com.ergo.connect.ofp.domain.OfpDtos.OrderHandoverForm;
 import com.ergo.connect.ofp.domain.OfpDtos.OrderRow;
 import com.ergo.connect.ofp.domain.OfpDtos.OrderUpdateForm;
 import com.ergo.connect.ofp.domain.OfpDtos.OrderView;
+import com.ergo.connect.ofp.domain.OfpDtos.PackagingDispatchForm;
+import com.ergo.connect.ofp.domain.OfpDtos.PackagingDispatchView;
 import com.ergo.connect.ofp.domain.OfpDtos.ProductionProgressForm;
 import com.ergo.connect.ofp.domain.OfpDtos.ProductionProgressView;
 
 /**
- * Phase 4a: ERGO-only order core and production tracking up to Packaging in Progress (SRS §13.5, §14.6). Record
- * scope (SRS §10.7, §8.2): ERGO OFP/Admin/Management see every order, ERGO KAMs their assigned customers' orders,
- * ERGO NPD every order that came out of an NPD project (it is itself an unrestricted NPD viewer). {@link #allowed}
- * is the single rule book: it enforces every action and lists the caller's buttons. Audit-only for orders (no
- * dedicated status-history table, ARCHITECTURE.md §8 2026-09-28): {@link #release} recovers what a Hold interrupted
- * from the automatic field audit trail rather than a new column.
+ * Phase 4a: ERGO-only order core and production tracking up to Packaging in Progress (SRS §13.5, §14.6). Phase 4b:
+ * the assigned supplier's own scoped edits (production progress, packaging/dispatch) and the inspection-gated
+ * ERGO-only Dispatch Ready transition (SRS §10.7 "E**", §13.5.4, §14.6, §17.5). Record scope (SRS §10.7, §8.2): ERGO
+ * OFP/Admin/Management see every order, ERGO KAMs their assigned customers' orders, ERGO NPD every order that came
+ * out of an NPD project (it is itself an unrestricted NPD viewer), a supplier role only orders where it is the
+ * assigned supplier (direct {@code order.supplierCompanyId} match, mirroring NpdService's own
+ * {@code SUPPLIER_EDITORS}/{@code ownsActivity} precedent — no new assignment table, ARCHITECTURE.md §8 2026-09-29).
+ * {@link #allowed} is the single rule book: it enforces every action and lists the caller's buttons. Audit-only for
+ * orders (no dedicated status-history table, ARCHITECTURE.md §8 2026-09-28): {@link #release} recovers what a Hold
+ * interrupted from the automatic field audit trail rather than a new column.
  */
 @Service
 @Transactional
@@ -59,11 +74,19 @@ public class OrderService {
 	/** SRS §10.7 full View/Create/Edit/Submit/Approve. ERGO Management is view-only in 4a (no approval gate yet). */
 	private static final Set<Role> EDITORS = EnumSet.of(ERGO_ADMIN, ERGO_OFP);
 
+	/** SRS §10.7 "E**": all four supplier-side roles (confirmed by the user, same grant NPD 3b already gives the
+	 * identical role set), edit rights limited to production progress and packaging/dispatch on their own assigned
+	 * order only — never material status, order header fields, or the workflow actions (hold/release/advance). */
+	private static final Set<Role> SUPPLIER_EDITORS = EnumSet.of(SUPPLIER_NPD, SUPPLIER_OFP, SUPPLIER_QUALITY,
+			SUPPLIER_KAM);
+
 	private final OrderRepository orders;
 
 	private final OrderMaterialStatusRepository materialStatuses;
 
 	private final OrderProductionProgressRepository productionProgress;
+
+	private final OrderPackagingDispatchRepository packagingDispatches;
 
 	private final NpdApi npdApi;
 
@@ -74,11 +97,12 @@ public class OrderService {
 	private final JdbcTemplate jdbc;
 
 	OrderService(OrderRepository orders, OrderMaterialStatusRepository materialStatuses,
-			OrderProductionProgressRepository productionProgress, NpdApi npdApi, Directory directory,
-			AuditLogService audit, JdbcTemplate jdbc) {
+			OrderProductionProgressRepository productionProgress, OrderPackagingDispatchRepository packagingDispatches,
+			NpdApi npdApi, Directory directory, AuditLogService audit, JdbcTemplate jdbc) {
 		this.orders = orders;
 		this.materialStatuses = materialStatuses;
 		this.productionProgress = productionProgress;
+		this.packagingDispatches = packagingDispatches;
 		this.npdApi = npdApi;
 		this.directory = directory;
 		this.audit = audit;
@@ -88,8 +112,15 @@ public class OrderService {
 	// ---------------------------------------------------------------- reads
 
 	@Transactional(readOnly = true)
-	public List<OrderRow> list() {
+	public List<? extends OrderSummary> list() {
 		CurrentUser me = CurrentUser.get();
+		if (SUPPLIER_EDITORS.contains(me.role())) {
+			// Two-way anonymity: no customer lookup is ever made building the supplier's rows.
+			return orders.findBySupplierCompanyIdOrderByIdDesc(me.companyId()).stream()
+				.map(o -> new SupplierOrderRow(o.id, o.orderNumber, o.supplierPoNo, o.partNumber, o.revision,
+						o.orderedQuantity, o.dueDate, o.currentStatus))
+				.toList();
+		}
 		List<Order> visible = switch (me.role()) {
 			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_OFP -> orders.findAllByOrderByIdDesc();
 			case ERGO_KAM -> {
@@ -97,7 +128,7 @@ public class OrderService {
 				yield accounts.isEmpty() ? List.of() : orders.findByCustomerCompanyIdInOrderByIdDesc(accounts);
 			}
 			case ERGO_NPD -> orders.findByLinkedNpdProjectIdIsNotNullOrderByIdDesc();
-			default -> List.of(); // SRS §10.7 X: ERGO RFQ/Quality, every customer/supplier role
+			default -> List.of(); // SRS §10.7 X: ERGO RFQ/Quality, every customer role (customer OFP is 4c)
 		};
 		Map<Long, CompanyRef> customers = directory.companies(ids(visible, o -> o.customerCompanyId));
 		Map<Long, CompanyRef> suppliers = directory.companies(ids(visible, o -> o.supplierCompanyId));
@@ -110,7 +141,7 @@ public class OrderService {
 	}
 
 	@Transactional(readOnly = true)
-	public OrderView get(long id) {
+	public OrderDetail get(long id) {
 		CurrentUser me = CurrentUser.get();
 		return view(me, visible(me, id));
 	}
@@ -118,7 +149,7 @@ public class OrderService {
 	// ---------------------------------------------------------------- create
 
 	/** Direct standalone create (SRS §13.5.1): repeat/running orders with no NPD/RFQ link. */
-	public OrderView create(OrderForm form) {
+	public OrderDetail create(OrderForm form) {
 		CurrentUser me = CurrentUser.get();
 		requireEditor(me);
 		Order order = new Order();
@@ -141,7 +172,7 @@ public class OrderService {
 	/** NPD's "Handover to OFP" action: customer, supplier, part number and revision come from the NPD project
 	 * itself; {@link NpdApi#handover} 404s outside the caller's ERGO scope and 409s a project already handed
 	 * over, both before this method touches anything else. */
-	public OrderView handover(long npdProjectId, OrderHandoverForm form) {
+	public OrderDetail handover(long npdProjectId, OrderHandoverForm form) {
 		CurrentUser me = CurrentUser.get();
 		requireEditor(me);
 		HandoverProject project = npdApi.handover(npdProjectId);
@@ -163,7 +194,7 @@ public class OrderService {
 		return view(me, order);
 	}
 
-	public OrderView update(long id, OrderUpdateForm form) {
+	public OrderDetail update(long id, OrderUpdateForm form) {
 		CurrentUser me = CurrentUser.get();
 		Order order = visible(me, id);
 		require(OrderAction.EDIT, me, order);
@@ -179,7 +210,7 @@ public class OrderService {
 
 	/** One step forward in the fixed 4a sequence; never skips ahead (the next status is always derived from the
 	 * current one, never client-supplied). */
-	public OrderView advance(long id, String comment) {
+	public OrderDetail advance(long id, String comment) {
 		CurrentUser me = CurrentUser.get();
 		Order order = visible(me, id);
 		require(OrderAction.ADVANCE, me, order);
@@ -189,7 +220,7 @@ public class OrderService {
 	}
 
 	/** SRS §14.6: reachable from any non-terminal status, reason required. */
-	public OrderView hold(long id, String reason) {
+	public OrderDetail hold(long id, String reason) {
 		CurrentUser me = CurrentUser.get();
 		Order order = visible(me, id);
 		require(OrderAction.HOLD, me, order);
@@ -199,12 +230,19 @@ public class OrderService {
 	}
 
 	/** Returns to whatever status Hold interrupted, recovered from the automatic audit trail (no previous-status
-	 * column, ARCHITECTURE.md §8 2026-09-28). */
-	public OrderView release(long id, String comment) {
+	 * column, ARCHITECTURE.md §8 2026-09-28). Security review M2 (ARCHITECTURE.md §8 2026-09-29): if that status was
+	 * DISPATCH_READY, its own inspection gate is re-checked before restoring it — material status can still change
+	 * while an order is ON_HOLD (M2's other half is deliberately left for 4c's own Dispatch action to re-check), so
+	 * the gate that was true when Hold was pressed may no longer hold by the time Release is. */
+	public OrderDetail release(long id, String comment) {
 		CurrentUser me = CurrentUser.get();
 		Order order = visible(me, id);
 		require(OrderAction.RELEASE, me, order);
 		OrderStatus previous = statusBeforeHold(order.id);
+		if (previous == OrderStatus.DISPATCH_READY && !dispatchReadyGateMet(order.id)) {
+			throw ApiException
+				.conflict("Cannot release back to Dispatch Ready - not every material inspection has passed anymore");
+		}
 		reasonIfGiven(comment);
 		order.currentStatus = previous;
 		return view(me, order);
@@ -218,9 +256,40 @@ public class OrderService {
 			.orElseThrow(() -> ApiException.conflict("No prior status was recorded to release this order back to"));
 	}
 
+	/** SRS §14.6/§17.5: Packaging in Progress -> Dispatch Ready, ERGO OFP/Admin only (never the supplier, even
+	 * though a supplier may set its own {@code dispatchReadyFlag} readiness claim on {@code order_packaging_dispatch}
+	 * — that flag never moves this status by itself, ARCHITECTURE.md §8 2026-09-29). Kept as its own action rather
+	 * than folded into {@link #advance}: {@link OrderStatus#SEQUENCE} deliberately stops at PACKAGING_IN_PROGRESS, so
+	 * the generic sequence walk can never reach DISPATCH_READY and skip this gate. Blocked (with a specific,
+	 * actionable message) unless every material-status row for the order has passed inspection, and there is at
+	 * least one such row (point 4: zero rows is not a pass). */
+	public OrderDetail dispatchReady(long id, String comment) {
+		CurrentUser me = CurrentUser.get();
+		Order order = visible(me, id);
+		if (!EDITORS.contains(me.role()) || order.currentStatus != OrderStatus.PACKAGING_IN_PROGRESS) {
+			throw ApiException.conflict("This action is not available for this order right now");
+		}
+		if (!dispatchReadyGateMet(order.id)) {
+			throw ApiException
+				.unprocessable("All material inspections must pass before the order can be marked dispatch ready.");
+		}
+		reasonIfGiven(comment);
+		order.currentStatus = OrderStatus.DISPATCH_READY;
+		return view(me, order);
+	}
+
+	/** Every {@code order_material_status} row for this order must be PASSED, and there must be at least one row —
+	 * an order with no inspection recorded at all has not "passed", it simply hasn't been checked yet. Reuses
+	 * {@code inspection_status} as the pre-dispatch quality gate stub until the Quality module exists
+	 * (ARCHITECTURE.md §8 2026-09-29). */
+	private boolean dispatchReadyGateMet(long orderId) {
+		List<OrderMaterialStatus> materials = materialStatuses.findByOrderIdOrderById(orderId);
+		return !materials.isEmpty() && materials.stream().allMatch(m -> m.inspectionStatus == InspectionStatus.PASSED);
+	}
+
 	// ---------------------------------------------------------------- material status (SRS §13.5.2)
 
-	public OrderView addMaterialStatus(long orderId, MaterialStatusForm form) {
+	public OrderDetail addMaterialStatus(long orderId, MaterialStatusForm form) {
 		CurrentUser me = CurrentUser.get();
 		Order order = visible(me, orderId);
 		require(OrderAction.UPDATE_MATERIAL_STATUS, me, order);
@@ -231,7 +300,7 @@ public class OrderService {
 		return view(me, order);
 	}
 
-	public OrderView updateMaterialStatus(long statusId, MaterialStatusForm form) {
+	public OrderDetail updateMaterialStatus(long statusId, MaterialStatusForm form) {
 		CurrentUser me = CurrentUser.get();
 		OrderMaterialStatus status = materialStatuses.findById(statusId)
 			.orElseThrow(() -> ApiException.notFound("Material status"));
@@ -252,7 +321,7 @@ public class OrderService {
 
 	// ---------------------------------------------------------------- production progress (SRS §13.5.3)
 
-	public OrderView addProductionProgress(long orderId, ProductionProgressForm form) {
+	public OrderDetail addProductionProgress(long orderId, ProductionProgressForm form) {
 		CurrentUser me = CurrentUser.get();
 		Order order = visible(me, orderId);
 		require(OrderAction.UPDATE_PRODUCTION_PROGRESS, me, order);
@@ -263,7 +332,7 @@ public class OrderService {
 		return view(me, order);
 	}
 
-	public OrderView updateProductionProgress(long progressId, ProductionProgressForm form) {
+	public OrderDetail updateProductionProgress(long progressId, ProductionProgressForm form) {
 		CurrentUser me = CurrentUser.get();
 		OrderProductionProgress progress = productionProgress.findById(progressId)
 			.orElseThrow(() -> ApiException.notFound("Production progress"));
@@ -294,6 +363,41 @@ public class OrderService {
 		return value == null ? BigDecimal.ZERO : value;
 	}
 
+	// ---------------------------------------------------------------- packaging & dispatch (SRS §13.5.4)
+
+	public OrderDetail addPackagingDispatch(long orderId, PackagingDispatchForm form) {
+		CurrentUser me = CurrentUser.get();
+		Order order = visible(me, orderId);
+		require(OrderAction.UPDATE_PACKAGING_DISPATCH, me, order);
+		OrderPackagingDispatch dispatch = new OrderPackagingDispatch();
+		dispatch.orderId = order.id;
+		applyPackagingDispatch(dispatch, form, me);
+		packagingDispatches.save(dispatch);
+		return view(me, order);
+	}
+
+	public OrderDetail updatePackagingDispatch(long dispatchId, PackagingDispatchForm form) {
+		CurrentUser me = CurrentUser.get();
+		OrderPackagingDispatch dispatch = packagingDispatches.findById(dispatchId)
+			.orElseThrow(() -> ApiException.notFound("Packaging/dispatch"));
+		Order order = visible(me, dispatch.orderId);
+		require(OrderAction.UPDATE_PACKAGING_DISPATCH, me, order);
+		applyPackagingDispatch(dispatch, form, me);
+		return view(me, order);
+	}
+
+	private static void applyPackagingDispatch(OrderPackagingDispatch dispatch, PackagingDispatchForm form,
+			CurrentUser me) {
+		dispatch.packedQuantity = form.packedQuantity();
+		dispatch.packagingStatus = form.packagingStatus();
+		// A readiness claim only (ARCHITECTURE.md §8 2026-09-29): never moves orders.currentStatus by itself, see
+		// dispatchReady().
+		dispatch.dispatchReadyFlag = form.dispatchReadyFlag();
+		dispatch.dispatchDate = form.dispatchDate();
+		dispatch.dispatchRemarks = text(form.dispatchRemarks());
+		dispatch.updatedByUserId = me.userId();
+	}
+
 	// ---------------------------------------------------------------- rules
 
 	/** Record scope. Out-of-scope orders do not exist for the caller (404, not 403). */
@@ -303,6 +407,8 @@ public class OrderService {
 			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_OFP -> true;
 			case ERGO_KAM -> directory.accountsOf(me.userId()).contains(order.customerCompanyId);
 			case ERGO_NPD -> order.linkedNpdProjectId != null;
+			case SUPPLIER_NPD, SUPPLIER_OFP, SUPPLIER_QUALITY, SUPPLIER_KAM ->
+				me.companyId() == order.supplierCompanyId;
 			default -> false;
 		};
 		if (!inScope) {
@@ -317,9 +423,12 @@ public class OrderService {
 		}
 	}
 
-	/** The rule book: SRS §10.7 rights combined with the §14.6 status. */
-	private static boolean allowed(OrderAction action, CurrentUser me, Order order) {
+	/** The rule book: SRS §10.7 rights combined with the §14.6 status. Not static (unlike 4a): {@code
+	 * MARK_DISPATCH_READY} needs {@link #dispatchReadyGateMet} to decide whether the button is really available,
+	 * not just the status. */
+	private boolean allowed(OrderAction action, CurrentUser me, Order order) {
 		boolean editor = EDITORS.contains(me.role());
+		boolean ownSupplier = SUPPLIER_EDITORS.contains(me.role()) && me.companyId() == order.supplierCompanyId;
 		OrderStatus status = order.currentStatus;
 		return switch (action) {
 			case EDIT -> editor && status != OrderStatus.CLOSED;
@@ -327,16 +436,25 @@ public class OrderService {
 					&& !status.equals(OrderStatus.SEQUENCE.getLast());
 			case HOLD -> editor && status != OrderStatus.CLOSED && status != OrderStatus.ON_HOLD;
 			case RELEASE -> editor && status == OrderStatus.ON_HOLD;
-			case UPDATE_MATERIAL_STATUS, UPDATE_PRODUCTION_PROGRESS -> editor && status != OrderStatus.CLOSED;
+			case UPDATE_MATERIAL_STATUS -> editor && status != OrderStatus.CLOSED;
+			// SRS §10.7 "E**": the assigned supplier, alongside ERGO OFP/Admin, but never Hold/Release/Advance/
+			// Edit/material status (point 1/5, ARCHITECTURE.md §8 2026-09-29). Security review L2 (ARCHITECTURE.md §8
+			// 2026-09-29): a supplier's own write is additionally blocked while ON_HOLD (an order on hold is meant to
+			// be frozen for whatever reason it's held, not quietly progressed by the supplier); ERGO's own write stays
+			// allowed while ON_HOLD since it may need to document why it's held.
+			case UPDATE_PRODUCTION_PROGRESS, UPDATE_PACKAGING_DISPATCH -> editor && status != OrderStatus.CLOSED
+					|| ownSupplier && status != OrderStatus.CLOSED && status != OrderStatus.ON_HOLD;
+			case MARK_DISPATCH_READY -> editor && status == OrderStatus.PACKAGING_IN_PROGRESS
+					&& dispatchReadyGateMet(order.id);
 		};
 	}
 
-	private static Set<OrderAction> actions(CurrentUser me, Order order) {
+	private Set<OrderAction> actions(CurrentUser me, Order order) {
 		return Arrays.stream(OrderAction.values()).filter(a -> allowed(a, me, order))
 			.collect(Collectors.toCollection(() -> EnumSet.noneOf(OrderAction.class)));
 	}
 
-	private static void require(OrderAction action, CurrentUser me, Order order) {
+	private void require(OrderAction action, CurrentUser me, Order order) {
 		if (!allowed(action, me, order)) {
 			throw ApiException.conflict("This action is not available for this order right now");
 		}
@@ -368,16 +486,10 @@ public class OrderService {
 
 	// ---------------------------------------------------------------- view assembly
 
-	private OrderView view(CurrentUser me, Order o) {
-		CompanyRef customer = directory.company(o.customerCompanyId).orElseThrow();
-		CompanyRef supplier = directory.company(o.supplierCompanyId).orElseThrow();
-		Map<Long, UserRef> owners = directory.users(ids(List.of(o), x -> x.ownerUserId));
-
+	/** The single per-audience view builder: a supplier caller gets SupplierOrderView, built without ever looking up
+	 * the customer; everyone else reaching here is ERGO (visible() already 404s every other role). */
+	private OrderDetail view(CurrentUser me, Order o) {
 		List<OrderMaterialStatus> materials = materialStatuses.findByOrderIdOrderById(o.id);
-		List<MaterialStatusView> materialViews = materials.stream()
-			.map(m -> new MaterialStatusView(m.id, m.materialStatus, m.materialOrderDate, m.expectedReceiptDate,
-					m.actualReceiptDate, m.inspectionStatus, m.remarks, m.createdAt, m.updatedAt))
-			.toList();
 
 		List<OrderProductionProgress> progress = productionProgress.findByOrderIdOrderById(o.id);
 		Map<Long, UserRef> progressUsers = directory.users(ids(progress, p -> p.updatedByUserId));
@@ -387,11 +499,35 @@ public class OrderService {
 					p.revisedDispatchDate, userName(progressUsers, p.updatedByUserId), p.updatedAt))
 			.toList();
 
+		List<OrderPackagingDispatch> dispatches = packagingDispatches.findByOrderIdOrderById(o.id);
+		Map<Long, UserRef> dispatchUsers = directory.users(ids(dispatches, d -> d.updatedByUserId));
+		List<PackagingDispatchView> dispatchViews = dispatches.stream()
+			.map(d -> new PackagingDispatchView(d.id, d.packedQuantity, d.packagingStatus, d.dispatchReadyFlag,
+					d.dispatchDate, d.dispatchRemarks, userName(dispatchUsers, d.updatedByUserId), d.updatedAt))
+			.toList();
+
+		if (SUPPLIER_EDITORS.contains(me.role())) {
+			List<SupplierMaterialStatusView> supplierMaterialViews = materials.stream()
+				.map(m -> new SupplierMaterialStatusView(m.id, m.materialStatus, m.materialOrderDate,
+						m.expectedReceiptDate, m.actualReceiptDate, m.inspectionStatus, m.createdAt, m.updatedAt))
+				.toList();
+			return new SupplierOrderView(o.id, o.orderNumber, o.supplierPoNo, o.partNumber, o.revision,
+					o.orderedQuantity, o.dueDate, o.committedDispatchDate, o.actualDispatchDate, o.currentStatus,
+					supplierMaterialViews, progressViews, dispatchViews, actions(me, o), o.createdAt, o.updatedAt);
+		}
+
+		CompanyRef customer = directory.company(o.customerCompanyId).orElseThrow();
+		CompanyRef supplier = directory.company(o.supplierCompanyId).orElseThrow();
+		Map<Long, UserRef> owners = directory.users(ids(List.of(o), x -> x.ownerUserId));
+		List<MaterialStatusView> materialViews = materials.stream()
+			.map(m -> new MaterialStatusView(m.id, m.materialStatus, m.materialOrderDate, m.expectedReceiptDate,
+					m.actualReceiptDate, m.inspectionStatus, m.remarks, m.createdAt, m.updatedAt))
+			.toList();
 		return new OrderView(o.id, o.orderNumber, customer.name(), supplier.name(), o.linkedNpdProjectId,
 				o.linkedRfqId, o.customerPoNo, o.supplierPoNo, o.partNumber, o.revision, o.orderedQuantity, o.dueDate,
 				o.committedDispatchDate, o.actualDispatchDate, o.currentStatus, o.ownerUserId,
-				userName(owners, o.ownerUserId), materialViews, progressViews, actions(me, o), o.createdAt,
-				o.updatedAt);
+				userName(owners, o.ownerUserId), materialViews, progressViews, dispatchViews, actions(me, o),
+				o.createdAt, o.updatedAt);
 	}
 
 	// ---------------------------------------------------------------- small helpers

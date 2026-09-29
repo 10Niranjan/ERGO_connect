@@ -21,8 +21,9 @@ interface OrderRepository extends Repository<Order, Long> {
 	 * unrestricted viewer within the NPD module (NpdService.FULL_VIEWERS). */
 	List<Order> findByLinkedNpdProjectIdIsNotNullOrderByIdDesc();
 
-	/** Defense in depth alongside NpdApi.handover's own guard: at most one order per NPD project. */
-	boolean existsByLinkedNpdProjectId(Long linkedNpdProjectId);
+	/** A supplier's own scope (SRS §10.7 "RV", 4b): direct assignment match, no assignment table (unlike ERGO KAM's
+	 * many customer accounts, a supplier has exactly one company). */
+	List<Order> findBySupplierCompanyIdOrderByIdDesc(long supplierCompanyId);
 
 }
 
@@ -43,5 +44,15 @@ interface OrderProductionProgressRepository extends Repository<OrderProductionPr
 	Optional<OrderProductionProgress> findById(Long id);
 
 	List<OrderProductionProgress> findByOrderIdOrderById(Long orderId);
+
+}
+
+interface OrderPackagingDispatchRepository extends Repository<OrderPackagingDispatch, Long> {
+
+	OrderPackagingDispatch save(OrderPackagingDispatch dispatch);
+
+	Optional<OrderPackagingDispatch> findById(Long id);
+
+	List<OrderPackagingDispatch> findByOrderIdOrderById(Long orderId);
 
 }
