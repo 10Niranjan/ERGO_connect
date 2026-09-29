@@ -2,14 +2,19 @@ package com.ergo.connect.ofp;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -19,6 +24,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -550,14 +556,394 @@ class OfpTests {
 			.andExpect(jsonPath("$.materialStatus[0].remarks").value("for " + customerName));
 	}
 
+	// ---------------------------------------------------------------- Phase 4c: shipments, dispatch onward, customer
+
 	@Test
-	void customerRoleHasZeroOfpAccessEvenForCustomerOfp() throws Exception {
+	void customerSeesOnlyItsOwnOrdersReadOnlyAndNeverTheSupplier() throws Exception {
 		long orderId = createStandalone(customerA);
-		Login customerOfp = users.login(customerA, "CUSTOMER_OFP"); // SRS §10.7 RV, deferred to 4c
-		call(get("/api/ofp/orders"), customerOfp, null).andExpect(status().isForbidden());
-		call(get("/api/ofp/orders/{id}", orderId), customerOfp, null).andExpect(status().isForbidden());
+		long otherOrder = createStandalone(customerB);
+		String supplierName = jdbc.queryForObject("SELECT company_name FROM companies WHERE company_id = ?",
+				String.class, supplier);
+		call(put("/api/ofp/orders/{id}", orderId), ergoOfp,
+				"{\"customerPoNo\": \"PO-4C\", \"supplierPoNo\": \"SPO-SECRET\"}").andExpect(status().isOk());
+		Login customerOfp = users.login(customerA, "CUSTOMER_OFP");
+
+		String list = call(get("/api/ofp/orders"), customerOfp, null).andExpect(status().isOk())
+			.andExpect(jsonPath("$[*].id", hasItem((int) orderId)))
+			.andExpect(jsonPath("$[*].id", not(hasItem((int) otherOrder))))
+			.andExpect(jsonPath("$[0].customerPoNo").value("PO-4C"))
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		assertThat(list).doesNotContain(supplierName).doesNotContain("SPO-SECRET");
+
+		String detail = call(get("/api/ofp/orders/{id}", orderId), customerOfp, null).andExpect(status().isOk())
+			.andExpect(jsonPath("$.actions", empty()))
+			.andExpect(jsonPath("$.supplier").doesNotExist())
+			.andExpect(jsonPath("$.supplierPoNo").doesNotExist())
+			.andExpect(jsonPath("$.linkedRfqId").doesNotExist())
+			.andExpect(jsonPath("$.linkedNpdProjectId").doesNotExist())
+			.andExpect(jsonPath("$.owner").doesNotExist())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		assertThat(detail).doesNotContain(supplierName).doesNotContain("SPO-SECRET");
+
+		// another customer's order does not exist for this one (404, not 403): scope, not a role gap
+		call(get("/api/ofp/orders/{id}", otherOrder), customerOfp, null).andExpect(status().isNotFound());
+	}
+
+	@Test
+	void customerHasNoWriteAccessAnywhereInOfp() throws Exception {
+		long orderId = advanceToPackagingInProgress(customerA);
+		call(post("/api/ofp/orders/{id}/material-status", orderId), ergoOfp, materialStatusForm("RECEIVED", "PASSED"))
+			.andExpect(status().isCreated());
+		call(post("/api/ofp/orders/{id}/dispatch-ready", orderId), ergoOfp, "{}").andExpect(status().isOk());
+		Login customerOfp = users.login(customerA, "CUSTOMER_OFP");
+
+		call(post("/api/ofp/orders"), customerOfp, orderForm(customerA, supplier)).andExpect(status().isForbidden());
+		call(put("/api/ofp/orders/{id}", orderId), customerOfp, "{}").andExpect(status().isForbidden());
+		call(post("/api/ofp/orders/{id}/advance", orderId), customerOfp, "{}").andExpect(status().isForbidden());
+		call(post("/api/ofp/orders/{id}/hold", orderId), customerOfp, "{\"comment\": \"x\"}")
+			.andExpect(status().isForbidden());
+		call(post("/api/ofp/orders/{id}/release", orderId), customerOfp, "{}").andExpect(status().isForbidden());
+		call(post("/api/ofp/orders/{id}/material-status", orderId), customerOfp, materialStatusForm("RECEIVED", "PASSED"))
+			.andExpect(status().isForbidden());
 		call(post("/api/ofp/orders/{id}/production-progress", orderId), customerOfp,
 				productionProgressForm("IN_PROGRESS", null)).andExpect(status().isForbidden());
+		call(post("/api/ofp/orders/{id}/packaging-dispatch", orderId), customerOfp,
+				packagingDispatchForm("PENDING", false)).andExpect(status().isForbidden());
+		call(post("/api/ofp/orders/{id}/shipments", orderId), customerOfp, shipmentForm("DISPATCHED"))
+			.andExpect(status().isForbidden());
+		// L6: customer 403 on shipment update and POD upload, even with a dummy id (role check runs first)
+		call(put("/api/ofp/shipments/{id}", 999_999L), customerOfp, shipmentForm("DISPATCHED"))
+			.andExpect(status().isForbidden());
+		mvc.perform(multipart("/api/ofp/shipments/{id}/pod", 999_999L)
+			.file(new MockMultipartFile("file", "pod.pdf", "application/pdf", "x".getBytes(StandardCharsets.UTF_8)))
+			.header(HttpHeaders.AUTHORIZATION, customerOfp.bearer()))
+			.andExpect(status().isForbidden());
+		call(post("/api/ofp/orders/{id}/dispatch", orderId), customerOfp, "{}").andExpect(status().isForbidden());
+		call(post("/api/ofp/orders/{id}/in-transit", orderId), customerOfp, "{}").andExpect(status().isForbidden());
+		call(post("/api/ofp/orders/{id}/delivered", orderId), customerOfp, "{}").andExpect(status().isForbidden());
+		call(post("/api/ofp/orders/{id}/close", orderId), customerOfp, "{}").andExpect(status().isForbidden());
+	}
+
+	@Test
+	void supplierReadsShipmentsOnItsOwnOrderButCannotWriteThemOrTheirPod() throws Exception {
+		long orderId = advanceToDispatched(customerA);
+		String withShipment = call(post("/api/ofp/orders/{id}/shipments", orderId), ergoOfp,
+				shipmentForm("DISPATCHED")).andExpect(status().isCreated())
+			.andExpect(jsonPath("$.shipments[0].trackingNumber").value("TRACK-1"))
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		long shipmentId = ((Number) JsonPath.read(withShipment, "$.shipments[0].id")).longValue();
+
+		Login supplierOfp = users.login(supplier, "SUPPLIER_OFP");
+		call(get("/api/ofp/orders/{id}", orderId), supplierOfp, null).andExpect(status().isOk())
+			.andExpect(jsonPath("$.shipments[0].id").value((int) shipmentId))
+			.andExpect(jsonPath("$.shipments[0].trackingNumber").value("TRACK-1"))
+			.andExpect(jsonPath("$.shipments[0].podFileName").doesNotExist())
+			.andExpect(jsonPath("$.shipments[0].podDocumentId").doesNotExist())
+			.andExpect(jsonPath("$.shipments[0].updatedBy").doesNotExist());
+
+		call(post("/api/ofp/orders/{id}/shipments", orderId), supplierOfp, shipmentForm("DISPATCHED"))
+			.andExpect(status().isForbidden());
+		call(put("/api/ofp/shipments/{id}", shipmentId), supplierOfp, shipmentForm("IN_TRANSIT"))
+			.andExpect(status().isForbidden());
+		mvc.perform(multipart("/api/ofp/shipments/{id}/pod", shipmentId)
+			.file(new MockMultipartFile("file", "pod.pdf", "application/pdf", "x".getBytes(StandardCharsets.UTF_8)))
+			.header(HttpHeaders.AUTHORIZATION, supplierOfp.bearer()))
+			.andExpect(status().isForbidden());
+		mvc.perform(get("/api/ofp/shipments/{id}/pod", shipmentId).header(HttpHeaders.AUTHORIZATION, supplierOfp.bearer()))
+			.andExpect(status().isForbidden());
+	}
+
+	@Test
+	void dispatchReChecksTheInspectionGateAndIsErgoOfpAdminOnly() throws Exception {
+		long orderId = advanceToPackagingInProgress(customerA);
+		String withMaterial = call(post("/api/ofp/orders/{id}/material-status", orderId), ergoOfp,
+				materialStatusForm("RECEIVED", "PASSED")).andExpect(status().isCreated())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		long statusId = ((Number) JsonPath.read(withMaterial, "$.materialStatus[0].id")).longValue();
+		call(post("/api/ofp/orders/{id}/dispatch-ready", orderId), ergoOfp, "{}")
+			.andExpect(jsonPath("$.currentStatus").value("DISPATCH_READY"));
+
+		// the inspection that made Dispatch Ready reachable no longer holds: Dispatch re-checks the same gate
+		call(put("/api/ofp/material-status/{id}", statusId), ergoOfp, materialStatusForm("RECEIVED", "FAILED"))
+			.andExpect(status().isOk());
+		call(post("/api/ofp/orders/{id}/dispatch", orderId), ergoOfp, "{}")
+			.andExpect(status().isUnprocessableContent());
+
+		// only ERGO OFP/Admin may attempt it
+		Login supplierOfp = users.login(supplier, "SUPPLIER_OFP");
+		call(post("/api/ofp/orders/{id}/dispatch", orderId), supplierOfp, "{}").andExpect(status().isForbidden());
+		call(post("/api/ofp/orders/{id}/dispatch", orderId), ergoManagement, "{}").andExpect(status().isForbidden());
+
+		// fix it and dispatch succeeds
+		call(put("/api/ofp/material-status/{id}", statusId), ergoOfp, materialStatusForm("RECEIVED", "PASSED"))
+			.andExpect(status().isOk());
+		call(post("/api/ofp/orders/{id}/dispatch", orderId), ergoOfp, "{}")
+			.andExpect(jsonPath("$.currentStatus").value("DISPATCHED"));
+
+		// cannot be repeated once already dispatched
+		call(post("/api/ofp/orders/{id}/dispatch", orderId), ergoOfp, "{}").andExpect(status().isConflict());
+	}
+
+	@Test
+	void fullHappyPathFromDispatchReadyToClosedRequiresPodBeforeDelivered() throws Exception {
+		long orderId = advanceToPackagingInProgress(customerA);
+		call(post("/api/ofp/orders/{id}/material-status", orderId), ergoOfp, materialStatusForm("RECEIVED", "PASSED"))
+			.andExpect(status().isCreated());
+		call(post("/api/ofp/orders/{id}/dispatch-ready", orderId), ergoOfp, "{}")
+			.andExpect(jsonPath("$.currentStatus").value("DISPATCH_READY"));
+
+		call(post("/api/ofp/orders/{id}/dispatch", orderId), ergoOfp, "{}")
+			.andExpect(jsonPath("$.currentStatus").value("DISPATCHED"))
+			.andExpect(jsonPath("$.actualDispatchDate").value(LocalDate.now().toString())); // L5 fix
+
+		// Close Order is refused before Delivered, ERGO-only
+		call(post("/api/ofp/orders/{id}/close", orderId), ergoOfp, "{}").andExpect(status().isConflict());
+		call(post("/api/ofp/orders/{id}/close", orderId), ergoManagement, "{}").andExpect(status().isForbidden());
+
+		String withShipment = call(post("/api/ofp/orders/{id}/shipments", orderId), ergoOfp,
+				shipmentForm("DISPATCHED")).andExpect(status().isCreated())
+			.andExpect(jsonPath("$.shipments[0].status").value("DISPATCHED"))
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		long shipmentId = ((Number) JsonPath.read(withShipment, "$.shipments[0].id")).longValue();
+
+		call(post("/api/ofp/orders/{id}/in-transit", orderId), ergoOfp, "{}")
+			.andExpect(jsonPath("$.currentStatus").value("IN_TRANSIT"));
+
+		// Delivered is refused without a POD on file
+		call(post("/api/ofp/orders/{id}/delivered", orderId), ergoOfp, "{}")
+			.andExpect(status().isUnprocessableContent());
+
+		mvc.perform(multipart("/api/ofp/shipments/{id}/pod", shipmentId)
+			.file(new MockMultipartFile("file", "pod.pdf", "application/pdf",
+					"pod content".getBytes(StandardCharsets.UTF_8)))
+			.header(HttpHeaders.AUTHORIZATION, ergoOfp.bearer()))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.shipments[0].podFileName").value("pod.pdf"));
+
+		call(post("/api/ofp/orders/{id}/delivered", orderId), ergoOfp, "{}")
+			.andExpect(jsonPath("$.currentStatus").value("DELIVERED"));
+
+		call(post("/api/ofp/orders/{id}/close", orderId), ergoOfp, "{}")
+			.andExpect(jsonPath("$.currentStatus").value("CLOSED"));
+	}
+
+	@Test
+	void podFileNameNeverLeaksToSupplierOrCustomerButErgoAndTheCustomerCanDownloadIt() throws Exception {
+		long orderId = advanceToDispatched(customerA);
+		String customerName = jdbc.queryForObject("SELECT company_name FROM companies WHERE company_id = ?",
+				String.class, customerA);
+		String distinctiveName = "POD_" + customerName.replace(' ', '_') + "_signed.pdf";
+		String withShipment = call(post("/api/ofp/orders/{id}/shipments", orderId), ergoOfp,
+				shipmentForm("DISPATCHED")).andExpect(status().isCreated())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		long shipmentId = ((Number) JsonPath.read(withShipment, "$.shipments[0].id")).longValue();
+
+		mvc.perform(multipart("/api/ofp/shipments/{id}/pod", shipmentId)
+			.file(new MockMultipartFile("file", distinctiveName, "application/pdf",
+					"pod content".getBytes(StandardCharsets.UTF_8)))
+			.header(HttpHeaders.AUTHORIZATION, ergoOfp.bearer()))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.shipments[0].podFileName").value(distinctiveName))
+			.andExpect(jsonPath("$.shipments[0].podDocumentId").exists());
+
+		// H1: the supplier never sees the POD reference at all, in list or detail
+		Login supplierOfp = users.login(supplier, "SUPPLIER_OFP");
+		String supplierDetail = call(get("/api/ofp/orders/{id}", orderId), supplierOfp, null)
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.shipments[0].podFileName").doesNotExist())
+			.andExpect(jsonPath("$.shipments[0].podDocumentId").doesNotExist())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		assertThat(supplierDetail).doesNotContain(distinctiveName).doesNotContain(customerName);
+
+		// the customer also never sees the raw POD reference, but may download the file via its own endpoint
+		Login customerOfp = users.login(customerA, "CUSTOMER_OFP");
+		String customerDetail = call(get("/api/ofp/orders/{id}", orderId), customerOfp, null)
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.shipments[0].podFileName").doesNotExist())
+			.andExpect(jsonPath("$.shipments[0].podDocumentId").doesNotExist())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		assertThat(customerDetail).doesNotContain(distinctiveName);
+
+		mvc.perform(get("/api/ofp/shipments/{id}/pod", shipmentId).header(HttpHeaders.AUTHORIZATION, customerOfp.bearer()))
+			.andExpect(status().isOk())
+			.andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, containsString(distinctiveName)));
+
+		// ERGO's own view keeps the full POD reference
+		call(get("/api/ofp/orders/{id}", orderId), ergoOfp, null)
+			.andExpect(jsonPath("$.shipments[0].podFileName").value(distinctiveName));
+
+		// the supplier is refused a download outright (role layer, H1/L5)
+		mvc.perform(get("/api/ofp/shipments/{id}/pod", shipmentId).header(HttpHeaders.AUTHORIZATION, supplierOfp.bearer()))
+			.andExpect(status().isForbidden());
+	}
+
+	@Test
+	void shipmentCannotBeMarkedFurtherAlongThanTheOrderItself() throws Exception {
+		long orderId = advanceToDispatched(customerA); // order is DISPATCHED (rank 0)
+		call(post("/api/ofp/orders/{id}/shipments", orderId), ergoOfp, shipmentForm("IN_TRANSIT"))
+			.andExpect(status().isUnprocessableContent())
+			.andExpect(jsonPath("$.detail")
+				.value("A shipment cannot be marked further along than the order itself (order is currently DISPATCHED)"));
+		call(post("/api/ofp/orders/{id}/shipments", orderId), ergoOfp, shipmentForm("DELIVERED"))
+			.andExpect(status().isUnprocessableContent());
+		// at the order's own reached status, or behind it, is fine
+		call(post("/api/ofp/orders/{id}/shipments", orderId), ergoOfp, shipmentForm("DISPATCHED"))
+			.andExpect(status().isCreated());
+	}
+
+	@Test
+	void receiptConfirmationOnlySettableOnceTheShipmentItselfIsDelivered() throws Exception {
+		long orderId = advanceToDispatched(customerA);
+		String withShipment = call(post("/api/ofp/orders/{id}/shipments", orderId), ergoOfp,
+				shipmentForm("DISPATCHED")).andExpect(status().isCreated())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		long shipmentId = ((Number) JsonPath.read(withShipment, "$.shipments[0].id")).longValue();
+
+		// L2: refused while the shipment itself hasn't reached Delivered yet
+		call(put("/api/ofp/shipments/{id}", shipmentId), ergoOfp, """
+				{"transporterName": "Acme Logistics", "trackingNumber": "TRACK-1", "status": "DISPATCHED",
+				 "receiptConfirmedByCustomerFlag": true}""").andExpect(status().isUnprocessableContent());
+
+		// advance the order itself to Delivered (M2: a shipment can't be marked further along than its order)
+		mvc.perform(multipart("/api/ofp/shipments/{id}/pod", shipmentId)
+			.file(new MockMultipartFile("file", "pod.pdf", "application/pdf", "x".getBytes(StandardCharsets.UTF_8)))
+			.header(HttpHeaders.AUTHORIZATION, ergoOfp.bearer())).andExpect(status().isOk());
+		call(post("/api/ofp/orders/{id}/in-transit", orderId), ergoOfp, "{}").andExpect(status().isOk());
+		call(post("/api/ofp/orders/{id}/delivered", orderId), ergoOfp, "{}").andExpect(status().isOk());
+
+		call(put("/api/ofp/shipments/{id}", shipmentId), ergoOfp, """
+				{"transporterName": "Acme Logistics", "trackingNumber": "TRACK-1", "status": "DELIVERED",
+				 "receiptConfirmedByCustomerFlag": true}""")
+			.andExpect(jsonPath("$.shipments[0].receiptConfirmedByCustomerFlag").value(true))
+			.andExpect(jsonPath("$.shipments[0].receiptConfirmedAt").exists());
+	}
+
+	@Test
+	void customerDetailNeverLeaksInternalFreeTextOrOwner() throws Exception {
+		long orderId = advanceToPackagingInProgress(customerA);
+		String distinctive = "BLOCKED_ON_SUPPLIER_XYZ_TOOLING_ISSUE";
+		call(post("/api/ofp/orders/{id}/production-progress", orderId), ergoOfp,
+				productionProgressForm("BLOCKED", distinctive)).andExpect(status().isCreated());
+		call(post("/api/ofp/orders/{id}/material-status", orderId), ergoOfp, """
+				{"materialStatus": "RECEIVED", "inspectionStatus": "PENDING", "remarks": "internal note xyz"}""")
+			.andExpect(status().isCreated());
+
+		Login customerOfp = users.login(customerA, "CUSTOMER_OFP");
+		String detail = call(get("/api/ofp/orders/{id}", orderId), customerOfp, null).andExpect(status().isOk())
+			.andExpect(jsonPath("$.productionProgress[0].blockerReason").doesNotExist())
+			.andExpect(jsonPath("$.productionProgress[0].updatedBy").doesNotExist())
+			.andExpect(jsonPath("$.materialStatus[0].remarks").doesNotExist())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		assertThat(detail).doesNotContain(distinctive).doesNotContain("internal note xyz");
+	}
+
+	@Test
+	void materialProductionAndPackagingWritesAreFrozenOnceDispatched() throws Exception {
+		long orderId = advanceToDispatched(customerA);
+		call(post("/api/ofp/orders/{id}/material-status", orderId), ergoOfp, materialStatusForm("RECEIVED", "PASSED"))
+			.andExpect(status().isConflict());
+		call(post("/api/ofp/orders/{id}/production-progress", orderId), ergoOfp,
+				productionProgressForm("IN_PROGRESS", null)).andExpect(status().isConflict());
+		call(post("/api/ofp/orders/{id}/packaging-dispatch", orderId), ergoOfp, packagingDispatchForm("PACKED", true))
+			.andExpect(status().isConflict());
+		Login supplierOfp = users.login(supplier, "SUPPLIER_OFP");
+		call(post("/api/ofp/orders/{id}/production-progress", orderId), supplierOfp,
+				productionProgressForm("IN_PROGRESS", null)).andExpect(status().isConflict());
+		call(post("/api/ofp/orders/{id}/packaging-dispatch", orderId), supplierOfp,
+				packagingDispatchForm("PACKED", true)).andExpect(status().isConflict());
+	}
+
+	@Test
+	void closedOrderFreezesShipmentsHoldAndEdit() throws Exception {
+		long orderId = advanceToDispatched(customerA);
+		String withShipment = call(post("/api/ofp/orders/{id}/shipments", orderId), ergoOfp,
+				shipmentForm("DISPATCHED")).andExpect(status().isCreated())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		long shipmentId = ((Number) JsonPath.read(withShipment, "$.shipments[0].id")).longValue();
+		mvc.perform(multipart("/api/ofp/shipments/{id}/pod", shipmentId)
+			.file(new MockMultipartFile("file", "pod.pdf", "application/pdf", "x".getBytes(StandardCharsets.UTF_8)))
+			.header(HttpHeaders.AUTHORIZATION, ergoOfp.bearer())).andExpect(status().isOk());
+		call(post("/api/ofp/orders/{id}/in-transit", orderId), ergoOfp, "{}").andExpect(status().isOk());
+		call(post("/api/ofp/orders/{id}/delivered", orderId), ergoOfp, "{}").andExpect(status().isOk());
+		call(post("/api/ofp/orders/{id}/close", orderId), ergoOfp, "{}")
+			.andExpect(jsonPath("$.currentStatus").value("CLOSED"));
+
+		call(put("/api/ofp/shipments/{id}", shipmentId), ergoOfp, shipmentForm("DELIVERED"))
+			.andExpect(status().isConflict());
+		mvc.perform(multipart("/api/ofp/shipments/{id}/pod", shipmentId)
+			.file(new MockMultipartFile("file", "pod2.pdf", "application/pdf", "y".getBytes(StandardCharsets.UTF_8)))
+			.header(HttpHeaders.AUTHORIZATION, ergoOfp.bearer()))
+			.andExpect(status().isConflict());
+		call(post("/api/ofp/orders/{id}/hold", orderId), ergoOfp, "{\"comment\": \"x\"}")
+			.andExpect(status().isConflict());
+		call(put("/api/ofp/orders/{id}", orderId), ergoOfp, "{\"customerPoNo\": \"X\"}")
+			.andExpect(status().isConflict());
+	}
+
+	@Test
+	void statusTransitionsAndShipmentWritesAreAudited() throws Exception {
+		long orderId = advanceToDispatched(customerA);
+		assertAuditedStatus(orderId, "DISPATCHED");
+
+		String withShipment = call(post("/api/ofp/orders/{id}/shipments", orderId), ergoOfp,
+				shipmentForm("DISPATCHED")).andExpect(status().isCreated())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		long shipmentId = ((Number) JsonPath.read(withShipment, "$.shipments[0].id")).longValue();
+		assertThat(jdbc.queryForObject("""
+				SELECT count(*) FROM audit_logs WHERE entity_name = 'Shipment' AND record_id = ?
+				AND event_type = 'CREATE'""", Integer.class, shipmentId)).isEqualTo(1);
+
+		call(put("/api/ofp/shipments/{id}", shipmentId), ergoOfp, """
+				{"transporterName": "Acme Logistics", "trackingNumber": "TRACK-2", "status": "DISPATCHED",
+				 "receiptConfirmedByCustomerFlag": false}""").andExpect(status().isOk());
+		assertThat(jdbc.queryForObject("""
+				SELECT count(*) FROM audit_logs WHERE entity_name = 'Shipment' AND record_id = ?
+				AND event_type = 'UPDATE' AND field_name = 'trackingNumber'""", Integer.class, shipmentId))
+			.isEqualTo(1);
+
+		mvc.perform(multipart("/api/ofp/shipments/{id}/pod", shipmentId)
+			.file(new MockMultipartFile("file", "pod.pdf", "application/pdf", "x".getBytes(StandardCharsets.UTF_8)))
+			.header(HttpHeaders.AUTHORIZATION, ergoOfp.bearer())).andExpect(status().isOk());
+		assertThat(jdbc.queryForObject("""
+				SELECT count(*) FROM audit_logs WHERE entity_name = 'Shipment' AND record_id = ?
+				AND field_name = 'podDocumentId'""", Integer.class, shipmentId)).isEqualTo(1);
+
+		call(post("/api/ofp/orders/{id}/in-transit", orderId), ergoOfp, "{}").andExpect(status().isOk());
+		assertAuditedStatus(orderId, "IN_TRANSIT");
+		call(post("/api/ofp/orders/{id}/delivered", orderId), ergoOfp, "{}").andExpect(status().isOk());
+		assertAuditedStatus(orderId, "DELIVERED");
+		call(post("/api/ofp/orders/{id}/close", orderId), ergoOfp, "{}").andExpect(status().isOk());
+		assertAuditedStatus(orderId, "CLOSED");
+	}
+
+	private void assertAuditedStatus(long orderId, String newValue) {
+		assertThat(jdbc.queryForObject("""
+				SELECT count(*) FROM audit_logs WHERE entity_name = 'Order' AND record_id = ? AND field_name = 'currentStatus'
+				AND new_value = ?""", Integer.class, orderId, newValue)).isGreaterThanOrEqualTo(1);
 	}
 
 	// ---------------------------------------------------------------- helpers
@@ -567,6 +953,17 @@ class OfpTests {
 		for (int i = 0; i < 5; i++) {
 			call(post("/api/ofp/orders/{id}/advance", orderId), ergoOfp, "{}").andExpect(status().isOk());
 		}
+		return orderId;
+	}
+
+	/** Advances an order all the way to Dispatched (M2 fix: shipment writes require at least this status), one
+	 * PASSED material-status row along the way so Dispatch Ready's own gate is met. */
+	private long advanceToDispatched(long customerCompanyId) throws Exception {
+		long orderId = advanceToPackagingInProgress(customerCompanyId);
+		call(post("/api/ofp/orders/{id}/material-status", orderId), ergoOfp, materialStatusForm("RECEIVED", "PASSED"))
+			.andExpect(status().isCreated());
+		call(post("/api/ofp/orders/{id}/dispatch-ready", orderId), ergoOfp, "{}").andExpect(status().isOk());
+		call(post("/api/ofp/orders/{id}/dispatch", orderId), ergoOfp, "{}").andExpect(status().isOk());
 		return orderId;
 	}
 
@@ -670,6 +1067,12 @@ class OfpTests {
 	private static String materialStatusForm(String materialStatus, String inspectionStatus) {
 		return """
 				{"materialStatus": "%s", "inspectionStatus": "%s"}""".formatted(materialStatus, inspectionStatus);
+	}
+
+	private static String shipmentForm(String status) {
+		return """
+				{"transporterName": "Acme Logistics", "trackingNumber": "TRACK-1", "status": "%s",
+				 "receiptConfirmedByCustomerFlag": false}""".formatted(status);
 	}
 
 	private static String packagingDispatchForm(String packagingStatus, boolean dispatchReadyFlag) {

@@ -14,10 +14,11 @@ import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 
 /**
- * Order request and response shapes. Per-audience responses from 4b (ARCHITECTURE.md §8 2026-09-29, "4b two-way
- * anonymity"): ERGO gets OrderRow/OrderView, a supplier gets SupplierOrderRow/SupplierOrderView, which have no field
- * that names or identifies the customer. Customer OFP access is still 4c. No price/currency field exists here (SRS
- * §13.5.1 has none).
+ * Order request and response shapes. Per-audience responses (ARCHITECTURE.md §8 2026-09-29, "4b two-way anonymity"
+ * and "4c scope"): ERGO gets OrderRow/OrderView, a supplier gets SupplierOrderRow/SupplierOrderView (no field that
+ * names or identifies the customer), and a customer gets CustomerOrderRow/CustomerOrderView (no field that names or
+ * identifies the supplier, and always an empty {@code actions} set — Customer OFP is read-only). No price/currency
+ * field exists here (SRS §13.5.1 has none).
  */
 public final class OfpDtos {
 
@@ -72,10 +73,20 @@ public final class OfpDtos {
 			@Size(max = 2000) String dispatchRemarks) {
 	}
 
+	/** SRS §13.5.5, §10.7: ERGO OFP/Admin only (Phase 4c). {@code status} must be one of DISPATCHED/IN_TRANSIT/
+	 * DELIVERED (validated in the service, matching the DB CHECK); a null value defaults to DISPATCHED, the same
+	 * default the migration gives the column. {@code podDocumentId} is deliberately absent here — it is set only by
+	 * {@code OrderService.uploadPod} through the Documents module, never a plain client-supplied id. */
+	public record ShipmentForm(Long shipmentModeId, @Size(max = 200) String transporterName,
+			@Size(max = 200) String forwarderName, @Size(max = 100) String trackingNumber,
+			@Size(max = 100) String awbBlNo, LocalDate eta, LocalDate actualDeliveryDate, OrderStatus status,
+			boolean receiptConfirmedByCustomerFlag) {
+	}
+
 	/** Buttons the caller may use now, computed by the same rules that enforce them. */
 	public enum OrderAction {
 		EDIT, ADVANCE, HOLD, RELEASE, UPDATE_MATERIAL_STATUS, UPDATE_PRODUCTION_PROGRESS, UPDATE_PACKAGING_DISPATCH,
-		MARK_DISPATCH_READY
+		MARK_DISPATCH_READY, CREATE_SHIPMENT, UPDATE_SHIPMENT, DISPATCH, MARK_IN_TRANSIT, MARK_DELIVERED, CLOSE_ORDER
 	}
 
 	public record MaterialStatusView(long id, MaterialStatus materialStatus, LocalDate materialOrderDate,
@@ -94,13 +105,34 @@ public final class OfpDtos {
 			Instant updatedAt) {
 	}
 
+	/** ERGO-only (security review H1/L3, ARCHITECTURE.md §8 2026-09-29): carries the POD reference and who last
+	 * updated the row. Never used for the supplier's or customer's own view — see {@link ExternalShipmentView}. A
+	 * POD's file name routinely names the consignee (e.g. {@code POD_Acme_Motors_GRN_signed.pdf}), so a supplier
+	 * reading their own order's shipments could otherwise learn the customer's identity from this field alone, no
+	 * ERGO typo required (unlike the already-accepted free-text gap). */
+	public record ShipmentView(long id, Long shipmentModeId, String transporterName, String forwarderName,
+			String trackingNumber, String awbBlNo, LocalDate eta, LocalDate actualDeliveryDate, Long podDocumentId,
+			String podFileName, boolean receiptConfirmedByCustomerFlag, Instant receiptConfirmedAt,
+			OrderStatus status, String updatedBy, Instant updatedAt) {
+	}
+
+	/** Supplier's and customer's shipment view (H1/L3 fixes): no POD reference and no {@code updatedBy} (always an
+	 * ERGO employee's name, same precedent as dropping the order owner from {@link SupplierOrderRow}). Nothing else
+	 * on {@code shipments} identifies either party (transporter/forwarder are a logistics company, not either party,
+	 * ARCHITECTURE.md §8 2026-09-29). */
+	public record ExternalShipmentView(long id, Long shipmentModeId, String transporterName, String forwarderName,
+			String trackingNumber, String awbBlNo, LocalDate eta, LocalDate actualDeliveryDate,
+			boolean receiptConfirmedByCustomerFlag, Instant receiptConfirmedAt, OrderStatus status,
+			Instant updatedAt) {
+	}
+
 	/** Per-audience list row (same sealed-interface pattern as NpdDtos.NpdView): the controller returns this type and
 	 * Jackson serializes whichever concrete record it is. */
-	public sealed interface OrderSummary permits OrderRow, SupplierOrderRow {
+	public sealed interface OrderSummary permits OrderRow, SupplierOrderRow, CustomerOrderRow {
 	}
 
 	/** Per-audience detail view, see {@link OrderSummary}. */
-	public sealed interface OrderDetail permits OrderView, SupplierOrderView {
+	public sealed interface OrderDetail permits OrderView, SupplierOrderView, CustomerOrderView {
 	}
 
 	/** ERGO's list row: both companies. */
@@ -115,8 +147,8 @@ public final class OfpDtos {
 			BigDecimal orderedQuantity, LocalDate dueDate, LocalDate committedDispatchDate,
 			LocalDate actualDispatchDate, OrderStatus currentStatus, Long ownerUserId, String owner,
 			List<MaterialStatusView> materialStatus, List<ProductionProgressView> productionProgress,
-			List<PackagingDispatchView> packagingDispatch, Set<OrderAction> actions, Instant createdAt,
-			Instant updatedAt) implements OrderDetail {
+			List<PackagingDispatchView> packagingDispatch, List<ShipmentView> shipments, Set<OrderAction> actions,
+			Instant createdAt, Instant updatedAt) implements OrderDetail {
 	}
 
 	/** Two-way anonymity (ARCHITECTURE.md §8 2026-09-29, "4b two-way anonymity"): the supplier's row has no field for
@@ -135,11 +167,46 @@ public final class OfpDtos {
 
 	/** The supplier's detail view: no customer name/id, no customerPoNo (the customer's own document number), no
 	 * linkedRfqId/linkedNpdProjectId (ids of records the supplier doesn't need here and may not otherwise reach), no
-	 * ERGO owner (matching SupplierNpdView), no material-status remarks. */
+	 * ERGO owner (matching SupplierNpdView), no material-status remarks. Phase 4c: the supplier reads (never writes)
+	 * shipment/tracking info for orders it fulfills via {@link ExternalShipmentView} (H1 fix: no POD reference, which
+	 * routinely names the customer). */
 	public record SupplierOrderView(long id, String orderNumber, String supplierPoNo, String partNumber,
 			String revision, BigDecimal orderedQuantity, LocalDate dueDate, LocalDate committedDispatchDate,
 			LocalDate actualDispatchDate, OrderStatus currentStatus, List<SupplierMaterialStatusView> materialStatus,
 			List<ProductionProgressView> productionProgress, List<PackagingDispatchView> packagingDispatch,
+			List<ExternalShipmentView> shipments, Set<OrderAction> actions, Instant createdAt, Instant updatedAt)
+			implements OrderDetail {
+	}
+
+	/** Phase 4c, two-way anonymity extended to the customer (ARCHITECTURE.md §8 2026-09-29 "4c scope"): no supplier
+	 * name/id, no ERGO owner, no linkedRfqId/linkedNpdProjectId (the customer cannot otherwise reach either record,
+	 * same reasoning as {@link SupplierOrderRow}), and zero write actions ever appear in {@code actions} — Customer
+	 * OFP is pure read-only (§10.7's literal matrix gives it "RV" only). */
+	public record CustomerOrderRow(long id, String orderNumber, String customerPoNo, String partNumber,
+			String revision, BigDecimal orderedQuantity, LocalDate dueDate, OrderStatus currentStatus)
+			implements OrderSummary {
+	}
+
+	/** Production-progress milestones as the customer sees them (§12.9.2/§12.9.4): step, quantities and status only.
+	 * {@code blockerReason} (free text a supplier writes, which could name itself or a third party) and
+	 * {@code updatedBy} (a supplier employee's name) are both dropped — the same H1-style precedent as
+	 * {@link SupplierMaterialStatusView} dropping ERGO's free-text {@code remarks}. */
+	public record CustomerProductionProgressView(long id, String processStepName, BigDecimal plannedQuantity,
+			BigDecimal completedQuantity, BigDecimal acceptedQuantity, BigDecimal rejectedQuantity,
+			BigDecimal reworkQuantity, ProductionStatus status, LocalDate revisedDispatchDate, Instant updatedAt) {
+	}
+
+	/** The customer's detail view (§12.9.2 OFP Detail Screen, §12.9.4 Shipment Tracking Screen): order/shipment
+	 * status, dates, shipment tracking info and production-progress milestones, but no supplier identity, no
+	 * ERGO-internal free-text (material-status {@code remarks} reuses {@link SupplierMaterialStatusView}, which
+	 * already drops them), no {@code linkedNpdProjectId}/{@code linkedRfqId}, and (H1 fix) no POD reference on
+	 * {@link ExternalShipmentView} — a POD's file name routinely names the consignee, which would defeat the
+	 * anonymity rule from the other direction if it ever named the supplier instead. {@code actions} is always
+	 * empty: Customer OFP has no write right on any OFP record (ARCHITECTURE.md §8 2026-09-29). */
+	public record CustomerOrderView(long id, String orderNumber, String customerPoNo, String partNumber,
+			String revision, BigDecimal orderedQuantity, LocalDate dueDate, LocalDate committedDispatchDate,
+			LocalDate actualDispatchDate, OrderStatus currentStatus, List<SupplierMaterialStatusView> materialStatus,
+			List<CustomerProductionProgressView> productionProgress, List<ExternalShipmentView> shipments,
 			Set<OrderAction> actions, Instant createdAt, Instant updatedAt) implements OrderDetail {
 	}
 

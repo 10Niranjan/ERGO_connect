@@ -56,3 +56,13 @@ interface OrderPackagingDispatchRepository extends Repository<OrderPackagingDisp
 	List<OrderPackagingDispatch> findByOrderIdOrderById(Long orderId);
 
 }
+
+interface ShipmentRepository extends Repository<Shipment, Long> {
+
+	Shipment save(Shipment shipment);
+
+	Optional<Shipment> findById(Long id);
+
+	List<Shipment> findByOrderIdOrderById(Long orderId);
+
+}

@@ -21,7 +21,8 @@ public class MasterDataApi {
 	public enum Ref {
 
 		CURRENCY(MasterList.CURRENCIES), MATERIAL(MasterList.MATERIALS), PROCESS(MasterList.PROCESSES),
-		COATING(MasterList.COATINGS), PAYMENT_TERM(MasterList.PAYMENT_TERMS), INCOTERM(MasterList.INCOTERMS);
+		COATING(MasterList.COATINGS), PAYMENT_TERM(MasterList.PAYMENT_TERMS), INCOTERM(MasterList.INCOTERMS),
+		SHIPMENT_MODE(MasterList.SHIPMENT_MODES);
 
 		private final MasterList list;
 
