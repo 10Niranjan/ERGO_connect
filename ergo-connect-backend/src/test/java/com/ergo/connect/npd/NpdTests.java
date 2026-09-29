@@ -554,8 +554,10 @@ class NpdTests {
 		call(post("/api/npd/{id}/close-stage", projectId), ergoNpd, "{}").andExpect(status().isConflict())
 			.andExpect(jsonPath("$.detail", containsString("pending approval")));
 
-		// M2 bypass attempt: this activity requires CUSTOMER_SAMPLE_APPROVAL, but ERGO requests and self-approves
-		// an unrelated STAGE_GATE approval linked to the very same activity instead. Must NOT satisfy the gate.
+		// M2 bypass attempt: this activity requires CUSTOMER_SAMPLE_APPROVAL, but ERGO requests and approves an
+		// unrelated STAGE_GATE approval linked to the very same activity instead. Must NOT satisfy the gate.
+		// Decided by ergoAdmin rather than ergoNpd (the requester) since the M-1 self-approval rule (ARCHITECTURE.md
+		// §8 2026-09-27) forbids the same user from both requesting and deciding any approval, STAGE_GATE included.
 		long wrongTypeApprovalId = JsonPath
 			.<List<Number>>read(
 					call(post("/api/npd/{id}/approvals", projectId), ergoNpd,
@@ -567,7 +569,7 @@ class NpdTests {
 					"$.approvals[?(@.linkedActivityId == " + activityId + " && @.approvalType == 'STAGE_GATE')].id")
 			.getFirst()
 			.longValue();
-		call(post("/api/npd/approvals/{id}/decide", wrongTypeApprovalId), ergoNpd, "{\"approved\": true}")
+		call(post("/api/npd/approvals/{id}/decide", wrongTypeApprovalId), ergoAdmin, "{\"approved\": true}")
 			.andExpect(status().isOk());
 		call(post("/api/npd/{id}/close-stage", projectId), ergoNpd, "{}").andExpect(status().isConflict())
 			.andExpect(jsonPath("$.detail", containsString("pending approval")));
