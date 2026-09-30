@@ -1,5 +1,7 @@
 package com.ergo.connect.npd.domain;
 
+import java.util.Optional;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -42,6 +44,12 @@ class NpdApiService implements NpdApi {
 		project.handoverReadyFlag = true;
 		return new HandoverProject(project.id, project.customerCompanyId, project.supplierCompanyId,
 				project.sourceRfqId, project.partNumber, project.revision);
+	}
+
+	@Override
+	public Optional<ProjectRef> projectRef(long npdProjectId) {
+		return projects.findById(npdProjectId)
+			.map(p -> new ProjectRef(p.id, p.customerCompanyId, p.supplierCompanyId));
 	}
 
 }

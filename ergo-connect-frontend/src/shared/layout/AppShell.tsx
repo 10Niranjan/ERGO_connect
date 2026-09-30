@@ -27,6 +27,7 @@ import {
   OFP_CUSTOMER_ROLES,
   OFP_SUPPLIER_ROLES,
   OFP_VIEWERS,
+  QUALITY_VIEWERS,
   RFQ_VIEWERS,
   SUPPLIER_QUOTERS,
 } from '../../auth/access'
@@ -42,6 +43,7 @@ const NAV: { label: string; to: string; roles?: Role[] }[] = [
   { label: 'NPD', to: '/npd/mine', roles: NPD_CUSTOMER_ROLES },
   { label: 'NPD Tasks', to: '/npd/mine', roles: NPD_SUPPLIER_ROLES },
   { label: 'Orders', to: '/ofp', roles: [...OFP_VIEWERS, ...OFP_SUPPLIER_ROLES, ...OFP_CUSTOMER_ROLES] },
+  { label: 'Inspections', to: '/quality', roles: QUALITY_VIEWERS },
   { label: 'Customers & suppliers', to: '/companies', roles: COMPANY_MANAGERS },
   { label: 'Company profile', to: '/company', roles: EXTERNAL_ROLES },
   { label: 'Users', to: '/admin/users', roles: ['ERGO_ADMIN'] },

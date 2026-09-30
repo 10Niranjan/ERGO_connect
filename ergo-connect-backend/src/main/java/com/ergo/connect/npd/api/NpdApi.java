@@ -1,5 +1,7 @@
 package com.ergo.connect.npd.api;
 
+import java.util.Optional;
+
 /**
  * What other modules may ask of the NPD module. Phase 4a: the OFP module's "Handover to OFP" action reads an NPD
  * project's own handover data through here (ofp depends on npd.api, the same established direction npd itself used
@@ -20,5 +22,16 @@ public interface NpdApi {
 	 * and the order it feeds are created atomically in the caller's own transaction.
 	 */
 	HandoverProject handover(long npdProjectId);
+
+	/** Just the project's own company columns, no state change (unlike {@link #handover}) - what a module needs to
+	 * derive/verify company ownership server-side (Quality's security review M5, ARCHITECTURE.md §8) rather than
+	 * trusting a client-sent company id for an inspection linked to this project. Read is unrestricted by caller
+	 * type: the consuming module (e.g. Quality) does its own authorization with the result (an ERGO caller uses it
+	 * to derive both companies; a supplier caller uses it only to verify the project is its own, and is rejected
+	 * before the value is ever returned to an HTTP response). Empty if the project doesn't exist. */
+	Optional<ProjectRef> projectRef(long npdProjectId);
+
+	record ProjectRef(long id, long customerCompanyId, long supplierCompanyId) {
+	}
 
 }

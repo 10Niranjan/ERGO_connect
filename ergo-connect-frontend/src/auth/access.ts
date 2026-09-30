@@ -74,3 +74,27 @@ export const OFP_CUSTOMER_ROLES: Role[] = ['CUSTOMER_OFP']
 
 /** /ofp/:id: everyone /ofp's own single list endpoint gives a real scope to. */
 export const OFP_DETAIL_VIEWERS: Role[] = [...OFP_VIEWERS, ...OFP_SUPPLIER_ROLES, ...OFP_CUSTOMER_ROLES]
+
+/** SRS §10.8 View: every role except the three *_RFQ roles (InspectionController's VIEWERS). */
+export const QUALITY_VIEWERS: Role[] = [
+  'ERGO_ADMIN',
+  'ERGO_MANAGEMENT',
+  'ERGO_KAM',
+  'ERGO_NPD',
+  'ERGO_OFP',
+  'ERGO_QUALITY',
+  'CUSTOMER_NPD',
+  'CUSTOMER_OFP',
+  'CUSTOMER_QUALITY',
+  'CUSTOMER_KAM',
+  'CUSTOMER_MANAGEMENT',
+  'SUPPLIER_NPD',
+  'SUPPLIER_OFP',
+  'SUPPLIER_QUALITY',
+  'SUPPLIER_KAM',
+]
+
+/** SRS §10.8 Create/Edit/Submit: ERGO Admin/Quality and Supplier Quality only (InspectionController's EDITORS).
+ * Convenience only, for showing the "New inspection" button on the list page (there is no allowed-actions field
+ * before a record exists) - the backend enforces the same set on every write. */
+export const QUALITY_EDITORS: Role[] = ['ERGO_ADMIN', 'ERGO_QUALITY', 'SUPPLIER_QUALITY']

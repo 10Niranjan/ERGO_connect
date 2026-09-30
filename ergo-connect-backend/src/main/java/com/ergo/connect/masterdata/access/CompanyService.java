@@ -50,10 +50,16 @@ public class CompanyService {
 	public List<CompanyResponse> list() {
 		CurrentUser me = CurrentUser.get();
 		List<Company> visible = switch (me.role()) {
-			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_RFQ -> companies.findAllByOrderByNameAsc();
+			// ERGO_QUALITY also creates/tags inspections directly against customers/suppliers with no backing
+			// NPD/OFP record (Quality's own INCOMING/FINAL/IN_PROCESS inspection types, security review F2,
+			// ARCHITECTURE.md §8) - it needs the same unrestricted company picker ERGO_RFQ gets, not the
+			// record-scoped "only companies on my own records" reading originally given to every ERGO functional
+			// role here. ERGO_NPD/ERGO_OFP are left as they were (List.of()): unlike Quality, neither module lets
+			// its own ERGO role freely tag an arbitrary company onto a record - flagged, not silently widened too.
+			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_RFQ, ERGO_QUALITY -> companies.findAllByOrderByNameAsc();
 			case ERGO_KAM -> companies.findByIdInOrderByNameAsc(accounts(me));
-			// SRS "RV": the companies on their own NPD / OFP / quality records, which arrive in Phases 3-5
-			case ERGO_NPD, ERGO_OFP, ERGO_QUALITY -> List.of();
+			// SRS "RV": the companies on their own NPD / OFP records
+			case ERGO_NPD, ERGO_OFP -> List.of();
 			default -> companies.findById(me.companyId()).stream().toList(); // customers and suppliers: their own
 		};
 		return visible.stream().map(company -> toResponse(company, me)).toList();
@@ -158,9 +164,9 @@ public class CompanyService {
 	/** Record scope (SRS §10.2/§10.3 view column): out-of-scope companies do not exist for the caller. */
 	private Company visible(CurrentUser me, long id) {
 		boolean inScope = switch (me.role()) {
-			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_RFQ -> true;
+			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_RFQ, ERGO_QUALITY -> true; // ERGO_QUALITY: see list() above (F2)
 			case ERGO_KAM -> accounts(me).contains(id);
-			case ERGO_NPD, ERGO_OFP, ERGO_QUALITY -> false;
+			case ERGO_NPD, ERGO_OFP -> false;
 			default -> id == me.companyId();
 		};
 		return (inScope ? companies.findById(id) : Optional.<Company>empty())

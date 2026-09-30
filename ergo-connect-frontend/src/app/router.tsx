@@ -12,6 +12,8 @@ import {
   OFP_EDITORS,
   OFP_SUPPLIER_ROLES,
   OFP_VIEWERS,
+  QUALITY_EDITORS,
+  QUALITY_VIEWERS,
   QUOTE_VIEWERS,
   RFQ_CREATORS,
   RFQ_VIEWERS,
@@ -34,6 +36,9 @@ import { NpdListPage } from '../features/npd/pages/NpdListPage'
 import { OrderCreatePage } from '../features/ofp/pages/OrderCreatePage'
 import { OrderDetailPage } from '../features/ofp/pages/OrderDetailPage'
 import { OrderListPage } from '../features/ofp/pages/OrderListPage'
+import { InspectionCreatePage } from '../features/quality/pages/InspectionCreatePage'
+import { InspectionDetailPage } from '../features/quality/pages/InspectionDetailPage'
+import { InspectionListPage } from '../features/quality/pages/InspectionListPage'
 import { AssignedRfqsPage } from '../features/quotation/pages/AssignedRfqsPage'
 import { QuotePage } from '../features/quotation/pages/QuotePage'
 import { RfqDetailPage } from '../features/rfq/pages/RfqDetailPage'
@@ -97,6 +102,16 @@ export const router = createBrowserRouter([
           {
             element: <RequireRole roles={OFP_DETAIL_VIEWERS} />,
             children: [{ path: '/ofp/:id', element: <OrderDetailPage /> }],
+          },
+          {
+            // /quality's own single list/detail endpoints already scope by caller (InspectionService.list()/get()),
+            // same pattern as /ofp above.
+            element: <RequireRole roles={QUALITY_VIEWERS} />,
+            children: [{ path: '/quality', element: <InspectionListPage /> }, { path: '/quality/:id', element: <InspectionDetailPage /> }],
+          },
+          {
+            element: <RequireRole roles={QUALITY_EDITORS} />,
+            children: [{ path: '/quality/new', element: <InspectionCreatePage /> }],
           },
           {
             element: <RequireRole roles={COMPANY_MANAGERS} />,
