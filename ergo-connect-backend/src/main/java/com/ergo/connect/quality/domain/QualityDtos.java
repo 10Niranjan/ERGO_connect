@@ -130,4 +130,125 @@ public final class QualityDtos {
 			Instant createdAt, Instant updatedAt) implements InspectionDetail {
 	}
 
+	// ================================================================== NCR / CAPA (Phase 5b, SRS §13.6.3/.5, §14.7)
+
+	/** Create (SRS §13.6.3). {@code customerCompanyId}/{@code supplierCompanyId}/{@code ownerUserId} are ERGO-only in
+	 * effect for anything other than the supplier's own tag (NcrService), same "never trusted from the client
+	 * verbatim" rule as {@link InspectionForm}. */
+	public record NcrForm(@NotNull LinkedModule linkedModule, @NotNull @Positive Long linkedRecordId,
+			@NotBlank @Size(max = 100) String issueCategory, @NotBlank @Size(max = 4000) String issueDescription,
+			@NotNull LocalDate targetClosureDate, Long customerCompanyId, Long supplierCompanyId, Long ownerUserId) {
+	}
+
+	/** Full replace, used for both EDIT and every forward transition (mirrors {@link InspectionUpdateForm} carrying
+	 * the same shape for EDIT and SUBMIT): the progressive fields ({@code containmentAction}/{@code rootCause}/
+	 * {@code correctiveAction}/{@code preventiveAction}) are filled the same way regardless of which action call
+	 * carries them. {@code effectivenessStatus}/{@code ownerUserId}/{@code customerVisible}/company reassignment are
+	 * ERGO-only in effect (NcrService.applyUpdate) - a supplier's own edit leaves them untouched. {@code
+	 * customerVisible} follows the same full-replace convention as every other field here (security review H2,
+	 * matching {@code InspectionUpdateForm.customerVisible}): an ERGO editor must resend the value it wants to keep,
+	 * or it reverts to {@code false} on the next edit that omits it. */
+	public record NcrUpdateForm(@NotBlank @Size(max = 100) String issueCategory,
+			@NotBlank @Size(max = 4000) String issueDescription, @NotNull LocalDate targetClosureDate,
+			@Size(max = 4000) String containmentAction, @Size(max = 4000) String rootCause,
+			@Size(max = 4000) String correctiveAction, @Size(max = 4000) String preventiveAction,
+			@Size(max = 40) String effectivenessStatus, Long ownerUserId, Long customerCompanyId,
+			Long supplierCompanyId, boolean customerVisible) {
+	}
+
+	/** Create and full-replace edit for a CAPA action - one shape for both, same reasoning as {@link NcrUpdateForm}
+	 * covering both EDIT and SUBMIT for its parent. */
+	public record CapaActionForm(@NotNull CapaActionType actionType, @NotBlank @Size(max = 4000) String actionDescription,
+			@NotNull LocalDate targetDate, Long ownerUserId) {
+	}
+
+	/** Buttons the caller may use now on the NCR itself (same computed-not-guessed pattern as {@link InspectionAction}).
+	 * CAPA actions have no equivalent set (matches {@code InspectionDefect} having none either): their own edit/close
+	 * calls are gated inline in {@code NcrService}, simple enough not to need a second enum. */
+	public enum NcrAction {
+		EDIT, MOVE_TO_CONTAINMENT, MOVE_TO_ROOT_CAUSE, MOVE_TO_CAPA, SUBMIT_FOR_CLOSURE, CLOSE, SEND_BACK, REOPEN
+	}
+
+	/** ERGO's CAPA action view: full detail including who owns it. */
+	public record CapaActionView(long id, CapaActionType actionType, String actionDescription, Long ownerUserId,
+			String owner, LocalDate targetDate, CapaActionStatus status, Long evidenceDocumentId,
+			String evidenceFileName, Instant closedAt, Instant createdAt) {
+	}
+
+	/** Supplier's CAPA action view: no {@code ownerUserId}/{@code owner} (judgment call, see {@code NcrService}'s
+	 * class comment - staff identity stays internal, the same reasoning that already drops {@code Inspection}'s
+	 * {@code inspectedBy} from both external views). {@code evidenceDocumentId}/{@code evidenceFileName} ARE shared
+	 * with the supplier: proof the action raised against (or by) its own NCR was actually completed - the point of
+	 * the NCR, not an ERGO-internal note, and either the supplier uploaded the file itself or it is ERGO's own
+	 * evidence shared with it as the responsible party. Not shared with the customer (security review H1) - see
+	 * {@link CustomerCapaActionView}. */
+	public record SupplierCapaActionView(long id, CapaActionType actionType, String actionDescription,
+			LocalDate targetDate, CapaActionStatus status, Long evidenceDocumentId, String evidenceFileName,
+			Instant closedAt, Instant createdAt) {
+	}
+
+	/** Customer's CAPA action view (security review H1): same shape as {@link SupplierCapaActionView} except
+	 * evidence - a customer must never be able to download the other party's evidence file (letterhead, signatures),
+	 * the same two-way-anonymity rule that makes POD ERGO-only (ARCHITECTURE.md §8, 2026-09-29). {@code
+	 * evidenceAttached} tells the customer whether proof exists without naming or exposing it. */
+	public record CustomerCapaActionView(long id, CapaActionType actionType, String actionDescription,
+			LocalDate targetDate, CapaActionStatus status, boolean evidenceAttached, Instant closedAt,
+			Instant createdAt) {
+	}
+
+	/** Per-audience list row, see {@link InspectionSummary}. */
+	public sealed interface NcrSummary permits NcrRow, SupplierNcrRow, CustomerNcrRow {
+	}
+
+	/** Per-audience detail view, see {@link InspectionDetail}. */
+	public sealed interface NcrDetail permits NcrView, SupplierNcrView, CustomerNcrView {
+	}
+
+	/** ERGO's list row: both companies. */
+	public record NcrRow(long id, String ncrNumber, LinkedModule linkedModule, long linkedRecordId, String customer,
+			String supplier, String issueCategory, NcrStatus currentStatus, LocalDate targetClosureDate)
+			implements NcrSummary {
+	}
+
+	/** ERGO's unrestricted detail view: every field, including the ERGO-internal {@code effectivenessStatus} and
+	 * {@code owner}, both companies, and the full {@link CapaActionView} list. */
+	public record NcrView(long id, String ncrNumber, LinkedModule linkedModule, long linkedRecordId,
+			Long customerCompanyId, String customer, Long supplierCompanyId, String supplier, String issueCategory,
+			String issueDescription, String containmentAction, String rootCause, String correctiveAction,
+			String preventiveAction, Long ownerUserId, String owner, LocalDate targetClosureDate,
+			LocalDate closureDate, String effectivenessStatus, NcrStatus currentStatus, boolean customerVisible,
+			List<CapaActionView> capaActions, Set<NcrAction> actions, Instant createdAt, Instant updatedAt)
+			implements NcrDetail {
+	}
+
+	/** Two-way anonymity: no field names or identifies the other party (matches {@link SupplierInspectionRow}). */
+	public record SupplierNcrRow(long id, String ncrNumber, LinkedModule linkedModule, long linkedRecordId,
+			String issueCategory, NcrStatus currentStatus, LocalDate targetClosureDate) implements NcrSummary {
+	}
+
+	/** Supplier's detail view: the shared content fields (this is the point of an NCR raised against/by a supplier),
+	 * never {@code effectivenessStatus}/{@code owner} (ERGO-internal, see the class comment), never the customer. */
+	public record SupplierNcrView(long id, String ncrNumber, LinkedModule linkedModule, long linkedRecordId,
+			String issueCategory, String issueDescription, String containmentAction, String rootCause,
+			String correctiveAction, String preventiveAction, LocalDate targetClosureDate, LocalDate closureDate,
+			NcrStatus currentStatus, List<SupplierCapaActionView> capaActions, Set<NcrAction> actions,
+			Instant createdAt, Instant updatedAt) implements NcrDetail {
+	}
+
+	/** Two-way anonymity: no field names or identifies the other party. */
+	public record CustomerNcrRow(long id, String ncrNumber, LinkedModule linkedModule, long linkedRecordId,
+			String issueCategory, NcrStatus currentStatus, LocalDate targetClosureDate) implements NcrSummary {
+	}
+
+	/** Customer's detail view - same shape as {@link SupplierNcrView} and for the same reasons (see its own javadoc)
+	 * except its CAPA actions use {@link CustomerCapaActionView} (security review H1), not
+	 * {@link SupplierCapaActionView}; {@code actions} is always empty (Customer Quality is view-only, same judgment
+	 * call as Inspection's). */
+	public record CustomerNcrView(long id, String ncrNumber, LinkedModule linkedModule, long linkedRecordId,
+			String issueCategory, String issueDescription, String containmentAction, String rootCause,
+			String correctiveAction, String preventiveAction, LocalDate targetClosureDate, LocalDate closureDate,
+			NcrStatus currentStatus, List<CustomerCapaActionView> capaActions, Set<NcrAction> actions,
+			Instant createdAt, Instant updatedAt) implements NcrDetail {
+	}
+
 }

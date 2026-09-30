@@ -39,6 +39,9 @@ import { OrderListPage } from '../features/ofp/pages/OrderListPage'
 import { InspectionCreatePage } from '../features/quality/pages/InspectionCreatePage'
 import { InspectionDetailPage } from '../features/quality/pages/InspectionDetailPage'
 import { InspectionListPage } from '../features/quality/pages/InspectionListPage'
+import { NcrCreatePage } from '../features/quality/pages/NcrCreatePage'
+import { NcrDetailPage } from '../features/quality/pages/NcrDetailPage'
+import { NcrListPage } from '../features/quality/pages/NcrListPage'
 import { AssignedRfqsPage } from '../features/quotation/pages/AssignedRfqsPage'
 import { QuotePage } from '../features/quotation/pages/QuotePage'
 import { RfqDetailPage } from '../features/rfq/pages/RfqDetailPage'
@@ -112,6 +115,16 @@ export const router = createBrowserRouter([
           {
             element: <RequireRole roles={QUALITY_EDITORS} />,
             children: [{ path: '/quality/new', element: <InspectionCreatePage /> }],
+          },
+          {
+            // NCR/CAPA: same per-caller-scoped list/detail endpoints and role sets as Inspection above (NcrController's
+            // VIEWERS/EDITORS are identical to InspectionController's).
+            element: <RequireRole roles={QUALITY_VIEWERS} />,
+            children: [{ path: '/quality/ncrs', element: <NcrListPage /> }, { path: '/quality/ncrs/:id', element: <NcrDetailPage /> }],
+          },
+          {
+            element: <RequireRole roles={QUALITY_EDITORS} />,
+            children: [{ path: '/quality/ncrs/new', element: <NcrCreatePage /> }],
           },
           {
             element: <RequireRole roles={COMPANY_MANAGERS} />,
