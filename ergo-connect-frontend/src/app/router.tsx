@@ -1,6 +1,7 @@
 import { createBrowserRouter, Navigate } from 'react-router'
 import {
   COMPANY_MANAGERS,
+  DEVIATION_EDITORS,
   EXTERNAL_ROLES,
   MASTER_DATA_VIEWERS,
   NPD_CUSTOMER_ROLES,
@@ -36,6 +37,9 @@ import { NpdListPage } from '../features/npd/pages/NpdListPage'
 import { OrderCreatePage } from '../features/ofp/pages/OrderCreatePage'
 import { OrderDetailPage } from '../features/ofp/pages/OrderDetailPage'
 import { OrderListPage } from '../features/ofp/pages/OrderListPage'
+import { DeviationCreatePage } from '../features/quality/pages/DeviationCreatePage'
+import { DeviationDetailPage } from '../features/quality/pages/DeviationDetailPage'
+import { DeviationListPage } from '../features/quality/pages/DeviationListPage'
 import { InspectionCreatePage } from '../features/quality/pages/InspectionCreatePage'
 import { InspectionDetailPage } from '../features/quality/pages/InspectionDetailPage'
 import { InspectionListPage } from '../features/quality/pages/InspectionListPage'
@@ -125,6 +129,17 @@ export const router = createBrowserRouter([
           {
             element: <RequireRole roles={QUALITY_EDITORS} />,
             children: [{ path: '/quality/ncrs/new', element: <NcrCreatePage /> }],
+          },
+          {
+            // Deviations: same per-caller-scoped list/detail endpoints and VIEWERS role set as Inspection/NCR above
+            // (DeviationController's VIEWERS is identical); create is its own DEVIATION_EDITORS, which also admits
+            // Customer Quality (SRS §10.8 - unlike Inspection/NCR, a customer may raise its own deviation).
+            element: <RequireRole roles={QUALITY_VIEWERS} />,
+            children: [{ path: '/quality/deviations', element: <DeviationListPage /> }, { path: '/quality/deviations/:id', element: <DeviationDetailPage /> }],
+          },
+          {
+            element: <RequireRole roles={DEVIATION_EDITORS} />,
+            children: [{ path: '/quality/deviations/new', element: <DeviationCreatePage /> }],
           },
           {
             element: <RequireRole roles={COMPANY_MANAGERS} />,

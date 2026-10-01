@@ -1,4 +1,5 @@
 import type { ChipColor } from '../rfq/labels'
+import type { DeviationDecision, DeviationStatus } from './deviationApi'
 import type { CapaActionStatus, CapaActionType, DefectSeverity, LinkedModule, NcrStatus, ResultStatus } from './qualityApi'
 
 export const RESULT_STATUS: Record<ResultStatus, { label: string; color: ChipColor }> = {
@@ -42,4 +43,21 @@ export const CAPA_ACTION_STATUS: Record<CapaActionStatus, { label: string; color
   OPEN: { label: 'Open', color: 'default' },
   IN_PROGRESS: { label: 'In progress', color: 'primary' },
   CLOSED: { label: 'Closed', color: 'success' },
+}
+
+export const DEVIATION_STATUS: Record<DeviationStatus, { label: string; color: ChipColor }> = {
+  REQUESTED: { label: 'Requested', color: 'default' },
+  UNDER_REVIEW: { label: 'Under review', color: 'primary' },
+  CUSTOMER_APPROVAL_PENDING: { label: 'Pending customer approval', color: 'warning' },
+  APPROVED: { label: 'Approved', color: 'success' },
+  REJECTED: { label: 'Rejected', color: 'error' },
+  EXPIRED: { label: 'Expired', color: 'warning' },
+  CLOSED: { label: 'Closed', color: 'default' },
+}
+
+export const DEVIATION_DECISION: Record<DeviationDecision, { label: string; color: ChipColor }> = {
+  PENDING: { label: 'Pending', color: 'default' },
+  APPROVED: { label: 'Approved', color: 'success' },
+  REJECTED: { label: 'Rejected', color: 'error' },
+  SENT_BACK: { label: 'Sent back', color: 'warning' },
 }

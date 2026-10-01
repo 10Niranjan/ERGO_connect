@@ -45,6 +45,7 @@ const NAV: { label: string; to: string; roles?: Role[] }[] = [
   { label: 'Orders', to: '/ofp', roles: [...OFP_VIEWERS, ...OFP_SUPPLIER_ROLES, ...OFP_CUSTOMER_ROLES] },
   { label: 'Inspections', to: '/quality', roles: QUALITY_VIEWERS },
   { label: 'NCR / CAPA', to: '/quality/ncrs', roles: QUALITY_VIEWERS },
+  { label: 'Deviation Approvals', to: '/quality/deviations', roles: QUALITY_VIEWERS },
   { label: 'Customers & suppliers', to: '/companies', roles: COMPANY_MANAGERS },
   { label: 'Company profile', to: '/company', roles: EXTERNAL_ROLES },
   { label: 'Users', to: '/admin/users', roles: ['ERGO_ADMIN'] },
