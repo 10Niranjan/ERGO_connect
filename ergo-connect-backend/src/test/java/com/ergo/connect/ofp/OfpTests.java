@@ -72,6 +72,8 @@ class OfpTests {
 
 	Login ergoRfq;
 
+	Login ergoQuality;
+
 	Login buyerA;
 
 	Login seller;
@@ -91,6 +93,7 @@ class OfpTests {
 		users.assignAccounts(ergoKam.userId(), customerA);
 		ergoNpd = users.login(ergo, "ERGO_NPD");
 		ergoRfq = users.login(ergo, "ERGO_RFQ");
+		ergoQuality = users.login(ergo, "ERGO_QUALITY");
 		buyerA = users.login(customerA, "CUSTOMER_RFQ");
 		seller = users.login(supplier, "SUPPLIER_RFQ");
 	}
@@ -384,8 +387,7 @@ class OfpTests {
 	@Test
 	void supplierActionsAreExactlyProductionProgressAndPackagingDispatchNeverDispatchReady() throws Exception {
 		long orderId = advanceToPackagingInProgress(customerA);
-		call(post("/api/ofp/orders/{id}/material-status", orderId), ergoOfp, materialStatusForm("RECEIVED", "PASSED"))
-			.andExpect(status().isCreated()); // gate met: PACKAGING_IN_PROGRESS + one PASSED row
+		passedInspection(orderId); // gate met: PACKAGING_IN_PROGRESS + one PASSED inspection (Phase 5d)
 		Login supplierOfp = users.login(supplier, "SUPPLIER_OFP");
 
 		call(get("/api/ofp/orders/{id}", orderId), supplierOfp, null)
@@ -426,15 +428,13 @@ class OfpTests {
 			.isEqualTo("PACKED");
 	}
 
+	/** Phase 5d: the gate {@link #release} re-checks is now the real Quality one. A second inspection against the
+	 * same order left IN_INSPECTION (not yet decided) is enough to break "every inspection resolves to PASSED or
+	 * RELEASED_WITH_DEVIATION", even though the first one is still PASSED. */
 	@Test
 	void releaseIsRefusedWhenDispatchReadyGateNoLongerHoldsAndSupplierWriteIsBlockedWhileOnHold() throws Exception {
 		long orderId = advanceToPackagingInProgress(customerA);
-		String withMaterial = call(post("/api/ofp/orders/{id}/material-status", orderId), ergoOfp,
-				materialStatusForm("RECEIVED", "PASSED")).andExpect(status().isCreated())
-			.andReturn()
-			.getResponse()
-			.getContentAsString();
-		long statusId = ((Number) JsonPath.read(withMaterial, "$.materialStatus[0].id")).longValue();
+		passedInspection(orderId);
 		call(post("/api/ofp/orders/{id}/dispatch-ready", orderId), ergoOfp, "{}")
 			.andExpect(jsonPath("$.currentStatus").value("DISPATCH_READY"));
 
@@ -450,37 +450,42 @@ class OfpTests {
 		call(post("/api/ofp/orders/{id}/production-progress", orderId), ergoOfp,
 				productionProgressForm("IN_PROGRESS", null)).andExpect(status().isCreated());
 
-		// M2: the material inspection that made Dispatch Ready reachable no longer holds
-		call(put("/api/ofp/material-status/{id}", statusId), ergoOfp, materialStatusForm("RECEIVED", "FAILED"))
-			.andExpect(status().isOk());
+		// M2: the inspection gate that made Dispatch Ready reachable no longer holds (a second inspection is now
+		// mid-decision, IN_INSPECTION)
+		long secondInspection = createInspection(orderId);
+		submitInspection(secondInspection);
 		call(post("/api/ofp/orders/{id}/release", orderId), ergoOfp, "{}").andExpect(status().isConflict())
 			.andExpect(jsonPath("$.detail")
 				.value("Cannot release back to Dispatch Ready - not every material inspection has passed anymore"));
 
 		// fix it and release succeeds
-		call(put("/api/ofp/material-status/{id}", statusId), ergoOfp, materialStatusForm("RECEIVED", "PASSED"))
-			.andExpect(status().isOk());
+		passInspection(secondInspection);
 		call(post("/api/ofp/orders/{id}/release", orderId), ergoOfp, "{}")
 			.andExpect(jsonPath("$.currentStatus").value("DISPATCH_READY"));
 	}
 
+	/** Phase 5d: the dispatch gate now reads real Quality inspections (SRS's "Final" inspection against the order,
+	 * {@code linkedModule = OFP}) instead of the old {@code order_material_status.inspection_status} stub. One
+	 * inspection is driven through every state along the way: zero inspections, OPEN, IN_INSPECTION, REJECTED, then
+	 * REJECTED-then-CLOSED (the audit-history recovery of a CLOSED inspection's pre-close disposition) are all still
+	 * blocked; only once it is reopened and driven to PASSED does the gate open. */
 	@Test
-	void dispatchReadyIsGatedOnEveryMaterialInspectionPassingAndIsErgoOfpAdminOnly() throws Exception {
+	void dispatchReadyIsGatedOnQualityInspectionsAndIsErgoOfpAdminOnly() throws Exception {
 		long orderId = advanceToPackagingInProgress(customerA);
 
-		// zero material-status rows: not dispatch-ready (an unchecked order has not "passed")
+		// zero inspections: not dispatch-ready (an unchecked order has not "passed")
 		call(post("/api/ofp/orders/{id}/dispatch-ready", orderId), ergoOfp, "{}")
 			.andExpect(status().isUnprocessableContent())
 			.andExpect(jsonPath("$.detail")
 				.value("All material inspections must pass before the order can be marked dispatch ready."));
 
-		// one FAILED row: still not dispatch-ready
-		String withMaterial = call(post("/api/ofp/orders/{id}/material-status", orderId), ergoOfp,
-				materialStatusForm("RECEIVED", "FAILED")).andExpect(status().isCreated())
-			.andReturn()
-			.getResponse()
-			.getContentAsString();
-		long statusId = ((Number) JsonPath.read(withMaterial, "$.materialStatus[0].id")).longValue();
+		// one OPEN inspection: still not dispatch-ready
+		long inspectionId = createInspection(orderId);
+		call(post("/api/ofp/orders/{id}/dispatch-ready", orderId), ergoOfp, "{}")
+			.andExpect(status().isUnprocessableContent());
+
+		// IN_INSPECTION: still not dispatch-ready
+		submitInspection(inspectionId);
 		call(post("/api/ofp/orders/{id}/dispatch-ready", orderId), ergoOfp, "{}")
 			.andExpect(status().isUnprocessableContent());
 
@@ -491,14 +496,63 @@ class OfpTests {
 		call(post("/api/ofp/orders/{id}/dispatch-ready", orderId), ergoManagement, "{}")
 			.andExpect(status().isForbidden());
 
-		// one PASSED row (the FAILED one corrected): gate now met
-		call(put("/api/ofp/material-status/{id}", statusId), ergoOfp, materialStatusForm("RECEIVED", "PASSED"))
-			.andExpect(status().isOk());
+		// REJECTED: still not dispatch-ready
+		rejectInspection(inspectionId);
+		call(post("/api/ofp/orders/{id}/dispatch-ready", orderId), ergoOfp, "{}")
+			.andExpect(status().isUnprocessableContent());
+
+		// CLOSED with REJECTED as its last pre-close disposition: still blocked (the audit-history recovery)
+		closeInspection(inspectionId);
+		call(post("/api/ofp/orders/{id}/dispatch-ready", orderId), ergoOfp, "{}")
+			.andExpect(status().isUnprocessableContent());
+
+		// reopen, resubmit and pass it: gate now met
+		reopenInspection(inspectionId);
+		submitInspection(inspectionId);
+		passInspection(inspectionId);
 		call(post("/api/ofp/orders/{id}/dispatch-ready", orderId), ergoOfp, "{}")
 			.andExpect(jsonPath("$.currentStatus").value("DISPATCH_READY"));
 
 		// cannot be repeated once already Dispatch Ready
 		call(post("/api/ofp/orders/{id}/dispatch-ready", orderId), ergoOfp, "{}").andExpect(status().isConflict());
+	}
+
+	/** RELEASED_WITH_DEVIATION also satisfies the gate, same as PASSED. */
+	@Test
+	void dispatchReadyIsAllowedWhenTheOnlyInspectionWasReleasedWithDeviation() throws Exception {
+		long orderId = advanceToPackagingInProgress(customerA);
+		long inspectionId = createInspection(orderId);
+		submitInspection(inspectionId);
+		releaseInspectionWithDeviation(inspectionId);
+		call(post("/api/ofp/orders/{id}/dispatch-ready", orderId), ergoOfp, "{}")
+			.andExpect(jsonPath("$.currentStatus").value("DISPATCH_READY"));
+	}
+
+	/** Phase 5d client decision (2026-10-01, ARCHITECTURE.md §8): the most recently raised inspection decides, not
+	 * "every linked inspection must pass" - a later PASSED inspection on the same order clears an earlier REJECTED
+	 * one without reopening and overwriting it. */
+	@Test
+	void dispatchReadyIsAllowedWhenANewerInspectionPassesAfterAnOlderOneWasRejected() throws Exception {
+		long orderId = advanceToPackagingInProgress(customerA);
+		long firstInspectionId = createInspection(orderId);
+		submitInspection(firstInspectionId);
+		rejectInspection(firstInspectionId);
+
+		passedInspection(orderId);
+
+		call(post("/api/ofp/orders/{id}/dispatch-ready", orderId), ergoOfp, "{}")
+			.andExpect(jsonPath("$.currentStatus").value("DISPATCH_READY"));
+	}
+
+	/** A CLOSED inspection whose last pre-close disposition was PASSED still satisfies the gate (the audit-history
+	 * recovery {@code QualityApiService} uses, mirroring {@code OrderService.statusBeforeHold}). */
+	@Test
+	void dispatchReadyIsAllowedWhenTheOnlyInspectionIsClosedAfterPassing() throws Exception {
+		long orderId = advanceToPackagingInProgress(customerA);
+		long inspectionId = passedInspection(orderId);
+		closeInspection(inspectionId);
+		call(post("/api/ofp/orders/{id}/dispatch-ready", orderId), ergoOfp, "{}")
+			.andExpect(jsonPath("$.currentStatus").value("DISPATCH_READY"));
 	}
 
 	@Test
@@ -596,8 +650,7 @@ class OfpTests {
 	@Test
 	void customerHasNoWriteAccessAnywhereInOfp() throws Exception {
 		long orderId = advanceToPackagingInProgress(customerA);
-		call(post("/api/ofp/orders/{id}/material-status", orderId), ergoOfp, materialStatusForm("RECEIVED", "PASSED"))
-			.andExpect(status().isCreated());
+		passedInspection(orderId);
 		call(post("/api/ofp/orders/{id}/dispatch-ready", orderId), ergoOfp, "{}").andExpect(status().isOk());
 		Login customerOfp = users.login(customerA, "CUSTOMER_OFP");
 
@@ -662,18 +715,14 @@ class OfpTests {
 	@Test
 	void dispatchReChecksTheInspectionGateAndIsErgoOfpAdminOnly() throws Exception {
 		long orderId = advanceToPackagingInProgress(customerA);
-		String withMaterial = call(post("/api/ofp/orders/{id}/material-status", orderId), ergoOfp,
-				materialStatusForm("RECEIVED", "PASSED")).andExpect(status().isCreated())
-			.andReturn()
-			.getResponse()
-			.getContentAsString();
-		long statusId = ((Number) JsonPath.read(withMaterial, "$.materialStatus[0].id")).longValue();
+		passedInspection(orderId);
 		call(post("/api/ofp/orders/{id}/dispatch-ready", orderId), ergoOfp, "{}")
 			.andExpect(jsonPath("$.currentStatus").value("DISPATCH_READY"));
 
-		// the inspection that made Dispatch Ready reachable no longer holds: Dispatch re-checks the same gate
-		call(put("/api/ofp/material-status/{id}", statusId), ergoOfp, materialStatusForm("RECEIVED", "FAILED"))
-			.andExpect(status().isOk());
+		// the gate that made Dispatch Ready reachable no longer holds: a second inspection is now mid-decision
+		// (IN_INSPECTION), and Dispatch re-checks the same gate
+		long secondInspection = createInspection(orderId);
+		submitInspection(secondInspection);
 		call(post("/api/ofp/orders/{id}/dispatch", orderId), ergoOfp, "{}")
 			.andExpect(status().isUnprocessableContent());
 
@@ -683,8 +732,7 @@ class OfpTests {
 		call(post("/api/ofp/orders/{id}/dispatch", orderId), ergoManagement, "{}").andExpect(status().isForbidden());
 
 		// fix it and dispatch succeeds
-		call(put("/api/ofp/material-status/{id}", statusId), ergoOfp, materialStatusForm("RECEIVED", "PASSED"))
-			.andExpect(status().isOk());
+		passInspection(secondInspection);
 		call(post("/api/ofp/orders/{id}/dispatch", orderId), ergoOfp, "{}")
 			.andExpect(jsonPath("$.currentStatus").value("DISPATCHED"));
 
@@ -695,8 +743,7 @@ class OfpTests {
 	@Test
 	void fullHappyPathFromDispatchReadyToClosedRequiresPodBeforeDelivered() throws Exception {
 		long orderId = advanceToPackagingInProgress(customerA);
-		call(post("/api/ofp/orders/{id}/material-status", orderId), ergoOfp, materialStatusForm("RECEIVED", "PASSED"))
-			.andExpect(status().isCreated());
+		passedInspection(orderId);
 		call(post("/api/ofp/orders/{id}/dispatch-ready", orderId), ergoOfp, "{}")
 			.andExpect(jsonPath("$.currentStatus").value("DISPATCH_READY"));
 
@@ -956,14 +1003,71 @@ class OfpTests {
 	}
 
 	/** Advances an order all the way to Dispatched (M2 fix: shipment writes require at least this status), one
-	 * PASSED material-status row along the way so Dispatch Ready's own gate is met. */
+	 * PASSED Quality inspection along the way (Phase 5d) so Dispatch Ready's real gate is met. */
 	private long advanceToDispatched(long customerCompanyId) throws Exception {
 		long orderId = advanceToPackagingInProgress(customerCompanyId);
-		call(post("/api/ofp/orders/{id}/material-status", orderId), ergoOfp, materialStatusForm("RECEIVED", "PASSED"))
-			.andExpect(status().isCreated());
+		passedInspection(orderId);
 		call(post("/api/ofp/orders/{id}/dispatch-ready", orderId), ergoOfp, "{}").andExpect(status().isOk());
 		call(post("/api/ofp/orders/{id}/dispatch", orderId), ergoOfp, "{}").andExpect(status().isOk());
 		return orderId;
+	}
+
+	// ---------------------------------------------------------------- Phase 5d: Quality inspection gate helpers
+
+	/** A Quality inspection linked to this OFP order (SRS's "Final" inspection against the order), OPEN. */
+	private long createInspection(long orderId) throws Exception {
+		return JsonPath
+			.<Number>read(call(post("/api/quality/inspections"), ergoQuality, """
+					{"linkedModule": "OFP", "linkedRecordId": %d, "partNumber": "PN-STD", "customerVisible": false}"""
+				.formatted(orderId)).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString(),
+					"$.id")
+			.longValue();
+	}
+
+	/** OPEN -> IN_INSPECTION, by the same user that created it (ERGO Quality - never the same user that then PASSes/
+	 * REJECTs it, the self-approval guard, see {@link #passInspection}/{@link #rejectInspection}). */
+	private void submitInspection(long inspectionId) throws Exception {
+		call(post("/api/quality/inspections/{id}/submit", inspectionId), ergoQuality, """
+				{"partNumber": "PN-STD", "quantityChecked": 10, "quantityRejected": 0, "inspectionDate": "%s",
+				 "customerVisible": false}""".formatted(LocalDate.now())).andExpect(status().isOk());
+	}
+
+	/** IN_INSPECTION -> PASSED, by ERGO Admin (a different user than whoever submitted, since the submitter may not
+	 * decide its own inspection's outcome). */
+	private void passInspection(long inspectionId) throws Exception {
+		call(post("/api/quality/inspections/{id}/pass", inspectionId), ergoAdmin, "{}").andExpect(status().isOk());
+	}
+
+	/** IN_INSPECTION -> REJECTED, reason required. */
+	private void rejectInspection(long inspectionId) throws Exception {
+		call(post("/api/quality/inspections/{id}/reject", inspectionId), ergoAdmin,
+				"{\"reason\": \"Dimensional defect found\"}").andExpect(status().isOk());
+	}
+
+	/** IN_INSPECTION -> RELEASED_WITH_DEVIATION, reason required. */
+	private void releaseInspectionWithDeviation(long inspectionId) throws Exception {
+		call(post("/api/quality/inspections/{id}/release-with-deviation", inspectionId), ergoAdmin,
+				"{\"reason\": \"Minor deviation, customer concession granted\"}").andExpect(status().isOk());
+	}
+
+	/** (PASSED | REJECTED | RELEASED_WITH_DEVIATION) -> CLOSED. */
+	private void closeInspection(long inspectionId) throws Exception {
+		call(post("/api/quality/inspections/{id}/close", inspectionId), ergoAdmin, "{}").andExpect(status().isOk());
+	}
+
+	/** CLOSED -> OPEN, reason required. */
+	private void reopenInspection(long inspectionId) throws Exception {
+		call(post("/api/quality/inspections/{id}/reopen", inspectionId), ergoAdmin,
+				"{\"reason\": \"Re-inspecting after rework\"}").andExpect(status().isOk());
+	}
+
+	/** A fresh inspection against this order, driven straight through to PASSED - the simplest shape that satisfies
+	 * the real dispatch gate (Phase 5d). */
+	private long passedInspection(long orderId) throws Exception {
+		long inspectionId = createInspection(orderId);
+		submitInspection(inspectionId);
+		passInspection(inspectionId);
+		return inspectionId;
 	}
 
 	private long createStandalone(long customerCompanyId) throws Exception {
@@ -998,11 +1102,35 @@ class OfpTests {
 
 	/** Closes every remaining NPD stage (no mandatory activities were added, so each Close Stage succeeds
 	 * immediately) from PLANNING to APPROVED_FOR_PRODUCTION_HANDOVER, the stage the security review's M1 fix now
-	 * requires before {@code NpdApi#handover} will hand a project to OFP. */
+	 * requires before {@code NpdApi#handover} will hand a project to OFP. Phase 5d: closing Final Sample Readiness
+	 * additionally needs a real Quality sign-off against the project, so one PASSED inspection is created right
+	 * before that particular close-stage call. */
 	private void advanceToHandoverReady(long projectId) throws Exception {
 		for (int i = 0; i < 7; i++) {
+			String current = JsonPath.read(
+					call(get("/api/npd/{id}", projectId), ergoNpd, null).andReturn().getResponse().getContentAsString(),
+					"$.stage");
+			if (current.equals("FINAL_SAMPLE_READINESS")) {
+				passNpdInspection(projectId);
+			}
 			call(post("/api/npd/{id}/close-stage", projectId), ergoNpd, "{}").andExpect(status().isOk());
 		}
+	}
+
+	/** A fresh Quality inspection linked to this NPD project, driven straight through to PASSED (Phase 5d's Final
+	 * Sample Readiness gate). Create/submit by ERGO Quality, Pass by ERGO Admin (a different user - the submitter
+	 * may not decide its own inspection). */
+	private void passNpdInspection(long projectId) throws Exception {
+		long inspectionId = JsonPath
+			.<Number>read(call(post("/api/quality/inspections"), ergoQuality, """
+					{"linkedModule": "NPD", "linkedRecordId": %d, "partNumber": "PN-STD", "customerVisible": false}"""
+				.formatted(projectId)).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString(),
+					"$.id")
+			.longValue();
+		call(post("/api/quality/inspections/{id}/submit", inspectionId), ergoQuality, """
+				{"partNumber": "PN-STD", "quantityChecked": 5, "quantityRejected": 0, "inspectionDate": "%s",
+				 "customerVisible": false}""".formatted(LocalDate.now())).andExpect(status().isOk());
+		call(post("/api/quality/inspections/{id}/pass", inspectionId), ergoAdmin, "{}").andExpect(status().isOk());
 	}
 
 	/** Full RFQ->quotation flow up to CUSTOMER_APPROVED with one supplier's quote approved (SRS §14.2-14.4),

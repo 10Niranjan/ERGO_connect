@@ -65,6 +65,7 @@ import com.ergo.connect.npd.domain.NpdDtos.PromptChecklistView;
 import com.ergo.connect.npd.domain.NpdDtos.PromptResponseForm;
 import com.ergo.connect.npd.domain.NpdDtos.StageHistoryView;
 import com.ergo.connect.npd.domain.NpdDtos.SupplierNpdView;
+import com.ergo.connect.quality.api.QualityApi;
 import com.ergo.connect.quotation.api.QuotationApi;
 import com.ergo.connect.quotation.api.QuotationApi.SelectedQuote;
 import com.ergo.connect.rfq.api.RfqApi;
@@ -121,6 +122,8 @@ public class NpdService {
 
 	private final QuotationApi quotationApi;
 
+	private final QualityApi qualityApi;
+
 	private final Directory directory;
 
 	private final AuditLogService audit;
@@ -130,8 +133,8 @@ public class NpdService {
 	NpdService(NpdProjectRepository projects, NpdActivityRepository activities,
 			NpdStageHistoryRepository stageHistory, NpdPromptChecklistRepository checklists,
 			NpdPromptResponseRepository responses, NpdIssueRiskRepository issueRisks,
-			NpdApprovalRepository approvals, RfqApi rfqApi, QuotationApi quotationApi, Directory directory,
-			AuditLogService audit, JdbcTemplate jdbc) {
+			NpdApprovalRepository approvals, RfqApi rfqApi, QuotationApi quotationApi, QualityApi qualityApi,
+			Directory directory, AuditLogService audit, JdbcTemplate jdbc) {
 		this.projects = projects;
 		this.activities = activities;
 		this.stageHistory = stageHistory;
@@ -141,6 +144,7 @@ public class NpdService {
 		this.approvals = approvals;
 		this.rfqApi = rfqApi;
 		this.quotationApi = quotationApi;
+		this.qualityApi = qualityApi;
 		this.directory = directory;
 		this.audit = audit;
 		this.jdbc = jdbc;
@@ -315,6 +319,14 @@ public class NpdService {
 		if (!open.isEmpty()) {
 			throw ApiException
 				.conflict("Complete these mandatory activities before closing this stage: " + String.join(", ", open));
+		}
+		// Phase 5d: Final Sample Readiness additionally needs a real Quality sign-off (SRS's "Final" inspection
+		// against this project) before it can close - a deliberate exception to this codebase's usual "later module
+		// reaches into the earlier one" build-order direction (ARCHITECTURE.md §8 2026-10-01), since Quality did not
+		// exist when this stage gate was first built.
+		if (current == NpdStage.FINAL_SAMPLE_READINESS && !qualityApi.npdFinalSampleGateMet(id)) {
+			throw ApiException.conflict(
+					"A final sample inspection must pass (or be released with deviation) before Final Sample Readiness can be closed");
 		}
 		NpdStage next = current.next();
 		reasonIfGiven(comment);

@@ -62,6 +62,8 @@ class NpdTests {
 
 	Login ergoNpd;
 
+	Login ergoQuality;
+
 	Login buyerA;
 
 	Login buyerB;
@@ -89,6 +91,7 @@ class NpdTests {
 		ergoRfq = users.login(ergo, "ERGO_RFQ");
 		ergoAdmin = users.login(ergo, "ERGO_ADMIN");
 		ergoNpd = users.login(ergo, "ERGO_NPD");
+		ergoQuality = users.login(ergo, "ERGO_QUALITY");
 		buyerA = users.login(customerA, "CUSTOMER_RFQ");
 		buyerB = users.login(customerB, "CUSTOMER_RFQ");
 		seller = users.login(supplier, "SUPPLIER_RFQ");
@@ -598,6 +601,98 @@ class NpdTests {
 			.andExpect(jsonPath("$.stage").value("COMMERCIAL_SOURCING_READINESS"));
 	}
 
+	// ---------------------------------------------------------------- Phase 5d: Final Sample Readiness quality gate
+
+	/** Closing Final Sample Readiness now additionally needs a real Quality sign-off (SRS's "Final" inspection
+	 * against the project), read through {@code quality.api.QualityApi} - mirrors OFP's dispatch gate matrix
+	 * (`OfpTests`). One inspection is driven through every state: zero inspections, OPEN, IN_INSPECTION, REJECTED,
+	 * then REJECTED-then-CLOSED (the audit-history recovery of a CLOSED inspection's pre-close disposition) are all
+	 * still blocked; only once it is reopened and driven to PASSED does the gate open. */
+	@Test
+	void closeStageAtFinalSampleReadinessIsGatedOnQualityInspectionsResolvingToPassOrDeviation() throws Exception {
+		long projectId = advanceToFinalSampleReadiness(convert(approvedRfq(buyerA, "90")));
+
+		// zero inspections: still blocked
+		call(post("/api/npd/{id}/close-stage", projectId), ergoNpd, "{}").andExpect(status().isConflict())
+			.andExpect(jsonPath("$.detail").value(
+					"A final sample inspection must pass (or be released with deviation) before Final Sample Readiness can be closed"));
+
+		// OPEN: still blocked
+		long inspectionId = JsonPath
+			.<Number>read(call(post("/api/quality/inspections"), ergoQuality, """
+					{"linkedModule": "NPD", "linkedRecordId": %d, "partNumber": "PN-STD", "customerVisible": false}"""
+				.formatted(projectId)).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString(),
+					"$.id")
+			.longValue();
+		call(post("/api/npd/{id}/close-stage", projectId), ergoNpd, "{}").andExpect(status().isConflict());
+
+		// IN_INSPECTION: still blocked
+		call(post("/api/quality/inspections/{id}/submit", inspectionId), ergoQuality, """
+				{"partNumber": "PN-STD", "quantityChecked": 5, "quantityRejected": 0, "inspectionDate": "%s",
+				 "customerVisible": false}""".formatted(LocalDate.now())).andExpect(status().isOk());
+		call(post("/api/npd/{id}/close-stage", projectId), ergoNpd, "{}").andExpect(status().isConflict());
+
+		// REJECTED: still blocked
+		call(post("/api/quality/inspections/{id}/reject", inspectionId), ergoAdmin,
+				"{\"reason\": \"Sample out of tolerance\"}").andExpect(status().isOk());
+		call(post("/api/npd/{id}/close-stage", projectId), ergoNpd, "{}").andExpect(status().isConflict());
+
+		// CLOSED with REJECTED as its last pre-close disposition: still blocked
+		call(post("/api/quality/inspections/{id}/close", inspectionId), ergoAdmin, "{}").andExpect(status().isOk());
+		call(post("/api/npd/{id}/close-stage", projectId), ergoNpd, "{}").andExpect(status().isConflict());
+
+		// reopen, resubmit and pass it: gate now met
+		call(post("/api/quality/inspections/{id}/reopen", inspectionId), ergoAdmin,
+				"{\"reason\": \"Re-inspecting after rework\"}").andExpect(status().isOk());
+		call(post("/api/quality/inspections/{id}/submit", inspectionId), ergoQuality, """
+				{"partNumber": "PN-STD", "quantityChecked": 5, "quantityRejected": 0, "inspectionDate": "%s",
+				 "customerVisible": false}""".formatted(LocalDate.now())).andExpect(status().isOk());
+		call(post("/api/quality/inspections/{id}/pass", inspectionId), ergoAdmin, "{}").andExpect(status().isOk());
+		call(post("/api/npd/{id}/close-stage", projectId), ergoNpd, "{}")
+			.andExpect(jsonPath("$.stage").value("CUSTOMER_FEEDBACK"));
+	}
+
+	/** RELEASED_WITH_DEVIATION also satisfies the gate, same as PASSED. */
+	@Test
+	void closeStageAtFinalSampleReadinessIsAllowedWhenTheOnlyInspectionWasReleasedWithDeviation() throws Exception {
+		long projectId = advanceToFinalSampleReadiness(convert(approvedRfq(buyerA, "90")));
+		long inspectionId = JsonPath
+			.<Number>read(call(post("/api/quality/inspections"), ergoQuality, """
+					{"linkedModule": "NPD", "linkedRecordId": %d, "partNumber": "PN-STD", "customerVisible": false}"""
+				.formatted(projectId)).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString(),
+					"$.id")
+			.longValue();
+		call(post("/api/quality/inspections/{id}/submit", inspectionId), ergoQuality, """
+				{"partNumber": "PN-STD", "quantityChecked": 5, "quantityRejected": 0, "inspectionDate": "%s",
+				 "customerVisible": false}""".formatted(LocalDate.now())).andExpect(status().isOk());
+		call(post("/api/quality/inspections/{id}/release-with-deviation", inspectionId), ergoAdmin,
+				"{\"reason\": \"Minor deviation, customer concession granted\"}").andExpect(status().isOk());
+		call(post("/api/npd/{id}/close-stage", projectId), ergoNpd, "{}")
+			.andExpect(jsonPath("$.stage").value("CUSTOMER_FEEDBACK"));
+	}
+
+	/** A CLOSED inspection whose last pre-close disposition was PASSED still satisfies the gate. */
+	@Test
+	void closeStageAtFinalSampleReadinessIsAllowedWhenTheOnlyInspectionIsClosedAfterPassing() throws Exception {
+		long projectId = advanceToFinalSampleReadiness(convert(approvedRfq(buyerA, "90")));
+		passNpdInspection(projectId);
+		long inspectionId = jdbc.queryForObject("""
+				SELECT inspection_id FROM inspections WHERE linked_module = 'NPD' AND linked_record_id = ?""",
+				Long.class, projectId);
+		call(post("/api/quality/inspections/{id}/close", inspectionId), ergoAdmin, "{}").andExpect(status().isOk());
+		call(post("/api/npd/{id}/close-stage", projectId), ergoNpd, "{}")
+			.andExpect(jsonPath("$.stage").value("CUSTOMER_FEEDBACK"));
+	}
+
+	/** Closes PLANNING through Trial Execution (5 close-stage calls, no mandatory activities), leaving the project
+	 * sitting at FINAL_SAMPLE_READINESS without closing that stage itself. */
+	private long advanceToFinalSampleReadiness(long projectId) throws Exception {
+		for (int i = 0; i < 5; i++) {
+			call(post("/api/npd/{id}/close-stage", projectId), ergoNpd, "{}").andExpect(status().isOk());
+		}
+		return projectId;
+	}
+
 	@Test
 	void approvalRequiredActivityMustNameARequiredApprovalTypeAndItIsForcedToNullWhenNotRequired() throws Exception {
 		long projectId = convert(approvedRfq(buyerA, "90"));
@@ -1010,10 +1105,18 @@ class NpdTests {
 	}
 
 	/** Repeatedly closes stages (none of these stages have any activity in these tests, so every mandatory list is
-	 * empty and each close-stage call succeeds outright) until the project reaches CLOSED. */
+	 * empty and each close-stage call succeeds outright) until the project reaches CLOSED. Phase 5d: closing Final
+	 * Sample Readiness additionally needs a real Quality sign-off, so one PASSED inspection is created against the
+	 * project right before that particular close-stage call. */
 	private void closeUntilClosed(long projectId) throws Exception {
 		String stage;
 		do {
+			String current = JsonPath.read(
+					call(get("/api/npd/{id}", projectId), ergoNpd, null).andReturn().getResponse().getContentAsString(),
+					"$.stage");
+			if (current.equals("FINAL_SAMPLE_READINESS")) {
+				passNpdInspection(projectId);
+			}
 			stage = JsonPath.read(
 					call(post("/api/npd/{id}/close-stage", projectId), ergoNpd, "{}").andExpect(status().isOk())
 						.andReturn()
@@ -1022,6 +1125,24 @@ class NpdTests {
 					"$.stage");
 		}
 		while (!stage.equals("CLOSED"));
+	}
+
+	// ---------------------------------------------------------------- Phase 5d: Quality inspection gate helper
+
+	/** A fresh Quality inspection linked to this NPD project (SRS's "Final" inspection against it), driven straight
+	 * through to PASSED - the simplest shape that satisfies the real Final Sample Readiness gate. Create/submit by
+	 * ERGO Quality, Pass by ERGO Admin (a different user - the submitter may not decide its own inspection). */
+	private void passNpdInspection(long projectId) throws Exception {
+		long inspectionId = JsonPath
+			.<Number>read(call(post("/api/quality/inspections"), ergoQuality, """
+					{"linkedModule": "NPD", "linkedRecordId": %d, "partNumber": "PN-STD", "customerVisible": false}"""
+				.formatted(projectId)).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString(),
+					"$.id")
+			.longValue();
+		call(post("/api/quality/inspections/{id}/submit", inspectionId), ergoQuality, """
+				{"partNumber": "PN-STD", "quantityChecked": 5, "quantityRejected": 0, "inspectionDate": "%s",
+				 "customerVisible": false}""".formatted(LocalDate.now())).andExpect(status().isOk());
+		call(post("/api/quality/inspections/{id}/pass", inspectionId), ergoAdmin, "{}").andExpect(status().isOk());
 	}
 
 	private long invitationOf(long rfqId, Login supplierLogin) throws Exception {

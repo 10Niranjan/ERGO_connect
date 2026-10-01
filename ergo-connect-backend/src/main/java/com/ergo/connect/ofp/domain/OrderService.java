@@ -45,6 +45,7 @@ import com.ergo.connect.masterdata.api.MasterDataApi;
 import com.ergo.connect.masterdata.api.MasterDataApi.Ref;
 import com.ergo.connect.npd.api.NpdApi;
 import com.ergo.connect.npd.api.NpdApi.HandoverProject;
+import com.ergo.connect.quality.api.QualityApi;
 import com.ergo.connect.ofp.domain.OfpDtos.CustomerOrderRow;
 import com.ergo.connect.ofp.domain.OfpDtos.CustomerOrderView;
 import com.ergo.connect.ofp.domain.OfpDtos.CustomerProductionProgressView;
@@ -87,7 +88,10 @@ import jakarta.persistence.PersistenceContext;
  * enforces every action and lists the caller's buttons — Customer OFP is never in {@code EDITORS}/
  * {@code SUPPLIER_EDITORS}, so its {@code actions} set is always empty. Audit-only for orders (no dedicated
  * status-history table, ARCHITECTURE.md §8 2026-09-28): {@link #release} recovers what a Hold interrupted from the
- * automatic field audit trail rather than a new column.
+ * automatic field audit trail rather than a new column. Phase 5d: {@link #dispatchReadyGateMet} now reads the real
+ * Quality module through {@code quality.api.QualityApi} instead of the 4b stub, a deliberate exception to this
+ * codebase's usual "later module reaches into the earlier one" build-order direction (ARCHITECTURE.md §8
+ * 2026-10-01) - Quality did not exist yet when this gate was first built.
  */
 @Service
 @Transactional
@@ -114,6 +118,8 @@ public class OrderService {
 
 	private final NpdApi npdApi;
 
+	private final QualityApi qualityApi;
+
 	private final Directory directory;
 
 	private final MasterDataApi masterData;
@@ -135,14 +141,15 @@ public class OrderService {
 
 	OrderService(OrderRepository orders, OrderMaterialStatusRepository materialStatuses,
 			OrderProductionProgressRepository productionProgress, OrderPackagingDispatchRepository packagingDispatches,
-			ShipmentRepository shipments, NpdApi npdApi, Directory directory, MasterDataApi masterData,
-			DocumentStore documents, AuditLogService audit, JdbcTemplate jdbc) {
+			ShipmentRepository shipments, NpdApi npdApi, QualityApi qualityApi, Directory directory,
+			MasterDataApi masterData, DocumentStore documents, AuditLogService audit, JdbcTemplate jdbc) {
 		this.orders = orders;
 		this.materialStatuses = materialStatuses;
 		this.productionProgress = productionProgress;
 		this.packagingDispatches = packagingDispatches;
 		this.shipments = shipments;
 		this.npdApi = npdApi;
+		this.qualityApi = qualityApi;
 		this.directory = directory;
 		this.masterData = masterData;
 		this.documents = documents;
@@ -345,13 +352,15 @@ public class OrderService {
 		return view(me, order);
 	}
 
-	/** Every {@code order_material_status} row for this order must be PASSED, and there must be at least one row —
-	 * an order with no inspection recorded at all has not "passed", it simply hasn't been checked yet. Reuses
-	 * {@code inspection_status} as the pre-dispatch quality gate stub until the Quality module exists
-	 * (ARCHITECTURE.md §8 2026-09-29). */
+	/** Phase 5d: real read from the Quality module through {@link QualityApi}, replacing the 4b stub that reused
+	 * {@code order_material_status.inspection_status} (ARCHITECTURE.md §8 2026-09-29) - that field tracks incoming
+	 * material receipt, not a dispatch sign-off, and still does so for display (see {@link OrderMaterialStatus}'s own
+	 * doc comment); it is untouched by this gate. True once every inspection Quality has raised against this order
+	 * (SRS's "Final" inspection, {@code linkedModule = OFP}) has resolved to PASSED or RELEASED_WITH_DEVIATION, and
+	 * at least one such inspection exists - an order with none recorded has not "passed", it simply hasn't been
+	 * checked yet (same "zero rows is not a pass" rule the stub already used). */
 	private boolean dispatchReadyGateMet(long orderId) {
-		List<OrderMaterialStatus> materials = materialStatuses.findByOrderIdOrderById(orderId);
-		return !materials.isEmpty() && materials.stream().allMatch(m -> m.inspectionStatus == InspectionStatus.PASSED);
+		return qualityApi.ofpDispatchGateMet(orderId);
 	}
 
 	/** SRS §14.6/§17.5, Phase 4c: Dispatch Ready -> Dispatched, ERGO OFP/Admin only. Closes the deferred half of
