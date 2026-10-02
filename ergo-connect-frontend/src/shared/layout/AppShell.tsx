@@ -19,6 +19,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router'
 import { useAppSelector } from '../../app/store'
 import {
   COMPANY_MANAGERS,
+  DOCUMENT_VIEWERS,
   EXTERNAL_ROLES,
   MASTER_DATA_VIEWERS,
   NPD_CUSTOMER_ROLES,
@@ -46,6 +47,7 @@ const NAV: { label: string; to: string; roles?: Role[] }[] = [
   { label: 'Inspections', to: '/quality', roles: QUALITY_VIEWERS },
   { label: 'NCR / CAPA', to: '/quality/ncrs', roles: QUALITY_VIEWERS },
   { label: 'Deviation Approvals', to: '/quality/deviations', roles: QUALITY_VIEWERS },
+  { label: 'Documents', to: '/documents', roles: DOCUMENT_VIEWERS },
   { label: 'Customers & suppliers', to: '/companies', roles: COMPANY_MANAGERS },
   { label: 'Company profile', to: '/company', roles: EXTERNAL_ROLES },
   { label: 'Users', to: '/admin/users', roles: ['ERGO_ADMIN'] },

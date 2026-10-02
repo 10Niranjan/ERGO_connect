@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from 'react-router'
 import {
   COMPANY_MANAGERS,
   DEVIATION_EDITORS,
+  DOCUMENT_VIEWERS,
   EXTERNAL_ROLES,
   MASTER_DATA_VIEWERS,
   NPD_CUSTOMER_ROLES,
@@ -30,6 +31,8 @@ import { UsersPage } from '../features/admin/pages/UsersPage'
 import { CompaniesPage } from '../features/companies/pages/CompaniesPage'
 import { MyCompanyPage } from '../features/companies/pages/MyCompanyPage'
 import { DashboardPage } from '../features/dashboard/pages/DashboardPage'
+import { DocumentDetailPage } from '../features/documents/pages/DocumentDetailPage'
+import { DocumentLibraryPage } from '../features/documents/pages/DocumentLibraryPage'
 import { ConversionQueuePage } from '../features/npd/pages/ConversionQueuePage'
 import { MyNpdProjectsPage } from '../features/npd/pages/MyNpdProjectsPage'
 import { NpdDetailPage } from '../features/npd/pages/NpdDetailPage'
@@ -140,6 +143,11 @@ export const router = createBrowserRouter([
           {
             element: <RequireRole roles={DEVIATION_EDITORS} />,
             children: [{ path: '/quality/deviations/new', element: <DeviationCreatePage /> }],
+          },
+          {
+            // SRS §10.9: every role may open the Document Library; the backend scopes which documents it returns.
+            element: <RequireRole roles={DOCUMENT_VIEWERS} />,
+            children: [{ path: '/documents', element: <DocumentLibraryPage /> }, { path: '/documents/:id', element: <DocumentDetailPage /> }],
           },
           {
             element: <RequireRole roles={COMPANY_MANAGERS} />,

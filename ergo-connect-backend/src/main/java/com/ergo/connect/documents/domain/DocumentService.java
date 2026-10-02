@@ -140,8 +140,8 @@ public class DocumentService {
 	// ---------------------------------------------------------------- library (SRS §12.11.1)
 
 	@Transactional(readOnly = true)
-	public LibraryPage library(String linkedModule, Long categoryId, Long uploaderCompanyId, Instant from,
-			Instant to, int page, int size) {
+	public LibraryPage library(String linkedModule, Long categoryId, Long uploaderCompanyId,
+			ApprovalStatus approvalStatus, Instant from, Instant to, int page, int size) {
 		CurrentUser me = CurrentUser.get();
 		// M1: for an external caller the uploader filter would be an oracle for who uploaded a shared file, so it is
 		// honoured only for its own company; any other value is ignored, making the result independent of the guess.
@@ -150,6 +150,7 @@ public class DocumentService {
 		List<Document> candidates = documents.findFiltered(linkedModule, categoryId, uploaderFilter);
 		Map<String, Boolean> recordScopeCache = new HashMap<>();
 		List<Document> visible = candidates.stream()
+			.filter(d -> approvalStatus == null || d.approvalStatus == approvalStatus)
 			.filter(d -> (from == null || !d.createdAt.isBefore(from)) && (to == null || !d.createdAt.isAfter(to)))
 			.filter(d -> documentVisible(me, d)
 					&& recordScopeCache.computeIfAbsent(

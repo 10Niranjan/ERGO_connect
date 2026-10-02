@@ -68,9 +68,9 @@ class DocumentController {
 	@PreAuthorize(EVERY_ROLE)
 	LibraryPage library(@RequestParam(required = false) String linkedModule,
 			@RequestParam(required = false) Long categoryId, @RequestParam(required = false) Long uploaderCompanyId,
-			@RequestParam(required = false) Instant from, @RequestParam(required = false) Instant to,
+			@RequestParam(required = false) ApprovalStatus approvalStatus, @RequestParam(required = false) Instant from, @RequestParam(required = false) Instant to,
 			@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "50") int size) {
-		return documents.library(linkedModule, categoryId, uploaderCompanyId, from, to, page, size);
+		return documents.library(linkedModule, categoryId, uploaderCompanyId, approvalStatus, from, to, page, size);
 	}
 
 	@GetMapping("/{id}")

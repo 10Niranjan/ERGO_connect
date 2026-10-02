@@ -480,6 +480,19 @@ class DocumentsTests {
 	// ---------------------------------------------------------------- security review M1/M3/M5 regressions
 
 	@Test
+	void libraryFiltersByApprovalStatus() throws Exception {
+		long rfqId = draftRfq(buyerA);
+		long approved = idOf(upload("/api/rfqs/{id}/documents", rfqId, buyerA, "a.pdf"));
+		upload("/api/rfqs/{id}/documents", rfqId, buyerA, "b.pdf");
+		call(post("/api/documents/{id}/approve", approved), ergoAdmin, "{}").andExpect(status().isOk());
+		call(get("/api/documents?approvalStatus=APPROVED"), buyerA, null).andExpect(jsonPath("$.totalElements").value(1));
+		call(get("/api/documents?approvalStatus=PENDING"), buyerA, null).andExpect(jsonPath("$.totalElements").value(1));
+		call(get("/api/documents"), buyerA, null).andExpect(jsonPath("$.totalElements").value(2));
+		// the filter only narrows what the caller may already see
+		call(get("/api/documents?approvalStatus=APPROVED"), buyerB, null).andExpect(jsonPath("$.totalElements").value(0));
+	}
+
+	@Test
 	void uploaderFilterIsIgnoredForExternalCallersSoItCannotBeUsedToProbeWhoUploaded() throws Exception {
 		long rfqId = draftRfq(buyerA);
 		upload("/api/rfqs/{id}/documents", rfqId, buyerA, "mine.pdf");

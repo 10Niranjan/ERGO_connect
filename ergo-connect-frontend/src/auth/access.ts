@@ -102,3 +102,15 @@ export const QUALITY_EDITORS: Role[] = ['ERGO_ADMIN', 'ERGO_QUALITY', 'SUPPLIER_
 /** SRS §10.8 Deviations Create/Edit/Submit: ERGO Admin/Quality, Customer Quality and Supplier Quality
  * (DeviationController's EDITORS) - unlike QUALITY_EDITORS above, Customer Quality may also raise a deviation. */
 export const DEVIATION_EDITORS: Role[] = ['ERGO_ADMIN', 'ERGO_QUALITY', 'CUSTOMER_QUALITY', 'SUPPLIER_QUALITY']
+
+/** SRS §10.9: every role may open the Document Library; the backend scopes which documents (record scope + visibility). */
+export const DOCUMENT_VIEWERS: Role[] = [
+  'ERGO_ADMIN',
+  'ERGO_MANAGEMENT',
+  'ERGO_KAM',
+  'ERGO_RFQ',
+  'ERGO_NPD',
+  'ERGO_OFP',
+  'ERGO_QUALITY',
+  ...EXTERNAL_ROLES,
+]
