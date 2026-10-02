@@ -26,5 +26,10 @@ You author Flyway migrations for ERGO Connect (PostgreSQL 17, Spring Boot 4.1, H
 - Master/lookup data (currencies INR/USD/EUR/RMB, etc.) is seeded in its own migration. Use `code` columns with UNIQUE constraints.
 - Enforce data rules in the DB where they're cheap: NOT NULL, CHECK (e.g. `moq > 0`), UNIQUE (`rfq_number`).
 
+## Lessons from Phase 6a
+- An **uncommitted** migration (`git status` shows `??`) may be edited in place; only committed ones are immutable. Check before adding a new version.
+- Entities that JPA updates get `row_version BIGINT NOT NULL DEFAULT 0`. Version/supersede chains get a **UNIQUE** index on the `supersedes_*` column so they cannot fork.
+- Child/link tables name their `ON DELETE` behavior explicitly. Index columns used as list filters (e.g. `uploaded_by_company_id`).
+
 ## Verify
 Run `./mvnw -q test` from `ergo-connect-backend/` (needs Docker; use JDK 21). Flyway applies every migration to a fresh Testcontainers Postgres, and Hibernate `validate` catches any entity/table mismatch. Report the result honestly.

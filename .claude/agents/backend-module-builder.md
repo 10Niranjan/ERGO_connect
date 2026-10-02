@@ -28,6 +28,15 @@ You implement backend modules for ERGO Connect, a production system handling com
 - Transactions on service methods. Use Java 21 records for DTOs. No Lombok, no MapStruct unless the user approves adding it.
 - Money is `BigDecimal` + currency ID. Never double.
 
+## Cross-module probes and shared tables (lessons from Phase 6a)
+- A probe another module calls (`visibleToCaller`, `replaceOpenForCaller`, ...) must be **non-throwing** (a thrown `ApiException` marks the surrounding transaction rollback-only) and must mirror the owning module's rule for *that specific action or file*, not its generic record scope. Example: POD files are ERGO-only and CAPA evidence is never customer-visible, even though those customers can see the order/NCR.
+- When a new generic endpoint can do what an owning module's endpoint does (replace, edit, set visibility), it must also pass that module's own state/role window, for ERGO roles too. Check the module's `allowed(...)` rule; don't assume "ERGO is unrestricted".
+- Every JPA entity that is updated needs `@Version` + `@AuditExclude` on `rowVersion`. A raw JDBC `UPDATE` on such a table must do `row_version = row_version + 1`. Use `@Lock(OPTIMISTIC_FORCE_INCREMENT)` when two requests could create children of the same row (version chains), so the loser gets 409, not a 500 from a unique index.
+- A service with class-level `@Transactional(readOnly = true)` needs an explicit `@Transactional` on any method that writes.
+- Visibility/permission changes a caller can make must be checked in the *widening* direction (an external party exposing a file to the other party), not only the narrowing one.
+- Make tests order-independent: don't index `$.lines[0]`/`[1]` when the order comes from ids or sets; select by id.
+- Run Maven redirected to a file (`./mvnw verify > /tmp/x.log 2>&1; echo $?`). Piping to `tail` hides the exit code.
+
 ## Tests (required, run them)
 - Service-level tests for workflow transitions: allowed, forbidden and missing-reason cases.
 - **Access tests with at least 2 customer companies and 2 suppliers**: prove that customer A can't see customer B's records, supplier X can't see supplier Y's quote or the target price, and a role without approval rights can't approve.

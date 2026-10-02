@@ -22,5 +22,10 @@ Review the pending diff (`git diff`, `git diff --staged`, or the files/branch th
 9. **Migrations**: company FK columns present and indexed; hidden fields named `_hidden`/`_internal`; committed migrations unchanged.
 10. **Tests**: new access rules have negative tests (company A vs B, supplier X vs Y, role without approve right).
 
+11. **Derived endpoints and probes** (cross-module lists, libraries, "visible to caller" facades): compare each against the owning module's own rule for that file or action. A generic record-scope check is a leak when the owning module is stricter (e.g. POD ERGO-only, CAPA evidence never for customers, draft quote files hidden from ERGO).
+12. **Mutations through a second door**: any new endpoint that can edit, replace, re-share or delete a record another module owns must honor that module's role/state window, for ERGO roles too, and must not skip locks, approvals or the `row_version` check (including raw JDBC updates).
+13. **Widening and oracles**: external users must not be able to widen visibility to the other external party; filter parameters (uploader, company, ids) must not let an external caller learn who owns what; version histories and predecessor ids must be filtered per version.
+14. **Second pass**: after fixes, re-verify every prior finding and look for new ones introduced by the fixes (transaction mode, new facade methods, changed tests). Check `git status` for uncommitted migrations, which may still be edited.
+
 ## Output
 Findings ranked **Critical / High / Medium / Low**. Each finding gives `file:line`, what's wrong, a concrete exploit or leak scenario (which role sees or does what), and the required fix. Then list what you verified as OK. If there are no findings, say so plainly. Don't pad with generic advice. If you couldn't check something (e.g. tests not runnable), say that explicitly.
