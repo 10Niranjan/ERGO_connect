@@ -22,6 +22,7 @@ import {
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { AuditTrail } from '../../../shared/components/AuditTrail'
+import { CommentsPanel } from '../../communication/components/CommentsPanel'
 import { CommentDialog } from '../../../shared/components/CommentDialog'
 import { Facts } from '../../../shared/components/Facts'
 import { problemMessage } from '../../../shared/problem'
@@ -166,6 +167,7 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
         {isErgo && <Tab value="suppliers" label="Suppliers & quotes" />}
         {isErgo && <Tab value="comparison" label="Comparison" />}
         {isErgo && <Tab value="history" label="Audit trail" />}
+        <Tab value="comments" label="Comments" />
       </Tabs>
 
       {tab === 'overview' && (
@@ -242,6 +244,7 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
       {tab === 'suppliers' && isErgo && <SuppliersPanel rfqId={rfq.id} />}
       {tab === 'comparison' && isErgo && <ComparisonPanel rfqId={rfq.id} />}
       {tab === 'history' && isErgo && <History rfqId={rfq.id} />}
+      {tab === 'comments' && <CommentsPanel linkedModule="rfq" recordId={rfq.id} />}
 
       {dialog && (
         <CommentDialog

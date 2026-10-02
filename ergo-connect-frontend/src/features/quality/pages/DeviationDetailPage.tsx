@@ -1,6 +1,7 @@
 import { Alert, Box, Button, Chip, LinearProgress, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from '@mui/material'
 import { useState, type ReactNode } from 'react'
 import { useParams } from 'react-router'
+import { CommentsSection } from '../../communication/components/CommentsPanel'
 import type { Role } from '../../../auth/authSlice'
 import { CommentDialog } from '../../../shared/components/CommentDialog'
 import { Facts } from '../../../shared/components/Facts'
@@ -193,6 +194,7 @@ function DeviationDetailView({ deviation }: { deviation: DeviationDetail }) {
             />
           )
         })()}
+      <CommentsSection linkedModule="deviation" recordId={deviation.id} />
     </Stack>
   )
 }

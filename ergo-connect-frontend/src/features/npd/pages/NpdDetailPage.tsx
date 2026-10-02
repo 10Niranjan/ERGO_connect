@@ -32,6 +32,7 @@ import { useAppSelector } from '../../../app/store'
 import { OFP_EDITORS } from '../../../auth/access'
 import { HandoverDialog } from '../../ofp/components/HandoverDialog'
 import { Link as RouterLink, useParams } from 'react-router'
+import { CommentsPanel } from '../../communication/components/CommentsPanel'
 import { useUsersQuery, type User } from '../../admin/adminApi'
 import { CommentDialog } from '../../../shared/components/CommentDialog'
 import { Facts } from '../../../shared/components/Facts'
@@ -191,6 +192,7 @@ function NpdDetail({ npd }: { npd: NpdView }) {
         <Tab value="issues" label="Issues & Risks" />
         {hasApprovals && <Tab value="approvals" label="Approvals" />}
         <Tab value="history" label="Stage History" />
+        <Tab value="comments" label="Comments" />
       </Tabs>
 
       {tab === 'overview' && (
@@ -206,6 +208,7 @@ function NpdDetail({ npd }: { npd: NpdView }) {
       {tab === 'issues' && <IssuesTab npd={npd} />}
       {tab === 'approvals' && (npd.audience === 'ERGO' || npd.audience === 'CUSTOMER') && <ApprovalsTab npd={npd} />}
       {tab === 'history' && <StageHistoryTab npd={npd} />}
+      {tab === 'comments' && <CommentsPanel linkedModule="npd" recordId={npd.id} />}
 
       {editingProject && ergo && (
         <ProjectEditDialog npd={ergo} ergoUsers={ergoUsers} usersLoading={usersLoading} onClose={() => setEditingProject(false)} />

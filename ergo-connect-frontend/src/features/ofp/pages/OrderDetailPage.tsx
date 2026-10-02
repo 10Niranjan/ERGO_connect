@@ -1,6 +1,7 @@
 import { Alert, Button, Chip, LinearProgress, Paper, Stack, Tab, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Tabs, Typography, Box } from '@mui/material'
 import { useState, type ReactNode } from 'react'
 import { useParams } from 'react-router'
+import { CommentsPanel } from '../../communication/components/CommentsPanel'
 import { CommentDialog } from '../../../shared/components/CommentDialog'
 import { Facts } from '../../../shared/components/Facts'
 import { useMasterOptionsQuery } from '../../../shared/masterData'
@@ -148,6 +149,7 @@ function OrderDetailView({ order }: { order: OrderDetail }) {
         <Tab value="production" label="Production" />
         {packaging && <Tab value="packaging" label="Packaging and dispatch" />}
         <Tab value="shipments" label="Shipments" />
+        <Tab value="comments" label="Comments" />
       </Tabs>
 
       {tab === 'overview' && (
@@ -256,6 +258,8 @@ function OrderDetailView({ order }: { order: OrderDetail }) {
           ))}
         </Section>
       )}
+
+      {tab === 'comments' && <CommentsPanel linkedModule="ofp" recordId={order.id} />}
 
       {tab === 'shipments' && (
         <Section

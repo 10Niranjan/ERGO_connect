@@ -1,6 +1,7 @@
 import { Alert, Box, Button, Chip, LinearProgress, Link, Stack, Tab, Tabs, Typography } from '@mui/material'
 import { useState } from 'react'
 import { Link as RouterLink, useParams } from 'react-router'
+import { CommentsPanel } from '../../communication/components/CommentsPanel'
 import { CommentDialog } from '../../../shared/components/CommentDialog'
 import { Facts } from '../../../shared/components/Facts'
 import { problemMessage } from '../../../shared/problem'
@@ -124,6 +125,7 @@ function Quote({ view }: { view: QuoteView }) {
         {isSupplier && <Tab value="rfq" label="RFQ details" />}
         <Tab value="files" label="Files" />
         <Tab value="versions" label="Versions" />
+        <Tab value="comments" label="Comments" />
       </Tabs>
 
       {/* hidden rather than unmounted, so switching tabs keeps unsaved edits */}
@@ -139,6 +141,7 @@ function Quote({ view }: { view: QuoteView }) {
       {tab === 'rfq' && isSupplier && <RfqDetails rfq={view.rfq} />}
       {tab === 'files' && <QuoteFilesPanel quoteId={view.id} canUpload={can('UPLOAD')} isErgo={!isSupplier} />}
       {tab === 'versions' && <VersionsPanel quoteId={view.id} />}
+      {tab === 'comments' && <CommentsPanel linkedModule="quotation" recordId={view.id} />}
 
       {dialog && (
         <CommentDialog

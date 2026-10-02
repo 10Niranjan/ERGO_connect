@@ -1,5 +1,6 @@
 import { createBrowserRouter, Navigate } from 'react-router'
 import {
+  COMMUNICATION_VIEWERS,
   COMPANY_MANAGERS,
   DEVIATION_EDITORS,
   DOCUMENT_VIEWERS,
@@ -30,6 +31,7 @@ import { MasterDataPage } from '../features/admin/pages/MasterDataPage'
 import { UsersPage } from '../features/admin/pages/UsersPage'
 import { CompaniesPage } from '../features/companies/pages/CompaniesPage'
 import { MyCompanyPage } from '../features/companies/pages/MyCompanyPage'
+import { CommunicationCenterPage } from '../features/communication/pages/CommunicationCenterPage'
 import { DashboardPage } from '../features/dashboard/pages/DashboardPage'
 import { DocumentDetailPage } from '../features/documents/pages/DocumentDetailPage'
 import { DocumentLibraryPage } from '../features/documents/pages/DocumentLibraryPage'
@@ -143,6 +145,11 @@ export const router = createBrowserRouter([
           {
             element: <RequireRole roles={DEVIATION_EDITORS} />,
             children: [{ path: '/quality/deviations/new', element: <DeviationCreatePage /> }],
+          },
+          {
+            // SRS §10.10: every role may open the Communication Center; the backend returns only the threads it may read.
+            element: <RequireRole roles={COMMUNICATION_VIEWERS} />,
+            children: [{ path: '/communication', element: <CommunicationCenterPage /> }],
           },
           {
             // SRS §10.9: every role may open the Document Library; the backend scopes which documents it returns.

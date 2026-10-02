@@ -1,6 +1,7 @@
 import { Alert, Box, Button, Chip, LinearProgress, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from '@mui/material'
 import { useState, type ReactNode } from 'react'
 import { useParams } from 'react-router'
+import { CommentsSection } from '../../communication/components/CommentsPanel'
 import { CommentDialog } from '../../../shared/components/CommentDialog'
 import { Facts } from '../../../shared/components/Facts'
 import { problemMessage } from '../../../shared/problem'
@@ -159,6 +160,8 @@ function InspectionDetailView({ inspection }: { inspection: InspectionDetail }) 
           </TableBody>
         </Table>
       </TableContainer>
+
+      <CommentsSection linkedModule="inspection" recordId={inspection.id} />
 
       {(dialog?.kind === 'edit' || dialog?.kind === 'submit') && (
         <InspectionUpdateDialog mode={dialog.kind} inspection={inspection} onClose={closeDialog} />

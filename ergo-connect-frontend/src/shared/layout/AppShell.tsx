@@ -18,6 +18,7 @@ import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router'
 import { useAppSelector } from '../../app/store'
 import {
+  COMMUNICATION_VIEWERS,
   COMPANY_MANAGERS,
   DOCUMENT_VIEWERS,
   EXTERNAL_ROLES,
@@ -48,6 +49,7 @@ const NAV: { label: string; to: string; roles?: Role[] }[] = [
   { label: 'NCR / CAPA', to: '/quality/ncrs', roles: QUALITY_VIEWERS },
   { label: 'Deviation Approvals', to: '/quality/deviations', roles: QUALITY_VIEWERS },
   { label: 'Documents', to: '/documents', roles: DOCUMENT_VIEWERS },
+  { label: 'Communication', to: '/communication', roles: COMMUNICATION_VIEWERS },
   { label: 'Customers & suppliers', to: '/companies', roles: COMPANY_MANAGERS },
   { label: 'Company profile', to: '/company', roles: EXTERNAL_ROLES },
   { label: 'Users', to: '/admin/users', roles: ['ERGO_ADMIN'] },
@@ -82,7 +84,7 @@ export function AppShell() {
           <Typography variant="h6" component="span" sx={{ mr: 2 }}>
             ERGO Connect
           </Typography>
-          <Stack component="nav" direction="row" spacing={1} sx={{ flexGrow: 1 }}>
+          <Stack component="nav" direction="row" spacing={1} sx={{ flexGrow: 1, minWidth: 0, overflowX: 'auto' }}>
             {NAV.filter((item) => !item.roles || item.roles.includes(session.activeRole)).map((item) => (
               <Button
                 key={item.to}
@@ -90,7 +92,7 @@ export function AppShell() {
                 to={item.to}
                 end={item.to === '/'}
                 color="inherit"
-                sx={{ '&.active': { bgcolor: 'rgba(255,255,255,0.16)' } }}
+                sx={{ flexShrink: 0, whiteSpace: 'nowrap', '&.active': { bgcolor: 'rgba(255,255,255,0.16)' } }}
               >
                 {item.label}
               </Button>
