@@ -92,6 +92,22 @@ class RfqApiService implements RfqApi {
 
 	@Override
 	@Transactional(readOnly = true)
+	public boolean visibleToCaller(long rfqId) {
+		CurrentUser me = CurrentUser.get();
+		if (me.companyType() == CompanyType.SUPPLIER) {
+			return false;
+		}
+		return rfqService.inScope(me, rfqId);
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public boolean replaceOpenForCaller(long rfqId) {
+		return rfqService.uploadOpen(CurrentUser.get(), rfqId);
+	}
+
+	@Override
+	@Transactional(readOnly = true)
 	public CustomerRfqRef forCustomer(long rfqId) {
 		CurrentUser me = CurrentUser.get();
 		if (me.companyType() != CompanyType.CUSTOMER) {

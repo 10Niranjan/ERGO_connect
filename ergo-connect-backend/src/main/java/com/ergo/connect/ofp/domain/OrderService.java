@@ -662,7 +662,47 @@ public class OrderService {
 	/** Record scope. Out-of-scope orders do not exist for the caller (404, not 403). */
 	Order visible(CurrentUser me, long id) {
 		Order order = orders.findById(id).orElse(null);
-		boolean inScope = order != null && switch (me.role()) {
+		if (!inScope(me, order)) {
+			throw ApiException.notFound("Order");
+		}
+		return order;
+	}
+
+	/** The boolean half of {@link #visible}, for a caller that must not throw on "out of scope" (a thrown {@code
+	 * ApiException} from a {@code @Transactional} method marks the physical transaction rollback-only the moment it
+	 * is thrown, even if the caller catches it immediately afterward). Used by {@code
+	 * OfpApiService#shipmentVisibleToCaller}, the documents module's non-throwing scope probe (ARCHITECTURE.md §8,
+	 * 2026-10-02 Phase 6a). */
+	boolean inScope(CurrentUser me, long id) {
+		return inScope(me, orders.findById(id).orElse(null));
+	}
+
+	/** The POD-specific restriction (ARCHITECTURE.md §8, Phase 6a security review C1 fix): mirrors {@code
+	 * OrderController#POD_READERS} — ERGO roles only, each still confined to its own record scope. Suppliers and
+	 * customers never see the POD file itself (only receipt fields), unlike generic order {@link #inScope}, so the
+	 * documents module's {@code OfpApiService#shipmentVisibleToCaller} probe must use this, not {@link #inScope}. */
+	boolean podReaderInScope(CurrentUser me, long orderId) {
+		Order order = orders.findById(orderId).orElse(null);
+		if (order == null) {
+			return false;
+		}
+		return switch (me.role()) {
+			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_OFP -> true;
+			case ERGO_KAM -> directory.accountsOf(me.userId()).contains(order.customerCompanyId);
+			case ERGO_NPD -> order.linkedNpdProjectId != null;
+			default -> false;
+		};
+	}
+
+	/** N1 (second security review): whether this module's own POD upload rule ({@code UPDATE_SHIPMENT}) currently
+	 * allows the caller to put a new POD on this shipment's order - used by the documents module's {@code replace}. */
+	boolean shipmentUploadOpen(CurrentUser me, long orderId) {
+		Order order = orders.findById(orderId).orElse(null);
+		return order != null && allowed(OrderAction.UPDATE_SHIPMENT, me, order);
+	}
+
+	private boolean inScope(CurrentUser me, Order order) {
+		return order != null && switch (me.role()) {
 			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_OFP -> true;
 			case ERGO_KAM -> directory.accountsOf(me.userId()).contains(order.customerCompanyId);
 			case ERGO_NPD -> order.linkedNpdProjectId != null;
@@ -673,10 +713,6 @@ public class OrderService {
 			case CUSTOMER_OFP -> me.companyId() == order.customerCompanyId;
 			default -> false;
 		};
-		if (!inScope) {
-			throw ApiException.notFound("Order");
-		}
-		return order;
 	}
 
 	private static void requireEditor(CurrentUser me) {

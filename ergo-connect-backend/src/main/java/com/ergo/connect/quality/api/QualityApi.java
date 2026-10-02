@@ -30,4 +30,29 @@ public interface QualityApi {
 	 */
 	boolean npdFinalSampleGateMet(long npdProjectId);
 
+	/**
+	 * True if the current caller may see the NCR that owns this CAPA action (quality.domain's own NCR record scope,
+	 * SRS §10.8) - CAPA evidence files ({@code linked_module = "QUALITY_CAPA"} documents) are keyed by CAPA action
+	 * id, not NCR id. False if the CAPA action doesn't exist. Used by the documents module (ARCHITECTURE.md §8,
+	 * 2026-10-02 Phase 6a).
+	 */
+	boolean capaActionVisibleToCaller(long capaActionId);
+
+	/**
+	 * True if quality.domain's own CAPA-evidence edit window ({@code NcrService#requireCapaEditable} plus the CAPA
+	 * action's own CLOSED check) currently allows a new file for this CAPA action - used by the documents module's
+	 * generic {@code replace} so it can't be used to bypass this module's own workflow rule (e.g. a supplier
+	 * replacing evidence after the CAPA action, or its parent NCR, has closed). False if the CAPA action doesn't
+	 * exist. Used by the documents module (ARCHITECTURE.md §8, 2026-10-02 Phase 6a security review H4 fix).
+	 */
+	boolean capaReplaceOpenForCaller(long capaActionId);
+
+	/**
+	 * Repoints {@code CapaAction.evidenceDocumentId} at the Document Library's new version after a {@code replace},
+	 * so {@code NcrService#downloadEvidence} doesn't keep serving the superseded file while the Library shows the
+	 * new one. No-op if the CAPA action doesn't exist. Used by the documents module (ARCHITECTURE.md §8, 2026-10-02
+	 * Phase 6a security review H4 fix).
+	 */
+	void capaEvidenceReplaced(long capaActionId, long newDocumentId);
+
 }

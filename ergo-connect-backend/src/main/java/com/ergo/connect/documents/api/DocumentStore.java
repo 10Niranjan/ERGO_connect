@@ -18,11 +18,19 @@ import org.springframework.transaction.annotation.Transactional;
 import com.ergo.connect.common.audit.AuditLogService;
 import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.common.security.CurrentUser;
+import com.ergo.connect.documents.domain.DocumentStorage;
 
 /**
  * Stores files attached to records (SRS §13.7.1, basic). This module does not decide access: the module that owns the
  * record checks that the caller may see it, then filters by {@link Visibility}. Every change is audited here.
- * ponytail: bytes in Postgres, whole files in memory (50 MB cap); Phase 6 moves them to Azure Blob with virus scanning.
+ * <p>
+ * Metadata (this class, raw JDBC) and bytes ({@link DocumentStorage}) are deliberately separate so the byte store can
+ * be swapped later (Phase 8: Azure Blob + virus scanning) without touching this class or its 4 callers (RfqService,
+ * QuoteService, OrderService, NcrService) - ARCHITECTURE.md §8, 2026-10-02 Phase 6a. The {@code documents} table also
+ * grew Phase 6a's category/version/lock/approval columns (V20 migration); this class still only ever INSERTs plain
+ * rows (version 1, unlocked, pending) exactly as before - the new columns are read here (so the 4 existing callers
+ * and the new {@code documents.domain.DocumentService} agree on one row's state) and written only by
+ * {@code DocumentService}.
  */
 @Service
 @Transactional
@@ -34,7 +42,8 @@ public class DocumentStore {
 	}
 
 	public record DocumentInfo(long id, String fileName, String contentType, long size, Visibility visibility,
-			long uploadedByUserId, long uploadedByCompanyId, Instant createdAt) {
+			long uploadedByUserId, long uploadedByCompanyId, Instant createdAt, LockStatus lockStatus,
+			ApprovalStatus approvalStatus, Long supersedesDocumentId) {
 	}
 
 	/** Engineering and office formats only; files are always served as downloads, never rendered inline. */
@@ -55,15 +64,20 @@ public class DocumentStore {
 	private static final RowMapper<DocumentInfo> INFO = (rs, n) -> new DocumentInfo(rs.getLong("document_id"),
 			rs.getString("file_name"), rs.getString("content_type"), rs.getLong("file_size"),
 			Visibility.valueOf(rs.getString("visibility")), rs.getLong("uploaded_by_user_id"),
-			rs.getLong("uploaded_by_company_id"), rs.getObject("created_at", OffsetDateTime.class).toInstant());
+			rs.getLong("uploaded_by_company_id"), rs.getObject("created_at", OffsetDateTime.class).toInstant(),
+			LockStatus.valueOf(rs.getString("lock_status")), ApprovalStatus.valueOf(rs.getString("approval_status")),
+			rs.getObject("supersedes_document_id", Long.class));
 
 	private final JdbcTemplate jdbc;
 
 	private final AuditLogService audit;
 
-	DocumentStore(JdbcTemplate jdbc, AuditLogService audit) {
+	private final DocumentStorage storage;
+
+	DocumentStore(JdbcTemplate jdbc, AuditLogService audit, DocumentStorage storage) {
 		this.jdbc = jdbc;
 		this.audit = audit;
+		this.storage = storage;
 	}
 
 	public DocumentInfo store(String module, long recordId, String fileName, byte[] content, Visibility visibility) {
@@ -83,7 +97,7 @@ public class DocumentStore {
 				                       visibility, uploaded_by_user_id, uploaded_by_company_id)
 				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING document_id""", Long.class, module, recordId, name,
 				contentType, content.length, sha256(content), visibility.name(), me.userId(), me.companyId());
-		jdbc.update("INSERT INTO document_contents (document_id, content) VALUES (?, ?)", id, content);
+		storage.put(id, content);
 		audit.record(MODULE, "Document", id, "CREATE", "file", null,
 				module + " " + recordId + ": " + name + " (" + visibility + ")");
 		return find(module, recordId, id).orElseThrow();
@@ -104,19 +118,45 @@ public class DocumentStore {
 
 	@Transactional(readOnly = true)
 	public byte[] content(DocumentInfo document) {
-		return jdbc.queryForObject("SELECT content FROM document_contents WHERE document_id = ?", byte[].class,
-				document.id());
+		return storage.get(document.id());
 	}
 
 	public void setVisibility(DocumentInfo document, Visibility visibility) {
-		jdbc.update("UPDATE documents SET visibility = ? WHERE document_id = ?", visibility.name(), document.id());
+		// Second security review N2: a locked/approved document is final for every role (client decision M7), and the
+		// raw update must still bump row_version so it cannot silently race the Library's optimistic lock (H5).
+		if (document.lockStatus() == LockStatus.LOCKED || document.approvalStatus() == ApprovalStatus.APPROVED) {
+			throw ApiException.conflict("This document is locked or approved and can no longer be changed");
+		}
+		jdbc.update("UPDATE documents SET visibility = ?, row_version = row_version + 1 WHERE document_id = ?",
+				visibility.name(), document.id());
 		audit.record(MODULE, "Document", document.id(), "UPDATE", "visibility", document.visibility().name(),
 				visibility.name());
 	}
 
+	/**
+	 * Hard delete - the "oops, wrong file" self-correction window only (client decision, ARCHITECTURE.md §8
+	 * 2026-10-02): blocked once the document is locked, approved, or has a later version, since Phase 6a treats every
+	 * document as never-hard-deletable past that point (versioning supersedes instead - see {@code
+	 * documents.domain.DocumentService#replace}). The 4 existing callers (RfqService, QuoteService) already only ever
+	 * call this on a document their own module's rules already judged deletable (SRS §11.2); this is the second,
+	 * module-independent gate on top of that, so a document already shared/approved/superseded can't be erased
+	 * through any module's own delete path either.
+	 */
 	public void delete(DocumentInfo document) {
+		if (document.lockStatus() == LockStatus.LOCKED || document.approvalStatus() == ApprovalStatus.APPROVED
+				|| document.supersedesDocumentId() != null || hasLaterVersion(document.id())) {
+			throw ApiException.conflict("This document can no longer be deleted; it has been locked, approved, or "
+					+ "superseded by a newer version - upload a new version instead");
+		}
+		storage.delete(document.id());
 		jdbc.update("DELETE FROM documents WHERE document_id = ?", document.id());
 		audit.record(MODULE, "Document", document.id(), "DELETE", "file", document.fileName(), null);
+	}
+
+	private boolean hasLaterVersion(long documentId) {
+		Integer count = jdbc.queryForObject("SELECT count(*) FROM documents WHERE supersedes_document_id = ?",
+				Integer.class, documentId);
+		return count != null && count > 0;
 	}
 
 	/** Keeps only the file name part and characters that are safe in a download header. */

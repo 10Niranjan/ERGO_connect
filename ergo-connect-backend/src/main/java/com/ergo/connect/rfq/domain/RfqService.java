@@ -405,7 +405,32 @@ public class RfqService {
 	 * resolve instead of always 404ing (npd.domain.NpdService, ARCHITECTURE.md §8 2026-09-26 3b). */
 	Rfq visible(CurrentUser me, long id) {
 		Rfq rfq = rfqs.findById(id).orElse(null);
-		boolean inScope = rfq != null && switch (me.role()) {
+		if (!inScope(me, rfq)) {
+			throw ApiException.notFound("RFQ");
+		}
+		return rfq;
+	}
+
+	/** The boolean half of {@link #visible}, for a caller that must not throw on "out of scope" (a thrown {@code
+	 * ApiException} from a {@code @Transactional} method marks the physical transaction rollback-only the moment it
+	 * is thrown, even if the caller catches it immediately afterward - Spring's default propagation does not care
+	 * that the exception never escapes the caller). Used by {@code RfqApiService#visibleToCaller}, the documents
+	 * module's non-throwing scope probe (ARCHITECTURE.md §8, 2026-10-02 Phase 6a). */
+	boolean inScope(CurrentUser me, long id) {
+		return inScope(me, rfqs.findById(id).orElse(null));
+	}
+
+	/** H4 fix (ARCHITECTURE.md §8, Phase 6a security review): whether this module's own UPLOAD rule currently
+	 * permits a new file for this RFQ - used by the documents module's generic {@code replace} so it can't be used
+	 * to bypass this module's own edit window (e.g. a customer replacing a drawing after the RFQ has moved past the
+	 * open/under-review window this rule actually checks). */
+	boolean uploadOpen(CurrentUser me, long rfqId) {
+		Rfq rfq = rfqs.findById(rfqId).orElse(null);
+		return rfq != null && allowed(RfqAction.UPLOAD, me, rfq);
+	}
+
+	private boolean inScope(CurrentUser me, Rfq rfq) {
+		return rfq != null && switch (me.role()) {
 			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_RFQ -> true;
 			case ERGO_KAM -> directory.accountsOf(me.userId()).contains(rfq.customerCompanyId);
 			case ERGO_NPD -> NPD_VISIBLE.contains(rfq.status);
@@ -413,10 +438,6 @@ public class RfqService {
 				rfq.customerCompanyId == me.companyId();
 			default -> false;
 		};
-		if (!inScope) {
-			throw ApiException.notFound("RFQ");
-		}
-		return rfq;
 	}
 
 	/** The rule book: SRS §10.4 rights combined with the §14.2 status and the §17.1 page logic. */

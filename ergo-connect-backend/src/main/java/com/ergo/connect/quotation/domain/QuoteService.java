@@ -95,7 +95,7 @@ public class QuoteService {
 	static final Set<Role> EVALUATORS = EnumSet.of(ERGO_ADMIN, ERGO_RFQ);
 
 	/** SRS §10.5: Supplier RFQ and Supplier KAM create, edit (when open) and submit quotes. */
-	private static final Set<Role> SUPPLIER_QUOTERS = EnumSet.of(SUPPLIER_RFQ, SUPPLIER_KAM);
+	static final Set<Role> SUPPLIER_QUOTERS = EnumSet.of(SUPPLIER_RFQ, SUPPLIER_KAM);
 
 	/** The RFQ-side facts the rule book needs; a supplier only ever learns whether quoting is open. */
 	record RfqState(boolean quotingOpen, boolean evaluating, boolean offering) {
@@ -457,20 +457,47 @@ public class QuoteService {
 	// ---------------------------------------------------------------- rules
 
 	/** Record scope. Out-of-scope quotes do not exist for the caller (404). */
-	private Invitation visible(CurrentUser me, long id) {
+	Invitation visible(CurrentUser me, long id) {
 		Invitation invitation = invitations.findById(id).orElse(null);
-		boolean inScope = invitation != null && switch (me.companyType()) {
-			case SUPPLIER -> SUPPLIER_QUOTERS.contains(me.role()) && invitation.supplierCompanyId == me.companyId();
-			case ERGO -> {
-				rfqs.forErgo(invitation.rfqId); // 404 unless the RFQ is in this ERGO user's scope
-				yield ERGO_VIEWERS.contains(me.role());
-			}
-			case CUSTOMER -> false; // customers only ever see what ERGO sends them (Phase 2c)
-		};
-		if (!inScope) {
+		if (!inScope(me, invitation)) {
 			throw ApiException.notFound("Quote");
 		}
 		return invitation;
+	}
+
+	/** The boolean half of {@link #visible}, for a caller that must not throw on "out of scope" (a thrown {@code
+	 * ApiException} from a {@code @Transactional} method marks the physical transaction rollback-only the moment it
+	 * is thrown, even if the caller catches it immediately afterward). Used by {@code
+	 * QuotationApiService#visibleToCaller}, the documents module's non-throwing scope probe (ARCHITECTURE.md §8,
+	 * 2026-10-02 Phase 6a) - note the ERGO case below calls {@code RfqApi#visibleToCaller} (itself non-throwing)
+	 * instead of {@code RfqApi#forErgo} for the same reason. */
+	boolean inScope(CurrentUser me, long id) {
+		return inScope(me, invitations.findById(id).orElse(null));
+	}
+
+	/** Security review M2: one file of the quote as the caller may see it (see {@code canSee}); drafts stay private. */
+	boolean fileVisible(CurrentUser me, long invitationId, long documentId) {
+		Invitation invitation = invitations.findById(invitationId).orElse(null);
+		return inScope(me, invitation) && documents.find(MODULE, invitationId, documentId)
+			.filter(d -> canSee(me, invitation, d, submittedFiles(invitation)))
+			.isPresent();
+	}
+
+	/** H4 fix (ARCHITECTURE.md §8, Phase 6a security review): whether this module's own UPLOAD rule currently
+	 * permits a new file for this invitation - used by the documents module's generic {@code replace} so it can't
+	 * be used to bypass this module's own edit window (e.g. a supplier replacing its quote file after submission,
+	 * which {@code quoteEditOpen=false} already forbids). */
+	boolean uploadOpenForCaller(CurrentUser me, long invitationId) {
+		Invitation invitation = invitations.findById(invitationId).orElse(null);
+		return invitation != null && allowed(QuoteAction.UPLOAD, me, invitation, rfqState(me, invitation));
+	}
+
+	private boolean inScope(CurrentUser me, Invitation invitation) {
+		return invitation != null && switch (me.companyType()) {
+			case SUPPLIER -> SUPPLIER_QUOTERS.contains(me.role()) && invitation.supplierCompanyId == me.companyId();
+			case ERGO -> ERGO_VIEWERS.contains(me.role()) && rfqs.visibleToCaller(invitation.rfqId);
+			case CUSTOMER -> false; // customers only ever see what ERGO sends them (Phase 2c)
+		};
 	}
 
 	/**

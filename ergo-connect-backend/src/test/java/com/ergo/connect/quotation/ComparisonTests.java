@@ -104,20 +104,21 @@ class ComparisonTests {
 
 		call(post("/api/quotes/{id}/submit", y), sellerY, null).andExpect(status().isOk());
 		call(get("/api/rfqs/{id}/comparison", rfqId), ergoRfq, null)
-			.andExpect(jsonPath("$.lines[1].quote.currency.id").value((int) foreign))
-			.andExpect(jsonPath("$.lines[1].converted.productionPiecePrice").doesNotExist()); // no rate yet
+			// lines follow invitation order, which depends on the (set-ordered) supplier ids - so select y's line by id
+			.andExpect(jsonPath("$.lines[?(@.quoteId == %d)].quote.currency.id".formatted(y), contains((int) foreign)))
+			.andExpect(jsonPath("$.lines[?(@.quoteId == %d)].converted.productionPiecePrice".formatted(y), contains((Object) null))); // no rate yet
 		jdbc.update("""
 				INSERT INTO exchange_rates (from_currency_id, to_currency_id, rate_date, exchange_rate, created_by_user_id)
 				VALUES (?, ?, ?, 85, ?)""", foreign, inr, LocalDate.now().minusDays(1), ergoRfq.userId());
 		call(get("/api/rfqs/{id}/comparison", rfqId), ergoRfq, null)
-			.andExpect(jsonPath("$.lines[1].converted.rate").value(85.0))
-			.andExpect(jsonPath("$.lines[1].converted.productionPiecePrice").value(102.0));
+			.andExpect(jsonPath("$.lines[?(@.quoteId == %d)].converted.rate".formatted(y), contains(85.0)))
+			.andExpect(jsonPath("$.lines[?(@.quoteId == %d)].converted.productionPiecePrice".formatted(y), contains(102.0)));
 
 		String scores = """
 				{"scores": {"commercial": 8, "technical": 7, "quality": 9, "risk": 6}, "internalRemarks": "Strong PPAP record"}""";
 		call(put("/api/quotes/{id}/evaluation", x), ergoRfq, scores)
-			.andExpect(jsonPath("$.lines[0].totalScore").value(7.5))
-			.andExpect(jsonPath("$.lines[0].internalRemarks").value("Strong PPAP record"));
+			.andExpect(jsonPath("$.lines[?(@.quoteId == %d)].totalScore".formatted(x), contains(7.5)))
+			.andExpect(jsonPath("$.lines[?(@.quoteId == %d)].internalRemarks".formatted(x), contains("Strong PPAP record")));
 		call(get("/api/rfqs/{id}", rfqId), ergoRfq, null).andExpect(jsonPath("$.status").value("UNDER_COMPARISON"));
 		call(get("/api/rfqs/{id}", rfqId), buyer, null).andExpect(jsonPath("$.status").value("IN_PROGRESS"));
 		call(put("/api/quotes/{id}/evaluation", x), ergoRfq, "{\"scores\": {\"commercial\": 11}}")

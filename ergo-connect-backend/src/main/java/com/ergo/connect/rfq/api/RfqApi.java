@@ -54,6 +54,22 @@ public interface RfqApi {
 	/** For the current ERGO user; 404 when the RFQ is outside their scope. */
 	RfqRef forErgo(long rfqId);
 
+	/**
+	 * True if the current caller may know this RFQ exists at all (ERGO's own RFQ scope per role, or the customer's
+	 * own RFQ) - the record-scope fact the documents module needs to resolve Library/Detail visibility for
+	 * {@code linked_module = "rfq"} documents (ARCHITECTURE.md §8, 2026-10-02 Phase 6a). Always {@code false} for a
+	 * supplier caller: RfqApi has no invitation data of its own (that lives in quotation.domain) - see
+	 * {@code QuotationApi#supplierInvitedToRfq} for the supplier case.
+	 */
+	boolean visibleToCaller(long rfqId);
+
+	/**
+	 * True if rfq.domain's own UPLOAD rule (SRS §17.1) currently allows a new file for this RFQ - used by the
+	 * documents module to gate {@code replace} by the owning module's own edit-window rule, not just the generic
+	 * lock/approval state (ARCHITECTURE.md §8, 2026-10-02 Phase 6a security review H4 fix).
+	 */
+	boolean replaceOpenForCaller(long rfqId);
+
 	/** For the current customer user; 404 unless it is their own company's RFQ. */
 	CustomerRfqRef forCustomer(long rfqId);
 
