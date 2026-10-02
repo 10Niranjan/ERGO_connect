@@ -10,8 +10,8 @@ export type ApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
 /** Buttons the backend allows for this caller and document right now (DocumentDtos.DocumentAction). The UI renders only these. */
 export type DocumentAction = 'EDIT' | 'REPLACE' | 'LOCK' | 'UNLOCK' | 'APPROVE' | 'REJECT'
 
-/** The four values the backend stores in documents.linked_module. */
-export type DocumentLinkedModule = 'rfq' | 'quotation' | 'OFP_SHIPMENT' | 'QUALITY_CAPA'
+/** The values the backend stores in documents.linked_module ('comment' = a file attached to a comment, Phase 6c). */
+export type DocumentLinkedModule = 'rfq' | 'quotation' | 'OFP_SHIPMENT' | 'QUALITY_CAPA' | 'comment'
 
 export interface CategoryOption {
   id: number

@@ -34,6 +34,7 @@ import com.ergo.connect.documents.domain.DocumentDtos.LibraryRow;
 import com.ergo.connect.documents.domain.DocumentDtos.ReasonForm;
 import com.ergo.connect.documents.domain.DocumentDtos.SecondaryLink;
 import com.ergo.connect.documents.domain.DocumentDtos.VersionSummary;
+import com.ergo.connect.communication.api.CommunicationApi;
 import com.ergo.connect.masterdata.api.Directory;
 import com.ergo.connect.masterdata.api.Directory.CompanyRef;
 import com.ergo.connect.ofp.api.OfpApi;
@@ -104,6 +105,8 @@ public class DocumentService {
 
 	private final QualityApi qualityApi;
 
+	private final CommunicationApi communicationApi;
+
 	private final Directory directory;
 
 	private final AuditLogService audit;
@@ -113,7 +116,8 @@ public class DocumentService {
 
 	DocumentService(DocumentRepository documents, DocumentCategoryRepository categories,
 			DocumentLinkRepository links, DocumentStorage storage, DocumentStore documentStore, RfqApi rfqApi,
-			QuotationApi quotationApi, OfpApi ofpApi, QualityApi qualityApi, Directory directory,
+			QuotationApi quotationApi, OfpApi ofpApi, QualityApi qualityApi, CommunicationApi communicationApi,
+			Directory directory,
 			AuditLogService audit) {
 		this.documents = documents;
 		this.categories = categories;
@@ -124,6 +128,7 @@ public class DocumentService {
 		this.quotationApi = quotationApi;
 		this.ofpApi = ofpApi;
 		this.qualityApi = qualityApi;
+		this.communicationApi = communicationApi;
 		this.directory = directory;
 		this.audit = audit;
 	}
@@ -268,6 +273,7 @@ public class DocumentService {
 			case "quotation" -> quotationApi.replaceOpenForCaller(d.linkedRecordId);
 			case "OFP_SHIPMENT" -> ofpApi.podReplaceOpenForCaller(d.linkedRecordId);
 			case "QUALITY_CAPA" -> qualityApi.capaReplaceOpenForCaller(d.linkedRecordId);
+			case "comment" -> communicationApi.attachmentWindowOpenForCaller(d.linkedRecordId);
 			default -> false;
 		};
 	}
@@ -379,6 +385,8 @@ public class DocumentService {
 			case "quotation" -> quotationApi.fileVisibleToCaller(linkedRecordId, d.id);
 			case "OFP_SHIPMENT" -> ofpApi.shipmentVisibleToCaller(linkedRecordId);
 			case "QUALITY_CAPA" -> qualityApi.capaActionVisibleToCaller(linkedRecordId);
+			// Phase 6c: attachments on a comment are readable by exactly the people who can read the comment.
+			case "comment" -> communicationApi.commentVisibleToCaller(linkedRecordId);
 			// ponytail: an unrecognised linked_module hides the document rather than 500s the caller; extend the
 			// mapping above if a 5th linked_module string is ever introduced (ARCHITECTURE.md §8).
 			default -> false;

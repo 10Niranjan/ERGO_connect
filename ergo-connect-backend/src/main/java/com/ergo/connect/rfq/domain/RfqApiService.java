@@ -102,6 +102,15 @@ class RfqApiService implements RfqApi {
 
 	@Override
 	@Transactional(readOnly = true)
+	public java.util.Optional<com.ergo.connect.common.record.RecordParties> partiesVisibleToCaller(long rfqId) {
+		if (!visibleToCaller(rfqId)) {
+			return java.util.Optional.empty();
+		}
+		return rfqs.findById(rfqId).map(r -> new com.ergo.connect.common.record.RecordParties(r.customerCompanyId, null));
+	}
+
+	@Override
+	@Transactional(readOnly = true)
 	public boolean replaceOpenForCaller(long rfqId) {
 		return rfqService.uploadOpen(CurrentUser.get(), rfqId);
 	}

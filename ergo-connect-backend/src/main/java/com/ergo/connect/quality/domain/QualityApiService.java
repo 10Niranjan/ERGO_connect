@@ -39,13 +39,58 @@ class QualityApiService implements QualityApi {
 
 	private final Directory directory;
 
+	private final DeviationRepository deviations;
+
 	QualityApiService(InspectionRepository inspections, AuditLogService audit, CapaActionRepository capaActions,
-			NcrRepository ncrs, Directory directory) {
+			NcrRepository ncrs, Directory directory, DeviationRepository deviations) {
 		this.inspections = inspections;
 		this.audit = audit;
 		this.capaActions = capaActions;
 		this.ncrs = ncrs;
 		this.directory = directory;
+		this.deviations = deviations;
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public java.util.Optional<com.ergo.connect.common.record.RecordParties> inspectionPartiesVisibleToCaller(long inspectionId) {
+		return inspections.findById(inspectionId)
+			.flatMap(i -> parties(i.linkedModule, i.customerCompanyId, i.supplierCompanyId, i.customerVisible, true));
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public java.util.Optional<com.ergo.connect.common.record.RecordParties> ncrPartiesVisibleToCaller(long ncrId) {
+		return ncrs.findById(ncrId)
+			.flatMap(n -> parties(n.linkedModule, n.customerCompanyId, n.supplierCompanyId, n.customerVisible, true));
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public java.util.Optional<com.ergo.connect.common.record.RecordParties> deviationPartiesVisibleToCaller(long deviationId) {
+		return deviations.findById(deviationId)
+			.flatMap(d -> parties(d.linkedModule, d.customerCompanyId, d.supplierCompanyId, d.customerVisible,
+					d.supplierVisible));
+	}
+
+	/** Duplicates the record-scope switch every quality service has (see this class's own note on why it cannot
+	 * depend on those services): {@code customerVisible} / {@code supplierVisible} gate each external side. */
+	private java.util.Optional<com.ergo.connect.common.record.RecordParties> parties(LinkedModule linkedModule, Long customerCompanyId,
+			Long supplierCompanyId, boolean customerVisible, boolean supplierVisible) {
+		CurrentUser me = CurrentUser.get();
+		boolean inScope = switch (me.role()) {
+			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_QUALITY -> true;
+			case ERGO_KAM -> customerCompanyId != null && directory.accountsOf(me.userId()).contains(customerCompanyId);
+			case ERGO_NPD -> linkedModule == LinkedModule.NPD;
+			case ERGO_OFP -> linkedModule == LinkedModule.OFP;
+			case SUPPLIER_QUALITY, SUPPLIER_NPD, SUPPLIER_OFP, SUPPLIER_KAM ->
+					supplierVisible && supplierCompanyId != null && me.companyId() == supplierCompanyId;
+			case CUSTOMER_QUALITY, CUSTOMER_NPD, CUSTOMER_OFP, CUSTOMER_KAM, CUSTOMER_MANAGEMENT ->
+					customerVisible && customerCompanyId != null && me.companyId() == customerCompanyId;
+			default -> false;
+		};
+		return inScope ? java.util.Optional.of(new com.ergo.connect.common.record.RecordParties(customerCompanyId, supplierCompanyId))
+				: java.util.Optional.empty();
 	}
 
 	@Override

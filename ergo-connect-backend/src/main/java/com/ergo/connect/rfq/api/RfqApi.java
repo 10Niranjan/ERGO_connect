@@ -63,6 +63,10 @@ public interface RfqApi {
 	 */
 	boolean visibleToCaller(long rfqId);
 
+	/** The RFQ's customer company if the current caller may see the RFQ (same scope as {@link #visibleToCaller});
+	 * empty otherwise. Used by the communication module (ARCHITECTURE.md §8, Phase 6c). */
+	java.util.Optional<com.ergo.connect.common.record.RecordParties> partiesVisibleToCaller(long rfqId);
+
 	/**
 	 * True if rfq.domain's own UPLOAD rule (SRS §17.1) currently allows a new file for this RFQ - used by the
 	 * documents module to gate {@code replace} by the owning module's own edit-window rule, not just the generic

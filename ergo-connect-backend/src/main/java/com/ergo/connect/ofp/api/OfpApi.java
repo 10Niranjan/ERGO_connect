@@ -25,6 +25,10 @@ public interface OfpApi {
 	 */
 	boolean shipmentVisibleToCaller(long shipmentId);
 
+	/** Both companies of the order if the current caller may see it (OrderService's own record scope); empty
+	 * otherwise. Used by the communication module (ARCHITECTURE.md §8, Phase 6c). */
+	Optional<com.ergo.connect.common.record.RecordParties> orderPartiesVisibleToCaller(long orderId);
+
 	/**
 	 * True if ofp.domain's own POD upload rule ({@code UPDATE_SHIPMENT}: ERGO OFP/Admin, order dispatched or later)
 	 * currently allows the caller to put a new POD on this shipment - the documents module's {@code replace} gate.

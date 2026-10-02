@@ -22,8 +22,20 @@ class NpdApiService implements NpdApi {
 
 	private final NpdProjectRepository projects;
 
-	NpdApiService(NpdProjectRepository projects) {
+	private final NpdService npdService;
+
+	NpdApiService(NpdProjectRepository projects, NpdService npdService) {
 		this.projects = projects;
+		this.npdService = npdService;
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public Optional<com.ergo.connect.common.record.RecordParties> partiesVisibleToCaller(long npdProjectId) {
+		if (!npdService.inScope(CurrentUser.get(), npdProjectId)) {
+			return Optional.empty();
+		}
+		return projects.findById(npdProjectId).map(p -> new com.ergo.connect.common.record.RecordParties(p.customerCompanyId, p.supplierCompanyId));
 	}
 
 	@Override

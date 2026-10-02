@@ -55,6 +55,15 @@ class QuotationApiService implements QuotationApi {
 
 	@Override
 	@Transactional(readOnly = true)
+	public java.util.Optional<com.ergo.connect.common.record.RecordParties> partiesVisibleToCaller(long invitationId) {
+		if (!quoteService.inScope(CurrentUser.get(), invitationId)) {
+			return java.util.Optional.empty();
+		}
+		return invitations.findById(invitationId).map(i -> new com.ergo.connect.common.record.RecordParties(null, i.supplierCompanyId));
+	}
+
+	@Override
+	@Transactional(readOnly = true)
 	public boolean fileVisibleToCaller(long invitationId, long documentId) {
 		return quoteService.fileVisible(CurrentUser.get(), invitationId, documentId);
 	}

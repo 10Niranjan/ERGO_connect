@@ -38,6 +38,15 @@ public interface QualityApi {
 	 */
 	boolean capaActionVisibleToCaller(long capaActionId);
 
+	/** Both companies of the inspection / NCR / deviation if the current caller may see that record (each service's
+	 * own record scope, including the customerVisible / supplierVisible gates); empty otherwise. Used by the
+	 * communication module (ARCHITECTURE.md §8, Phase 6c). */
+	java.util.Optional<com.ergo.connect.common.record.RecordParties> inspectionPartiesVisibleToCaller(long inspectionId);
+
+	java.util.Optional<com.ergo.connect.common.record.RecordParties> ncrPartiesVisibleToCaller(long ncrId);
+
+	java.util.Optional<com.ergo.connect.common.record.RecordParties> deviationPartiesVisibleToCaller(long deviationId);
+
 	/**
 	 * True if quality.domain's own CAPA-evidence edit window ({@code NcrService#requireCapaEditable} plus the CAPA
 	 * action's own CLOSED check) currently allows a new file for this CAPA action - used by the documents module's

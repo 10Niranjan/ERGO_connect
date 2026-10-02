@@ -28,4 +28,10 @@ public interface Directory {
 	/** Customer accounts assigned to an ERGO Key Account Manager (SRS §13.2.5). */
 	Set<Long> accountsOf(long userId);
 
+	/** The active users of one company, by name (communication's mention picker; the caller applies its own scope). */
+	java.util.List<UserRef> activeUsersOf(long companyId);
+
+	/** Every role mapped to each user (a person works in one at a time but may hold several). */
+	Map<Long, Set<com.ergo.connect.common.security.Role>> rolesOf(Collection<Long> userIds);
+
 }

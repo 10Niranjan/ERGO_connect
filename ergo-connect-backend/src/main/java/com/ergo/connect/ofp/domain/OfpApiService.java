@@ -46,6 +46,15 @@ class OfpApiService implements OfpApi {
 	}
 
 	@Override
+	@Transactional(readOnly = true)
+	public Optional<com.ergo.connect.common.record.RecordParties> orderPartiesVisibleToCaller(long orderId) {
+		if (!orderService.inScope(CurrentUser.get(), orderId)) {
+			return Optional.empty();
+		}
+		return orders.findById(orderId).map(o -> new com.ergo.connect.common.record.RecordParties(o.customerCompanyId, o.supplierCompanyId));
+	}
+
+	@Override
 	public void podDocumentReplaced(long shipmentId, long newDocumentId) {
 		Shipment shipment = shipments.findById(shipmentId).orElse(null);
 		if (shipment != null) {

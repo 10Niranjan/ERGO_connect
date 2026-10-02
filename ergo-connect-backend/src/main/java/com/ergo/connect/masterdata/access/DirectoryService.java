@@ -44,6 +44,18 @@ class DirectoryService implements Directory {
 	}
 
 	@Override
+	public Map<Long, Set<com.ergo.connect.common.security.Role>> rolesOf(Collection<Long> userIds) {
+		return users.findByIdIn(userIds).stream().collect(Collectors.toMap(u -> u.id, u -> Set.copyOf(u.roles)));
+	}
+
+	@Override
+	public java.util.List<UserRef> activeUsersOf(long companyId) {
+		return users.findByCompanyIdAndActiveTrueOrderByFirstNameAscLastNameAsc(companyId).stream()
+			.map(u -> new UserRef(u.id, u.firstName + " " + u.lastName, u.companyId))
+			.toList();
+	}
+
+	@Override
 	public Set<Long> accountsOf(long userId) {
 		return users.findById(userId).map(user -> Set.copyOf(user.accountIds)).orElse(Set.of());
 	}

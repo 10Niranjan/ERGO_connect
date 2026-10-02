@@ -578,14 +578,23 @@ public class NpdService {
 	/** Record scope. Out-of-scope NPD projects do not exist for the caller (404, not 403). */
 	private NpdProject visible(CurrentUser me, long id) {
 		NpdProject project = projects.findById(id).orElse(null);
-		boolean inScope = project != null && (FULL_VIEWERS.contains(me.role())
-				|| me.role() == ERGO_KAM && directory.accountsOf(me.userId()).contains(project.customerCompanyId)
-				|| CUSTOMER_EDITORS.contains(me.role()) && me.companyId() == project.customerCompanyId
-				|| SUPPLIER_EDITORS.contains(me.role()) && me.companyId() == project.supplierCompanyId);
-		if (!inScope) {
+		if (!inScope(me, project)) {
 			throw ApiException.notFound("NPD project");
 		}
 		return project;
+	}
+
+	/** The boolean half of {@link #visible}, for a non-throwing cross-module probe (see {@code
+	 * NpdApiService#partiesVisibleToCaller}). */
+	boolean inScope(CurrentUser me, long id) {
+		return inScope(me, projects.findById(id).orElse(null));
+	}
+
+	private boolean inScope(CurrentUser me, NpdProject project) {
+		return project != null && (FULL_VIEWERS.contains(me.role())
+				|| me.role() == ERGO_KAM && directory.accountsOf(me.userId()).contains(project.customerCompanyId)
+				|| CUSTOMER_EDITORS.contains(me.role()) && me.companyId() == project.customerCompanyId
+				|| SUPPLIER_EDITORS.contains(me.role()) && me.companyId() == project.supplierCompanyId);
 	}
 
 	/** Project-level actions: header edit, stage close, and everything EDITORS alone may originate. */

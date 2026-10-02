@@ -6,6 +6,7 @@ export const LINKED_MODULE_LABEL: Record<DocumentLinkedModule, string> = {
   quotation: 'Quotation',
   OFP_SHIPMENT: 'OFP (proof of delivery)',
   QUALITY_CAPA: 'Quality (CAPA evidence)',
+  comment: 'Comment attachment',
 }
 
 export const APPROVAL_STATUS: Record<ApprovalStatus, { label: string; color: ChipColor }> = {

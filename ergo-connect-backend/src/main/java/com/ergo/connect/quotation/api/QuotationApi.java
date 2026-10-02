@@ -23,6 +23,11 @@ public interface QuotationApi {
 	 */
 	boolean visibleToCaller(long invitationId);
 
+	/** The invitation's supplier company if the current caller may see the invitation (same scope as {@link
+	 * #visibleToCaller}); empty otherwise. The customer side is deliberately never returned: customers and
+	 * suppliers never see each other. Used by the communication module (ARCHITECTURE.md §8, Phase 6c). */
+	java.util.Optional<com.ergo.connect.common.record.RecordParties> partiesVisibleToCaller(long invitationId);
+
 	/**
 	 * True if quotation.domain's own UPLOAD rule (SRS §17.2) currently allows a new file for this invitation - used
 	 * by the documents module to gate {@code replace} by the owning module's own edit-window rule, not just the

@@ -31,6 +31,10 @@ public interface NpdApi {
 	 * before the value is ever returned to an HTTP response). Empty if the project doesn't exist. */
 	Optional<ProjectRef> projectRef(long npdProjectId);
 
+	/** Both companies of the project if the current caller may see it (NpdService's own record scope); empty
+	 * otherwise. Used by the communication module (ARCHITECTURE.md §8, Phase 6c). */
+	Optional<com.ergo.connect.common.record.RecordParties> partiesVisibleToCaller(long npdProjectId);
+
 	record ProjectRef(long id, long customerCompanyId, long supplierCompanyId) {
 	}
 
