@@ -28,6 +28,9 @@ public interface QuotationApi {
 	 * suppliers never see each other. Used by the communication module (ARCHITECTURE.md §8, Phase 6c). */
 	java.util.Optional<com.ergo.connect.common.record.RecordParties> partiesVisibleToCaller(long invitationId);
 
+	/** Supplier quotes past their response date that the supplier can still submit, for the daily reminder scan. */
+	java.util.List<com.ergo.connect.common.event.OverdueItem> overdueItems(java.time.LocalDate today);
+
 	/**
 	 * True if quotation.domain's own UPLOAD rule (SRS §17.2) currently allows a new file for this invitation - used
 	 * by the documents module to gate {@code replace} by the owning module's own edit-window rule, not just the

@@ -31,7 +31,13 @@ public interface Directory {
 	/** The active users of one company, by name (communication's mention picker; the caller applies its own scope). */
 	java.util.List<UserRef> activeUsersOf(long companyId);
 
-	/** Every role mapped to each user (a person works in one at a time but may hold several). */
+	/** Active users of every company of one type (ERGO staff, for addressing them by role), in one query. */
+	java.util.List<UserRef> activeUsersOfType(CompanyType type);
+
+	/** Those of {@code ids} that are active users; inactive or unknown ids are left out. */
+	Map<Long, UserRef> activeUsers(Collection<Long> ids);
+
+	/** Every role mapped to each user (a person works in one at a time but may hold several), in one query. */
 	Map<Long, Set<com.ergo.connect.common.security.Role>> rolesOf(Collection<Long> userIds);
 
 }

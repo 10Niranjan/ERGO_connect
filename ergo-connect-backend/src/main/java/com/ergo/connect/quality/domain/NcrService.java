@@ -34,6 +34,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.ergo.connect.common.audit.AuditLogService;
+import com.ergo.connect.common.event.NotificationKind;
+import com.ergo.connect.common.event.Notifier;
+import com.ergo.connect.common.event.Recipients;
 import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
@@ -138,8 +141,11 @@ public class NcrService {
 
 	private final JdbcTemplate jdbc;
 
+	private final Notifier notifier;
+
 	NcrService(NcrRepository ncrs, CapaActionRepository capaActions, Directory directory, AuditLogService audit,
-			NpdApi npdApi, OfpApi ofpApi, DocumentStore documents, JdbcTemplate jdbc) {
+			NpdApi npdApi, OfpApi ofpApi, DocumentStore documents, JdbcTemplate jdbc, Notifier notifier) {
+		this.notifier = notifier;
 		this.ncrs = ncrs;
 		this.capaActions = capaActions;
 		this.directory = directory;
@@ -232,6 +238,11 @@ public class NcrService {
 		n.createdByCompanyId = me.companyId();
 		n.ncrNumber = nextNcrNumber();
 		ncrs.save(n);
+		// SRS §14.9 record assignment: a supplier-raised NCR is for ERGO; an ERGO-raised one is for the supplier it is against
+		// (and the named owner). The customer is not told at creation - an NCR starts hidden from the customer.
+		notifier.send(NotificationKind.NCR_RAISED, "ncr", n.id, n.ncrNumber, n.issueCategory,
+				ergoEditor ? QualityNotices.supplier(n.supplierCompanyId).and(n.ownerUserId == null ? Recipients.none()
+						: Recipients.users(java.util.Set.of(n.ownerUserId))) : QualityNotices.ergo());
 		return view(me, n);
 	}
 
@@ -357,6 +368,7 @@ public class NcrService {
 		require(NcrAction.MOVE_TO_CONTAINMENT, me, n);
 		applyUpdate(me, n, form, ergoEditor(me));
 		n.currentStatus = NcrStatus.CONTAINMENT_IN_PROGRESS;
+		told(n, "Containment in progress");
 		return view(me, n);
 	}
 
@@ -370,6 +382,7 @@ public class NcrService {
 			throw ApiException.unprocessable("Containment action is required before moving to root cause investigation");
 		}
 		n.currentStatus = NcrStatus.ROOT_CAUSE_IN_PROGRESS;
+		told(n, "Root cause investigation");
 		return view(me, n);
 	}
 
@@ -382,6 +395,7 @@ public class NcrService {
 		applyUpdate(me, n, form, ergoEditor(me));
 		requireRootCause(n);
 		n.currentStatus = NcrStatus.CAPA_IN_PROGRESS;
+		told(n, "CAPA in progress");
 		return view(me, n);
 	}
 
@@ -400,6 +414,8 @@ public class NcrService {
 		// (unlike ownerUserId, never a separately-editable assignment field) - closes the self-approval gap.
 		n.closureRequestedByUserId = me.userId();
 		n.currentStatus = NcrStatus.PENDING_CLOSURE_APPROVAL;
+		notifier.send(NotificationKind.NCR_CLOSURE_REQUESTED, "ncr", n.id, n.ncrNumber, null,
+				Recipients.ergo(Role.ERGO_ADMIN, Role.ERGO_QUALITY, Role.ERGO_MANAGEMENT));
 		return view(me, n);
 	}
 
@@ -417,6 +433,7 @@ public class NcrService {
 		reasonIfGiven(form.reason());
 		n.currentStatus = NcrStatus.CLOSED;
 		n.closureDate = LocalDate.now();
+		told(n, "Closed");
 		return view(me, n);
 	}
 
@@ -428,6 +445,7 @@ public class NcrService {
 		require(NcrAction.SEND_BACK, me, n);
 		audit.reason(required(form.reason(), "A reason is required to send an NCR back for more CAPA work"));
 		n.currentStatus = NcrStatus.CAPA_IN_PROGRESS;
+		told(n, "Sent back for more CAPA work");
 		return view(me, n);
 	}
 
@@ -439,6 +457,7 @@ public class NcrService {
 		audit.reason(required(form.reason(), "A reason is required to reopen an NCR"));
 		n.currentStatus = NcrStatus.OPEN;
 		n.closureDate = null;
+		told(n, "Reopened");
 		return view(me, n);
 	}
 
@@ -510,6 +529,11 @@ public class NcrService {
 		Visibility visibility = me.role() == SUPPLIER_EDITOR ? Visibility.SUPPLIER : Visibility.INTERNAL;
 		DocumentInfo info = documents.store(CAPA_MODULE, a.id, fileName, content, visibility);
 		a.evidenceDocumentId = info.id();
+		// Evidence is never shown to customers; a supplier's file is for ERGO, ERGO's own is internal.
+		if (me.role() == SUPPLIER_EDITOR) {
+			notifier.send(NotificationKind.DOCUMENT_UPLOADED, "document", info.id(), n.ncrNumber, info.fileName(),
+					QualityNotices.ergo());
+		}
 		return view(me, n);
 	}
 
@@ -555,6 +579,13 @@ public class NcrService {
 				|| n.currentStatus == NcrStatus.PENDING_CLOSURE_APPROVAL) {
 			throw ApiException.conflict("CAPA actions cannot be changed on this NCR right now");
 		}
+	}
+
+	/** SRS §14.9 status change: everyone on the NCR; the customer is dropped at delivery unless it is customer-visible.
+	 * The detail is the new stage only - never a send-back or reopen reason. */
+	private void told(Ncr n, String detail) {
+		notifier.send(NotificationKind.NCR_UPDATED, "ncr", n.id, n.ncrNumber, detail,
+				QualityNotices.everyone(n.customerCompanyId, n.supplierCompanyId));
 	}
 
 	// ---------------------------------------------------------------- rules

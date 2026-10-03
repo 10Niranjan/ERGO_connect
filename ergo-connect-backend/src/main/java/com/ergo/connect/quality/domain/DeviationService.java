@@ -36,6 +36,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.ergo.connect.common.audit.AuditLogService;
+import com.ergo.connect.common.event.NotificationKind;
+import com.ergo.connect.common.event.Notifier;
+import com.ergo.connect.common.event.Recipients;
 import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
@@ -141,9 +144,12 @@ public class DeviationService {
 
 	private final JsonMapper json;
 
+	private final Notifier notifier;
+
 	DeviationService(DeviationRepository deviations, DeviationApprovalRepository approvals,
 			InspectionRepository inspections, Directory directory, AuditLogService audit, NpdApi npdApi, OfpApi ofpApi,
-			JdbcTemplate jdbc, JsonMapper json) {
+			JdbcTemplate jdbc, JsonMapper json, Notifier notifier) {
+		this.notifier = notifier;
 		this.deviations = deviations;
 		this.approvals = approvals;
 		this.inspections = inspections;
@@ -234,6 +240,9 @@ public class DeviationService {
 			createApprovalRow(d.id, Role.CUSTOMER_QUALITY);
 		}
 		writeVersionSnapshot(d);
+		// SRS §14.9 approval request: ERGO's quality approvers decide first (the customer is asked later, if required)
+		notifier.send(NotificationKind.DEVIATION_APPROVAL_REQUESTED, "deviation", d.id, d.deviationNumber, null,
+				QualityNotices.ergo());
 		return view(me, d);
 	}
 
@@ -378,6 +387,15 @@ public class DeviationService {
 		row.comment = comment;
 		recomputeStatus(d, row);
 		writeVersionSnapshot(d);
+		// SRS §14.9 approval granted / rejected: the outcome to everyone on the deviation (never the reason); the customer
+		// or supplier is dropped at delivery unless it may see the record. When ERGO's approval hands the deviation to
+		// the customer, the customer is also asked to decide.
+		notifier.send(NotificationKind.DEVIATION_DECIDED, "deviation", d.id, d.deviationNumber, pretty(d.currentStatus),
+				QualityNotices.everyone(d.customerCompanyId, d.supplierCompanyId));
+		if (d.currentStatus == DeviationStatus.CUSTOMER_APPROVAL_PENDING) {
+			notifier.send(NotificationKind.DEVIATION_APPROVAL_REQUESTED, "deviation", d.id, d.deviationNumber, null,
+					QualityNotices.customer(d.customerCompanyId));
+		}
 		return view(me, d);
 	}
 
@@ -428,6 +446,8 @@ public class DeviationService {
 		require(DeviationAction.CLOSE, me, d);
 		reasonIfGiven(form.reason());
 		d.currentStatus = DeviationStatus.CLOSED;
+		notifier.send(NotificationKind.DEVIATION_DECIDED, "deviation", d.id, d.deviationNumber, "Closed",
+				QualityNotices.everyone(d.customerCompanyId, d.supplierCompanyId));
 		return view(me, d);
 	}
 
@@ -440,6 +460,11 @@ public class DeviationService {
 		for (Deviation d : deviations.findByCurrentStatusAndValidityEndDateBefore(DeviationStatus.APPROVED, today)) {
 			d.currentStatus = DeviationStatus.EXPIRED;
 		}
+	}
+
+	private static String pretty(DeviationStatus status) {
+		String text = status.name().toLowerCase().replace('_', ' ');
+		return Character.toUpperCase(text.charAt(0)) + text.substring(1);
 	}
 
 	// ---------------------------------------------------------------- rules

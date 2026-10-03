@@ -44,8 +44,22 @@ class DirectoryService implements Directory {
 	}
 
 	@Override
+	public java.util.List<UserRef> activeUsersOfType(com.ergo.connect.common.security.CompanyType type) {
+		return users.findActiveByCompanyType(type).stream()
+			.map(u -> new UserRef(u.id, u.firstName + " " + u.lastName, u.companyId))
+			.toList();
+	}
+
+	@Override
+	public Map<Long, UserRef> activeUsers(Collection<Long> ids) {
+		return users.findByIdIn(ids).stream()
+			.filter(u -> u.active)
+			.collect(Collectors.toMap(u -> u.id, u -> new UserRef(u.id, u.firstName + " " + u.lastName, u.companyId)));
+	}
+
+	@Override
 	public Map<Long, Set<com.ergo.connect.common.security.Role>> rolesOf(Collection<Long> userIds) {
-		return users.findByIdIn(userIds).stream().collect(Collectors.toMap(u -> u.id, u -> Set.copyOf(u.roles)));
+		return users.findWithRolesByIdIn(userIds).stream().collect(Collectors.toMap(u -> u.id, u -> Set.copyOf(u.roles)));
 	}
 
 	@Override

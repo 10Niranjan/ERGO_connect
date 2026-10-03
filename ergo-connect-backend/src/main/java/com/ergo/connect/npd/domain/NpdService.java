@@ -34,6 +34,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.ergo.connect.common.audit.AuditLogService;
+import com.ergo.connect.common.event.NotificationKind;
+import com.ergo.connect.common.event.Notifier;
+import com.ergo.connect.common.event.Recipients;
 import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
@@ -130,11 +133,14 @@ public class NpdService {
 
 	private final JdbcTemplate jdbc;
 
+	private final Notifier notifier;
+
 	NpdService(NpdProjectRepository projects, NpdActivityRepository activities,
 			NpdStageHistoryRepository stageHistory, NpdPromptChecklistRepository checklists,
 			NpdPromptResponseRepository responses, NpdIssueRiskRepository issueRisks,
 			NpdApprovalRepository approvals, RfqApi rfqApi, QuotationApi quotationApi, QualityApi qualityApi,
-			Directory directory, AuditLogService audit, JdbcTemplate jdbc) {
+			Directory directory, AuditLogService audit, JdbcTemplate jdbc, Notifier notifier) {
+		this.notifier = notifier;
 		this.projects = projects;
 		this.activities = activities;
 		this.stageHistory = stageHistory;
@@ -338,6 +344,8 @@ public class NpdService {
 		history.changedByUserId = me.userId();
 		history.remarks = text(comment);
 		stageHistory.save(history);
+		notifier.send(NotificationKind.NPD_STAGE_CHANGED, "npd", project.id, project.npdNumber, "Now in " + pretty(next),
+				everyone(project));
 		return view(me, project);
 	}
 
@@ -354,6 +362,7 @@ public class NpdService {
 		activity.ownerCompanyId = resolveOwnerCompanyId(me, project, form.ownerOrganizationType(), form.ownerCompanyId());
 		apply(activity, form, project.id);
 		activities.save(activity);
+		assigned(project, activity);
 		return view(me, project);
 	}
 
@@ -364,7 +373,9 @@ public class NpdService {
 		require(NpdAction.EDIT_ACTIVITY, me, project, activity);
 		CompanyType newOwnerType = form.ownerOrganizationType();
 		long newOwnerCompanyId = resolveOwnerCompanyId(me, project, newOwnerType, form.ownerCompanyId());
-		if (activity.ownerOrganizationType != newOwnerType || !Objects.equals(activity.ownerCompanyId, newOwnerCompanyId)) {
+		boolean ownerChanged = activity.ownerOrganizationType != newOwnerType
+				|| !Objects.equals(activity.ownerCompanyId, newOwnerCompanyId);
+		if (ownerChanged) {
 			// Reassigning the owner: the previous owner's own remarks, responsible person and checklist answers are
 			// that company's own words/identity, not ERGO's classification of the activity, and must not carry over
 			// to whoever the activity now belongs to (security review finding H2). The questions themselves
@@ -380,6 +391,9 @@ public class NpdService {
 		activity.ownerOrganizationType = newOwnerType;
 		activity.ownerCompanyId = newOwnerCompanyId;
 		apply(activity, form, project.id);
+		if (ownerChanged) {
+			assigned(project, activity);
+		}
 		return view(me, project);
 	}
 
@@ -546,6 +560,8 @@ public class NpdService {
 		approval.approverRole = form.approvalType().approverRole();
 		approval.approvalStatus = ApprovalStatus.PENDING;
 		approvals.save(approval);
+		notifier.send(NotificationKind.NPD_APPROVAL_REQUESTED, "npd", project.id, project.npdNumber,
+				pretty(approval.approvalType), approverSide(project, approval.approverRole));
 		return view(me, project);
 	}
 
@@ -570,7 +586,66 @@ public class NpdService {
 		approval.approvedByUserId = me.userId();
 		approval.approvedAt = Instant.now();
 		approval.approvalComments = comments;
+		notifier.send(NotificationKind.NPD_APPROVAL_DECIDED, "npd", project.id, project.npdNumber,
+				pretty(approval.approvalType) + (form.approved() ? ": approved" : ": rejected"),
+				Recipients.users(java.util.Set.of(approval.requestedByUserId)));
 		return view(me, project);
+	}
+
+	// ---------------------------------------------------------------- notifications (SRS §14.9)
+
+	/** The daily reminder scan: planned dates that have passed on activities not yet done. The owner is reminded, and
+	 * ERGO's NPD team always. */
+	List<com.ergo.connect.common.event.OverdueItem> overdue(java.time.LocalDate today) {
+		List<com.ergo.connect.common.event.OverdueItem> items = new java.util.ArrayList<>();
+		for (NpdActivity a : activities.findByPlannedDateBeforeAndStatusNot(today, ActivityStatus.DONE)) {
+			NpdProject project = projects.findById(a.npdProjectId).orElse(null);
+			// A closed project's activities can no longer be edited, so they could never be cleared (review 6e M2).
+			if (project != null && project.stage != NpdStage.CLOSED) {
+				items.add(new com.ergo.connect.common.event.OverdueItem(NotificationKind.OVERDUE_ACTIVITY, "npd", project.id, project.npdNumber,
+						a.activityName + " was planned for " + a.plannedDate,
+						ownerSide(a).and(Recipients.ergo(Role.ERGO_ADMIN, Role.ERGO_NPD)), "npd-activity:" + a.id));
+			}
+		}
+		return items;
+	}
+
+	private static Recipients ownerSide(NpdActivity activity) {
+		return switch (activity.ownerOrganizationType) {
+			case ERGO -> activity.responsibleUserId != null ? Recipients.users(java.util.Set.of(activity.responsibleUserId))
+					: Recipients.ergo(Role.ERGO_NPD);
+			case CUSTOMER -> Recipients.company(activity.ownerCompanyId, CUSTOMER_EDITORS.toArray(Role[]::new));
+			case SUPPLIER -> Recipients.company(activity.ownerCompanyId, SUPPLIER_EDITORS.toArray(Role[]::new));
+		};
+	}
+
+	/** ERGO's NPD team and each side's NPD editors: everyone who works on this project. */
+	private static Recipients everyone(NpdProject project) {
+		return Recipients.ergo(Role.ERGO_ADMIN, Role.ERGO_NPD)
+			.and(Recipients.company(project.customerCompanyId, CUSTOMER_EDITORS.toArray(Role[]::new)))
+			.and(Recipients.company(project.supplierCompanyId, SUPPLIER_EDITORS.toArray(Role[]::new)));
+	}
+
+	/** The side the approval's role belongs to: an ERGO role (plus Admin, who may decide ERGO-owned types) or the
+	 * project's customer. */
+	private static Recipients approverSide(NpdProject project, Role approver) {
+		return switch (approver.companyType()) {
+			case ERGO -> Recipients.ergo(approver, Role.ERGO_ADMIN);
+			case CUSTOMER -> Recipients.company(project.customerCompanyId, approver);
+			case SUPPLIER -> Recipients.company(project.supplierCompanyId, approver);
+		};
+	}
+
+	/** SRS §14.9 "record assignment": the owner of an activity hears that it is theirs - the named responsible person
+	 * for an ERGO-owned one, otherwise the owner company's NPD editors. */
+	private void assigned(NpdProject project, NpdActivity activity) {
+		notifier.send(NotificationKind.NPD_ACTIVITY_ASSIGNED, "npd", project.id, project.npdNumber, activity.activityName,
+				ownerSide(activity));
+	}
+
+	private static String pretty(Enum<?> value) {
+		String text = value.name().toLowerCase().replace('_', ' ');
+		return Character.toUpperCase(text.charAt(0)) + text.substring(1);
 	}
 
 	// ---------------------------------------------------------------- rules

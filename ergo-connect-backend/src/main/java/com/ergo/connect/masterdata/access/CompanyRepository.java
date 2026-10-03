@@ -18,6 +18,7 @@ interface CompanyRepository extends Repository<Company, Long> {
 
 	List<Company> findByIdIn(Collection<Long> ids);
 
+
 	List<Company> findByIdInOrderByNameAsc(Collection<Long> ids);
 
 	List<Company> findAllByOrderByNameAsc();

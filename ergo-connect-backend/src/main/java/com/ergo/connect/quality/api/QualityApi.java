@@ -47,6 +47,9 @@ public interface QualityApi {
 
 	java.util.Optional<com.ergo.connect.common.record.RecordParties> deviationPartiesVisibleToCaller(long deviationId);
 
+	/** NCRs past their target closure date and CAPA actions past their target date, for the daily reminder scan. */
+	java.util.List<com.ergo.connect.common.event.OverdueItem> overdueItems(java.time.LocalDate today);
+
 	/**
 	 * True if quality.domain's own CAPA-evidence edit window ({@code NcrService#requireCapaEditable} plus the CAPA
 	 * action's own CLOSED check) currently allows a new file for this CAPA action - used by the documents module's

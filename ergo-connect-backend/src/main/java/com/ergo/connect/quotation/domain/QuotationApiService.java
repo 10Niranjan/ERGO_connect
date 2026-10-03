@@ -64,6 +64,12 @@ class QuotationApiService implements QuotationApi {
 
 	@Override
 	@Transactional(readOnly = true)
+	public java.util.List<com.ergo.connect.common.event.OverdueItem> overdueItems(java.time.LocalDate today) {
+		return quoteService.overdue(today);
+	}
+
+	@Override
+	@Transactional(readOnly = true)
 	public boolean fileVisibleToCaller(long invitationId, long documentId) {
 		return quoteService.fileVisible(CurrentUser.get(), invitationId, documentId);
 	}

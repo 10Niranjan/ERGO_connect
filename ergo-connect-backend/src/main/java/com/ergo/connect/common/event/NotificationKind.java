@@ -1,0 +1,30 @@
+package com.ergo.connect.common.event;
+
+/**
+ * Every business event that can notify someone (SRS §14.9 triggers). Modules only name the event; the communication
+ * module's catalog decides its drawer type, who the text may be addressed to, and the wording for each audience - so
+ * a customer is never told anything about a supplier (and vice versa) from a publisher's mistake.
+ */
+public enum NotificationKind {
+
+	// RFQ and quotation (SRS §14.2-14.4)
+	RFQ_SUBMITTED, RFQ_CLARIFICATION_REQUESTED, RFQ_STATUS_CHANGED, QUOTE_REQUESTED, QUOTE_SUBMITTED,
+	QUOTE_CLARIFICATION_REQUESTED, QUOTE_CLARIFICATION_ANSWERED, QUOTE_REOPENED, QUOTE_REGRETTED, CUSTOMER_QUOTE_SENT,
+	CUSTOMER_QUOTE_RESPONDED,
+
+	// NPD (§14.5)
+	NPD_STAGE_CHANGED, NPD_APPROVAL_REQUESTED, NPD_APPROVAL_DECIDED, NPD_ACTIVITY_ASSIGNED,
+
+	// OFP (§14.6)
+	ORDER_STATUS_CHANGED, DISPATCH_RECORDED, DELIVERY_CONFIRMED,
+
+	// Quality (§14.7)
+	INSPECTION_UPDATED, NCR_RAISED, NCR_UPDATED, NCR_CLOSURE_REQUESTED, DEVIATION_APPROVAL_REQUESTED, DEVIATION_DECIDED,
+
+	// Documents and communication
+	DOCUMENT_UPLOADED, DOCUMENT_DECIDED, MENTIONED, COMMENT_REPLY, THREAD_ESCALATED,
+
+	// Scheduled reminders (SRS §14.9 "overdue activity")
+	OVERDUE_ACTIVITY, OVERDUE_QUOTE, OVERDUE_NCR, OVERDUE_CAPA
+
+}

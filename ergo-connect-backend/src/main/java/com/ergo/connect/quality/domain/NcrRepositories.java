@@ -31,6 +31,9 @@ interface NcrRepository extends Repository<Ncr, Long> {
 	/** ERGO NPD/OFP's scope (SRS §10.8 "RV"): NCRs raised against their own module's records. */
 	List<Ncr> findByLinkedModuleOrderByIdDesc(LinkedModule linkedModule);
 
+	/** The overdue scan. */
+	List<Ncr> findByTargetClosureDateBeforeAndCurrentStatusNot(java.time.LocalDate date, NcrStatus status);
+
 }
 
 interface CapaActionRepository extends Repository<CapaAction, Long> {
@@ -40,6 +43,9 @@ interface CapaActionRepository extends Repository<CapaAction, Long> {
 	Optional<CapaAction> findById(Long id);
 
 	List<CapaAction> findByNcrIdOrderById(Long ncrId);
+
+	/** The overdue scan. */
+	List<CapaAction> findByTargetDateBeforeAndStatusNot(java.time.LocalDate date, CapaActionStatus status);
 
 	/** Reassignment clears already-authored CAPA actions (security review M6 precedent), same as {@code
 	 * InspectionDefectRepository.deleteByInspectionId}. */

@@ -25,6 +25,14 @@ interface UserRepository extends Repository<User, Long> {
 
 	List<User> findByCompanyIdAndActiveTrueOrderByFirstNameAscLastNameAsc(Long companyId);
 
+	@Query("select distinct u from User u left join fetch u.roles where u.id in :ids")
+	List<User> findWithRolesByIdIn(Collection<Long> ids);
+
+	@Query("""
+			select u from User u
+			where u.active = true and u.companyId in (select c.id from Company c where c.type = :type)""")
+	List<User> findActiveByCompanyType(com.ergo.connect.common.security.CompanyType type);
+
 	/** Record scope lives in the query: companyId null = every company (ERGO roles), else only that company. */
 	@Query("""
 			select u from User u left join fetch u.roles left join fetch u.accountIds

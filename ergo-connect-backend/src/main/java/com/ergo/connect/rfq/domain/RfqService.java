@@ -42,6 +42,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.ergo.connect.common.audit.AuditLogService;
 import com.ergo.connect.common.audit.AuditLogService.AuditEntry;
+import com.ergo.connect.common.event.NotificationKind;
+import com.ergo.connect.common.event.Notifier;
+import com.ergo.connect.common.event.Recipients;
 import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
@@ -121,8 +124,11 @@ public class RfqService {
 
 	private final JdbcTemplate jdbc;
 
+	private final Notifier notifier;
+
 	RfqService(RfqRepository rfqs, Directory directory, MasterDataApi masterData, DocumentStore documents,
-			AuditLogService audit, JdbcTemplate jdbc) {
+			AuditLogService audit, JdbcTemplate jdbc, Notifier notifier) {
+		this.notifier = notifier;
 		this.rfqs = rfqs;
 		this.directory = directory;
 		this.masterData = masterData;
@@ -272,10 +278,12 @@ public class RfqService {
 			rfq.clarificationAnswer = required(comment, "Answer the clarification question before resubmitting");
 			audit.reason(rfq.clarificationAnswer);
 			rfq.status = UNDER_REVIEW;
+			tellErgo(NotificationKind.RFQ_SUBMITTED, rfq, "Clarification answered");
 		}
 		else {
 			reasonIfGiven(comment);
 			rfq.status = SUBMITTED;
+			tellErgo(NotificationKind.RFQ_SUBMITTED, rfq, null);
 		}
 		return view(rfq, me);
 	}
@@ -288,6 +296,7 @@ public class RfqService {
 		if (rfq.ownerUserId == null) {
 			rfq.ownerUserId = me.userId();
 		}
+		statusChanged(me, rfq, "Under review");
 		return view(rfq, me);
 	}
 
@@ -299,6 +308,7 @@ public class RfqService {
 		rfq.clarificationAnswer = null;
 		audit.reason(rfq.clarificationQuestion);
 		rfq.status = CLARIFICATION_REQUIRED;
+		tellCustomer(NotificationKind.RFQ_CLARIFICATION_REQUESTED, rfq, null);
 		return view(rfq, me);
 	}
 
@@ -313,6 +323,7 @@ public class RfqService {
 		if (rfq.ownerUserId == null) {
 			rfq.ownerUserId = me.userId();
 		}
+		statusChanged(me, rfq, "Validated");
 		return view(rfq, me);
 	}
 
@@ -323,6 +334,7 @@ public class RfqService {
 		require(RfqAction.REOPEN, me, rfq);
 		audit.reason(required(reason, "A reason is required to re-open an RFQ"));
 		rfq.status = UNDER_REVIEW;
+		statusChanged(me, rfq, "Reopened, under review");
 		return view(rfq, me);
 	}
 
@@ -333,6 +345,7 @@ public class RfqService {
 		require(RfqAction.CLOSE, me, rfq);
 		audit.reason(required(reason, "A reason is required to close an RFQ"));
 		rfq.status = CLOSED;
+		statusChanged(me, rfq, "Closed");
 		return view(rfq, me);
 	}
 
@@ -343,7 +356,29 @@ public class RfqService {
 		require(RfqAction.CANCEL, me, rfq);
 		audit.reason(required(reason, "A reason is required to cancel an RFQ"));
 		rfq.status = CANCELLED;
+		statusChanged(me, rfq, "Cancelled");
 		return view(rfq, me);
+	}
+
+	// ---------------------------------------------------------------- notifications (SRS §14.9)
+
+	private void tellCustomer(NotificationKind kind, Rfq rfq, String detail) {
+		notifier.send(kind, MODULE, rfq.id, rfq.number, detail,
+				Recipients.company(rfq.customerCompanyId, CUSTOMER_RFQ, CUSTOMER_KAM));
+	}
+
+	private void tellErgo(NotificationKind kind, Rfq rfq, String detail) {
+		notifier.send(kind, MODULE, rfq.id, rfq.number, detail, Recipients.ergo(ERGO_ADMIN, ERGO_RFQ));
+	}
+
+	/** Whoever did not cause the change hears about it: the customer when ERGO acted, ERGO when the customer did. */
+	private void statusChanged(CurrentUser me, Rfq rfq, String detail) {
+		if (isErgo(me)) {
+			tellCustomer(NotificationKind.RFQ_STATUS_CHANGED, rfq, detail);
+		}
+		else {
+			tellErgo(NotificationKind.RFQ_STATUS_CHANGED, rfq, detail);
+		}
 	}
 
 	// ---------------------------------------------------------------- documents (drawings etc.)
@@ -365,7 +400,15 @@ public class RfqService {
 		Rfq rfq = visible(me, id);
 		require(RfqAction.UPLOAD, me, rfq);
 		Visibility visibility = isErgo(me) ? (requested == null ? Visibility.INTERNAL : requested) : Visibility.CUSTOMER;
-		return documentView(me, rfq, documents.store(MODULE, id, fileName, content, visibility));
+		DocumentInfo stored = documents.store(MODULE, id, fileName, content, visibility);
+		// SRS §14.9 "document upload": ERGO hears about a customer's file; the customer hears about a file ERGO shares.
+		// Linked to the document itself, so delivery re-checks the file's own visibility, not just the RFQ's. Files ERGO
+		// shares with suppliers are not announced (suppliers have no RFQ screen; they see shared drawings on their quote).
+		Recipients to = !isErgo(me) ? Recipients.ergo(ERGO_ADMIN, ERGO_RFQ)
+				: visibility == Visibility.CUSTOMER || visibility == Visibility.ALL
+						? Recipients.company(rfq.customerCompanyId, CUSTOMER_RFQ, CUSTOMER_KAM) : Recipients.none();
+		notifier.send(NotificationKind.DOCUMENT_UPLOADED, "document", stored.id(), rfq.number, stored.fileName(), to);
+		return documentView(me, rfq, stored);
 	}
 
 	@Transactional(readOnly = true)

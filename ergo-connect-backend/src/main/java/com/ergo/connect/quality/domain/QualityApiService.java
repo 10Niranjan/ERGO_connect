@@ -53,6 +53,39 @@ class QualityApiService implements QualityApi {
 
 	@Override
 	@Transactional(readOnly = true)
+	public java.util.List<com.ergo.connect.common.event.OverdueItem> overdueItems(java.time.LocalDate today) {
+		java.util.List<com.ergo.connect.common.event.OverdueItem> items = new java.util.ArrayList<>();
+		for (Ncr n : ncrs.findByTargetClosureDateBeforeAndCurrentStatusNot(today, NcrStatus.CLOSED)) {
+			items.add(new com.ergo.connect.common.event.OverdueItem(com.ergo.connect.common.event.NotificationKind.OVERDUE_NCR, "ncr", n.id, n.ncrNumber,
+					"Target closure date was " + n.targetClosureDate, ncrSide(n, null), "ncr:" + n.id));
+		}
+		for (CapaAction a : capaActions.findByTargetDateBeforeAndStatusNot(today, CapaActionStatus.CLOSED)) {
+			Ncr n = a.ncrId == null ? null : ncrs.findById(a.ncrId).orElse(null);
+			if (n != null && n.currentStatus != NcrStatus.CLOSED) {
+				items.add(new com.ergo.connect.common.event.OverdueItem(com.ergo.connect.common.event.NotificationKind.OVERDUE_CAPA, "ncr", n.id,
+						n.ncrNumber, "CAPA action was due " + a.targetDate, ncrSide(n, a.ownerUserId), "capa:" + a.id));
+			}
+		}
+		return items;
+	}
+
+	/** ERGO Quality, the NCR's supplier and the named owner (NCR or CAPA action). The customer is not reminded. While
+	 * closure awaits approval only ERGO can act, so only ERGO is reminded (security review 6e M2). */
+	private static com.ergo.connect.common.event.Recipients ncrSide(Ncr n, Long actionOwner) {
+		if (n.currentStatus == NcrStatus.PENDING_CLOSURE_APPROVAL) {
+			return QualityNotices.ergo();
+		}
+		com.ergo.connect.common.event.Recipients to = QualityNotices.ergo().and(QualityNotices.supplier(n.supplierCompanyId));
+		for (Long owner : new Long[] { n.ownerUserId, actionOwner }) {
+			if (owner != null) {
+				to = to.and(com.ergo.connect.common.event.Recipients.users(java.util.Set.of(owner)));
+			}
+		}
+		return to;
+	}
+
+	@Override
+	@Transactional(readOnly = true)
 	public java.util.Optional<com.ergo.connect.common.record.RecordParties> inspectionPartiesVisibleToCaller(long inspectionId) {
 		return inspections.findById(inspectionId)
 			.flatMap(i -> parties(i.linkedModule, i.customerCompanyId, i.supplierCompanyId, i.customerVisible, true));

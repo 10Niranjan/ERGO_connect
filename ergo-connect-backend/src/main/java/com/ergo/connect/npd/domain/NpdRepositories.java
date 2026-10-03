@@ -35,6 +35,9 @@ interface NpdActivityRepository extends Repository<NpdActivity, Long> {
 
 	List<NpdActivity> findByNpdProjectIdOrderById(Long npdProjectId);
 
+	/** The overdue scan: planned for before {@code date} and not done (blocked work is still late). */
+	List<NpdActivity> findByPlannedDateBeforeAndStatusNot(java.time.LocalDate date, ActivityStatus status);
+
 	/** A customer's or supplier's own activities of one project (record scope, query-based per CLAUDE.md). */
 	List<NpdActivity> findByNpdProjectIdAndOwnerOrganizationTypeAndOwnerCompanyIdOrderById(Long npdProjectId,
 			CompanyType ownerOrganizationType, Long ownerCompanyId);

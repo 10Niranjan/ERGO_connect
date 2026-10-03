@@ -35,6 +35,10 @@ public interface NpdApi {
 	 * otherwise. Used by the communication module (ARCHITECTURE.md §8, Phase 6c). */
 	Optional<com.ergo.connect.common.record.RecordParties> partiesVisibleToCaller(long npdProjectId);
 
+	/** Activities past their planned date and not done, for the daily reminder scan (no caller scope: the scan runs
+	 * without a user, and delivery re-checks every recipient). */
+	java.util.List<com.ergo.connect.common.event.OverdueItem> overdueItems(java.time.LocalDate today);
+
 	record ProjectRef(long id, long customerCompanyId, long supplierCompanyId) {
 	}
 

@@ -15,6 +15,9 @@ interface InvitationRepository extends Repository<Invitation, Long> {
 
 	List<Invitation> findByRfqIdOrderById(Long rfqId);
 
+	/** The overdue scan: response date passed and the supplier can still quote. */
+	List<Invitation> findByResponseDueDateBeforeAndStatusIn(java.time.LocalDate date, java.util.Collection<QuoteStatus> statuses);
+
 	List<Invitation> findBySupplierCompanyIdOrderByIdDesc(Long supplierCompanyId);
 
 }

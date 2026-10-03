@@ -31,6 +31,12 @@ class NpdApiService implements NpdApi {
 
 	@Override
 	@Transactional(readOnly = true)
+	public java.util.List<com.ergo.connect.common.event.OverdueItem> overdueItems(java.time.LocalDate today) {
+		return npdService.overdue(today);
+	}
+
+	@Override
+	@Transactional(readOnly = true)
 	public Optional<com.ergo.connect.common.record.RecordParties> partiesVisibleToCaller(long npdProjectId) {
 		if (!npdService.inScope(CurrentUser.get(), npdProjectId)) {
 			return Optional.empty();

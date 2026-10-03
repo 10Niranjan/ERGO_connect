@@ -32,6 +32,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.ergo.connect.common.audit.AuditLogService;
+import com.ergo.connect.common.event.NotificationKind;
+import com.ergo.connect.common.event.Notifier;
+import com.ergo.connect.common.event.Recipients;
 import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
@@ -126,8 +129,11 @@ public class InspectionService {
 
 	private final OfpApi ofpApi;
 
+	private final Notifier notifier;
+
 	InspectionService(InspectionRepository inspections, InspectionDefectRepository defects, Directory directory,
-			AuditLogService audit, NpdApi npdApi, OfpApi ofpApi) {
+			AuditLogService audit, NpdApi npdApi, OfpApi ofpApi, Notifier notifier) {
+		this.notifier = notifier;
 		this.inspections = inspections;
 		this.defects = defects;
 		this.directory = directory;
@@ -397,6 +403,7 @@ public class InspectionService {
 		require(InspectionAction.PASS, me, i);
 		reasonIfGiven(form.reason());
 		i.resultStatus = ResultStatus.PASSED;
+		told(i, "Passed");
 		return view(me, i);
 	}
 
@@ -407,6 +414,7 @@ public class InspectionService {
 		require(InspectionAction.REJECT, me, i);
 		audit.reason(required(form.reason(), "A reason is required to reject an inspection"));
 		i.resultStatus = ResultStatus.REJECTED;
+		told(i, "Rejected");
 		return view(me, i);
 	}
 
@@ -418,6 +426,7 @@ public class InspectionService {
 		require(InspectionAction.RELEASE_WITH_DEVIATION, me, i);
 		audit.reason(required(form.reason(), "A reason is required to release an inspection with deviation"));
 		i.resultStatus = ResultStatus.RELEASED_WITH_DEVIATION;
+		told(i, "Released with deviation");
 		return view(me, i);
 	}
 
@@ -430,6 +439,7 @@ public class InspectionService {
 		require(InspectionAction.CLOSE, me, i);
 		reasonIfGiven(form.reason());
 		i.resultStatus = ResultStatus.CLOSED;
+		told(i, "Closed");
 		return view(me, i);
 	}
 
@@ -440,7 +450,15 @@ public class InspectionService {
 		require(InspectionAction.REOPEN, me, i);
 		audit.reason(required(form.reason(), "A reason is required to reopen an inspection"));
 		i.resultStatus = ResultStatus.OPEN;
+		told(i, "Reopened");
 		return view(me, i);
+	}
+
+	/** SRS §14.9: the result of an inspection, to everyone on it - never the reason (a rejection's reason may be
+	 * ERGO-internal). The customer is dropped at delivery unless the inspection is customer-visible. */
+	private void told(Inspection i, String detail) {
+		notifier.send(NotificationKind.INSPECTION_UPDATED, "inspection", i.id, "Inspection #" + i.id, detail,
+				QualityNotices.everyone(i.customerCompanyId, i.supplierCompanyId));
 	}
 
 	// ---------------------------------------------------------------- rules

@@ -20,6 +20,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.ergo.connect.common.audit.AuditLogService;
+import com.ergo.connect.common.event.NotificationKind;
+import com.ergo.connect.common.event.Notifier;
+import com.ergo.connect.common.event.Recipients;
 import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.common.record.RecordParties;
 import com.ergo.connect.common.security.CompanyType;
@@ -41,11 +44,6 @@ import com.ergo.connect.documents.api.DocumentStore.Visibility;
 import com.ergo.connect.masterdata.api.Directory;
 import com.ergo.connect.masterdata.api.Directory.CompanyRef;
 import com.ergo.connect.masterdata.api.Directory.UserRef;
-import com.ergo.connect.npd.api.NpdApi;
-import com.ergo.connect.ofp.api.OfpApi;
-import com.ergo.connect.quality.api.QualityApi;
-import com.ergo.connect.quotation.api.QuotationApi;
-import com.ergo.connect.rfq.api.RfqApi;
 
 /**
  * Threaded per-record comments (SRS §10.10, §12.12.1, §13.7.3), Phase 6c. This module owns none of the records
@@ -121,15 +119,7 @@ public class CommentService {
 
 	private final CommentRepository comments;
 
-	private final RfqApi rfqApi;
-
-	private final QuotationApi quotationApi;
-
-	private final NpdApi npdApi;
-
-	private final OfpApi ofpApi;
-
-	private final QualityApi qualityApi;
+	private final RecordScope scope;
 
 	private final Directory directory;
 
@@ -137,14 +127,13 @@ public class CommentService {
 
 	private final AuditLogService audit;
 
-	CommentService(CommentRepository comments, RfqApi rfqApi, QuotationApi quotationApi, NpdApi npdApi, OfpApi ofpApi,
-			QualityApi qualityApi, Directory directory, DocumentStore documents, AuditLogService audit) {
+	private final Notifier notifier;
+
+	CommentService(CommentRepository comments, RecordScope scope, Directory directory, DocumentStore documents,
+			AuditLogService audit, Notifier notifier) {
+		this.notifier = notifier;
 		this.comments = comments;
-		this.rfqApi = rfqApi;
-		this.quotationApi = quotationApi;
-		this.npdApi = npdApi;
-		this.ofpApi = ofpApi;
-		this.qualityApi = qualityApi;
+		this.scope = scope;
 		this.directory = directory;
 		this.documents = documents;
 		this.audit = audit;
@@ -273,6 +262,7 @@ public class CommentService {
 		c.mentionedUserIds = mentions(me, type, parties, target, form.linkedRecordId(), c.audienceCompanyId,
 				form.mentionedUserIds());
 		comments.save(c);
+		notifyAfterCreate(me, target, c, parent);
 		if (!c.mentionedUserIds.isEmpty()) {
 			audit.record("communication", "Comment", c.id, "UPDATE", "mentions", null, mentionList(c.mentionedUserIds));
 		}
@@ -292,6 +282,9 @@ public class CommentService {
 		Set<Long> mentions = mentions(me, c.commentType, l.parties, Target.of(c.linkedModule), c.linkedRecordId,
 				c.audienceCompanyId, form.mentionedUserIds());
 		if (!mentions.equals(c.mentionedUserIds)) {
+			Set<Long> added = new HashSet<>(mentions);
+			added.removeAll(c.mentionedUserIds);
+			notifyMentioned(Target.of(c.linkedModule), c, added);
 			// the entity listener skips collections (AuditEntityListener), so mention changes are audited explicitly (M1)
 			audit.record("communication", "Comment", c.id, "UPDATE", "mentions", mentionList(c.mentionedUserIds),
 					mentionList(mentions));
@@ -341,6 +334,8 @@ public class CommentService {
 		c.escalatedFlag = true;
 		c.escalatedAt = Instant.now();
 		c.escalatedByUserId = me.userId();
+		notifier.send(NotificationKind.THREAD_ESCALATED, c.linkedModule, c.linkedRecordId,
+				recordLabel(Target.of(c.linkedModule), c.linkedRecordId), null, Recipients.users(Set.of(c.createdByUserId)));
 		return views(me, List.of(c), x -> l.parties).get(0);
 	}
 
@@ -401,15 +396,7 @@ public class CommentService {
 	// ---------------------------------------------------------------- record scope and audience
 
 	private Optional<RecordParties> parties(Target target, long id) {
-		return switch (target) {
-			case RFQ -> rfqApi.partiesVisibleToCaller(id);
-			case QUOTATION -> quotationApi.partiesVisibleToCaller(id);
-			case NPD -> npdApi.partiesVisibleToCaller(id);
-			case OFP -> ofpApi.orderPartiesVisibleToCaller(id);
-			case INSPECTION -> qualityApi.inspectionPartiesVisibleToCaller(id);
-			case NCR -> qualityApi.ncrPartiesVisibleToCaller(id);
-			case DEVIATION -> qualityApi.deviationPartiesVisibleToCaller(id);
-		};
+		return scope.parties(target.key, id);
 	}
 
 	/** Layer 2: the comment's audience. ERGO reads every type (within the record scope the facade already applied);
@@ -594,6 +581,37 @@ public class CommentService {
 			case SUPPLIER -> d.visibility() == Visibility.SUPPLIER || d.visibility() == Visibility.ALL;
 			case ERGO -> true;
 		};
+	}
+
+	/** SRS §14.9 "comment mention" (plus replies): never the comment text, only that it happened on this record.
+	 * Recipients are re-checked against the record at delivery, so a stale mention notifies nobody. */
+	private void notifyAfterCreate(CurrentUser me, Target target, Comment c, Comment parent) {
+		String label = recordLabel(target, c.linkedRecordId);
+		if (parent != null && !parent.createdByUserId.equals(me.userId())) {
+			notifier.send(NotificationKind.COMMENT_REPLY, target.key, c.linkedRecordId, label, null,
+					Recipients.users(Set.of(parent.createdByUserId)));
+		}
+		notifyMentioned(target, c, c.mentionedUserIds);
+	}
+
+	private void notifyMentioned(Target target, Comment c, Set<Long> mentioned) {
+		if (!mentioned.isEmpty()) {
+			notifier.send(NotificationKind.MENTIONED, target.key, c.linkedRecordId,
+					recordLabel(target, c.linkedRecordId), null, Recipients.users(mentioned));
+		}
+	}
+
+	private static String recordLabel(Target target, long id) {
+		String kind = switch (target) {
+			case RFQ -> "RFQ";
+			case QUOTATION -> "Supplier quote";
+			case NPD -> "NPD project";
+			case OFP -> "Order";
+			case INSPECTION -> "Inspection";
+			case NCR -> "NCR";
+			case DEVIATION -> "Deviation";
+		};
+		return kind + " #" + id;
 	}
 
 	private static String mentionList(Collection<Long> ids) {

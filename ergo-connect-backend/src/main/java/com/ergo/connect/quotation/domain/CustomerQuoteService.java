@@ -21,6 +21,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.ergo.connect.common.audit.AuditLogService;
+import com.ergo.connect.common.event.NotificationKind;
+import com.ergo.connect.common.event.Notifier;
+import com.ergo.connect.common.event.Recipients;
 import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
@@ -86,9 +89,12 @@ public class CustomerQuoteService {
 
 	private final JsonMapper json;
 
+	private final Notifier notifier;
+
 	CustomerQuoteService(CustomerQuoteRepository customerQuotes, InvitationRepository invitations,
 			SupplierQuoteRepository quotes, QuoteReader reader, RfqApi rfqs, Directory directory,
-			MasterDataApi masterData, AuditLogService audit, JsonMapper json) {
+			MasterDataApi masterData, AuditLogService audit, JsonMapper json, Notifier notifier) {
+		this.notifier = notifier;
 		this.customerQuotes = customerQuotes;
 		this.invitations = invitations;
 		this.quotes = quotes;
@@ -187,6 +193,8 @@ public class CustomerQuoteService {
 		sent.customerView = json.writeValueAsString(content);
 		rfqs.sentToCustomer(rfqId); // 409 unless the RFQ is ready for a quote to the customer
 		customerQuotes.save(sent);
+		notifier.send(NotificationKind.CUSTOMER_QUOTE_SENT, "rfq", rfqId, rfq.number(), null,
+				Recipients.company(rfq.customerCompanyId(), CUSTOMER_RESPONDERS.toArray(Role[]::new)));
 		return list(rfqId);
 	}
 
@@ -197,7 +205,7 @@ public class CustomerQuoteService {
 			.filter(q -> me.companyType() == CompanyType.CUSTOMER && q.customerCompanyId == me.companyId()
 					&& CUSTOMER_RESPONDERS.contains(me.role()))
 			.orElseThrow(() -> ApiException.notFound("Quote"));
-		rfqs.forCustomer(quote.rfqId); // the RFQ's own customer scope applies too
+		CustomerRfqRef rfqRef = rfqs.forCustomer(quote.rfqId); // the RFQ's own customer scope applies too
 		if (quote.responseStatus != ResponseStatus.WAITING) {
 			throw ApiException.conflict("This quote has already been answered");
 		}
@@ -214,6 +222,12 @@ public class CustomerQuoteService {
 		quote.responseAt = Instant.now();
 		quote.responseComment = comment;
 		rfqs.customerResponded(quote.rfqId, form.response()); // 409 when the RFQ no longer waits (e.g. closed)
+		notifier.send(NotificationKind.CUSTOMER_QUOTE_RESPONDED, "rfq", quote.rfqId, rfqRef.number(),
+				switch (form.response()) {
+					case APPROVED -> "Approved";
+					case REVISION_REQUESTED -> "Revision requested";
+					case DECLINED -> "Declined";
+				}, Recipients.ergo(Role.ERGO_ADMIN, Role.ERGO_RFQ));
 		return list(quote.rfqId);
 	}
 

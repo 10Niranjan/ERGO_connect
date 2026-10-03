@@ -16,6 +16,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.ergo.connect.common.audit.AuditLogService;
+import com.ergo.connect.common.event.NotificationKind;
+import com.ergo.connect.common.event.Notifier;
+import com.ergo.connect.common.event.Recipients;
 import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
@@ -114,11 +117,14 @@ public class DocumentService {
 	public record DocumentFile(String fileName, String contentType, byte[] content) {
 	}
 
+	private final Notifier notifier;
+
 	DocumentService(DocumentRepository documents, DocumentCategoryRepository categories,
 			DocumentLinkRepository links, DocumentStorage storage, DocumentStore documentStore, RfqApi rfqApi,
 			QuotationApi quotationApi, OfpApi ofpApi, QualityApi qualityApi, CommunicationApi communicationApi,
 			Directory directory,
-			AuditLogService audit) {
+			AuditLogService audit, Notifier notifier) {
+		this.notifier = notifier;
 		this.documents = documents;
 		this.categories = categories;
 		this.links = links;
@@ -328,6 +334,7 @@ public class DocumentService {
 		reasonIfGiven(form.reason());
 		d.approvalStatus = ApprovalStatus.APPROVED;
 		d.lockStatus = LockStatus.LOCKED;
+		decided(d, "Approved");
 		return detail(me, d);
 	}
 
@@ -343,10 +350,26 @@ public class DocumentService {
 		}
 		audit.reason(required(form.reason(), "A reason is required to reject a document"));
 		d.approvalStatus = ApprovalStatus.REJECTED;
+		decided(d, "Rejected");
 		return detail(me, d);
 	}
 
+	/** SRS §14.9 approval granted / rejected: the person who uploaded it. The reason is not sent (it is for the audit
+	 * trail and the Detail screen); delivery re-checks that they can still open the document. */
+	private void decided(Document d, String outcome) {
+		notifier.send(NotificationKind.DOCUMENT_DECIDED, "document", d.id, d.fileName, outcome,
+				Recipients.users(java.util.Set.of(d.uploadedByUserId)));
+	}
+
 	// ---------------------------------------------------------------- record scope (SRS §8.2)
+
+	/** Non-throwing half of {@link #visibleOrThrow}, for {@code DocumentsApiService} (a thrown ApiException marks the
+	 * surrounding transaction rollback-only even if the caller catches it). */
+	boolean visibleToCaller(long id) {
+		CurrentUser me = CurrentUser.get();
+		Document d = documents.findById(id).orElse(null);
+		return d != null && documentVisible(me, d) && recordVisible(d);
+	}
 
 	private Document visibleOrThrow(CurrentUser me, long id) {
 		Document d = documents.findById(id).orElseThrow(() -> ApiException.notFound("Document"));

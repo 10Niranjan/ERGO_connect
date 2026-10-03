@@ -39,6 +39,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.ergo.connect.common.audit.AuditLogService;
+import com.ergo.connect.common.event.NotificationKind;
+import com.ergo.connect.common.event.Notifier;
+import com.ergo.connect.common.event.Recipients;
 import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
@@ -132,9 +135,12 @@ public class QuoteService {
 
 	private final CustomerQuoteRepository customerQuotes;
 
+	private final Notifier notifier;
+
 	QuoteService(InvitationRepository invitations, SupplierQuoteRepository quotes, RfqApi rfqs, Directory directory,
 			MasterDataApi masterData, DocumentStore documents, AuditLogService audit, JdbcTemplate jdbc,
-			JsonMapper json, QuoteReader reader, CustomerQuoteRepository customerQuotes) {
+			JsonMapper json, QuoteReader reader, CustomerQuoteRepository customerQuotes, Notifier notifier) {
+		this.notifier = notifier;
 		this.invitations = invitations;
 		this.quotes = quotes;
 		this.rfqs = rfqs;
@@ -199,6 +205,8 @@ public class QuoteService {
 			invitation.responseDueDate = responseDueDate;
 			invitation.status = NOT_STARTED;
 			invitations.save(invitation);
+			notifier.send(NotificationKind.QUOTE_REQUESTED, "quotation", invitation.id, rfq.number(),
+					responseDueDate == null ? null : "Respond by " + responseDueDate, supplierSide(invitation));
 		}
 		rfqs.sentToSuppliers(rfqId);
 		progress(rfqId);
@@ -280,6 +288,7 @@ public class QuoteService {
 		audit.record(Invitation.class, invitation.id, "QUOTE_SUBMITTED", "version", null,
 				String.valueOf(quote.currentVersion));
 		progress(invitation.rfqId);
+		tellErgo(NotificationKind.QUOTE_SUBMITTED, invitation, resubmission ? "Revised quote" : null);
 		return view(me, invitation);
 	}
 
@@ -293,6 +302,7 @@ public class QuoteService {
 		invitation.status = REGRETTED;
 		invitation.quoteEditOpen = false;
 		progress(invitation.rfqId);
+		tellErgo(NotificationKind.QUOTE_REGRETTED, invitation, null);
 		return view(me, invitation);
 	}
 
@@ -305,6 +315,7 @@ public class QuoteService {
 		audit.reason(invitation.clarificationQuestion);
 		invitation.statusBeforeClarification = invitation.status;
 		invitation.status = CLARIFICATION_REQUESTED;
+		tellErgo(NotificationKind.QUOTE_CLARIFICATION_REQUESTED, invitation, null);
 		return view(me, invitation);
 	}
 
@@ -319,6 +330,8 @@ public class QuoteService {
 		invitation.status = invitation.statusBeforeClarification == null ? NOT_STARTED
 				: invitation.statusBeforeClarification;
 		invitation.statusBeforeClarification = null;
+		notifier.send(NotificationKind.QUOTE_CLARIFICATION_ANSWERED, "quotation", invitation.id, quoteLabel(invitation), null,
+				supplierSide(invitation));
 		return view(me, invitation);
 	}
 
@@ -336,6 +349,8 @@ public class QuoteService {
 		invitation.status = REOPENED;
 		invitation.quoteEditOpen = true;
 		progress(invitation.rfqId);
+		notifier.send(NotificationKind.QUOTE_REOPENED, "quotation", invitation.id, quoteLabel(invitation), null,
+				supplierSide(invitation));
 		return view(me, invitation);
 	}
 
@@ -420,6 +435,8 @@ public class QuoteService {
 		CurrentUser me = CurrentUser.get();
 		Invitation invitation = visible(me, id);
 		require(QuoteAction.UPLOAD, me, invitation);
+		// No notification: a supplier's file stays a private draft until its quote is submitted (QuoteService.canSee,
+		// security review 6e H1) - QUOTE_SUBMITTED tells ERGO then. ERGO's own files here are internal.
 		return documentView(me, "QUOTE",
 				documents.store(MODULE, invitation.id, fileName, content, Visibility.INTERNAL), true);
 	}
@@ -452,6 +469,33 @@ public class QuoteService {
 			throw ApiException.conflict("This file can no longer be removed");
 		}
 		documents.delete(document);
+	}
+
+	// ---------------------------------------------------------------- notifications (SRS §14.9)
+
+	/** The daily reminder scan: invitations past their response date whose supplier can still quote and whose RFQ is
+	 * still open for quotes. The supplier and ERGO's RFQ team are reminded; the customer never is. */
+	List<com.ergo.connect.common.event.OverdueItem> overdue(LocalDate today) {
+		return invitations.findByResponseDueDateBeforeAndStatusIn(today, QuoteStatus.EDITABLE).stream()
+			.filter(i -> rfqs.forSupplier(i.rfqId).quotingOpen())
+			.map(i -> new com.ergo.connect.common.event.OverdueItem(NotificationKind.OVERDUE_QUOTE, "quotation", i.id, quoteLabel(i),
+					"Response was due " + i.responseDueDate,
+					supplierSide(i).and(Recipients.ergo(Role.ERGO_ADMIN, Role.ERGO_RFQ)), "quote:" + i.id))
+			.toList();
+	}
+
+	/** The RFQ's number, which the supplier already sees on its own quote; never the customer. */
+	private String quoteLabel(Invitation invitation) {
+		return rfqs.forSupplier(invitation.rfqId).number();
+	}
+
+	private void tellErgo(NotificationKind kind, Invitation invitation, String detail) {
+		notifier.send(kind, "quotation", invitation.id, quoteLabel(invitation), detail,
+				Recipients.ergo(Role.ERGO_ADMIN, Role.ERGO_RFQ));
+	}
+
+	private Recipients supplierSide(Invitation invitation) {
+		return Recipients.company(invitation.supplierCompanyId, Role.SUPPLIER_RFQ, Role.SUPPLIER_KAM);
 	}
 
 	// ---------------------------------------------------------------- rules

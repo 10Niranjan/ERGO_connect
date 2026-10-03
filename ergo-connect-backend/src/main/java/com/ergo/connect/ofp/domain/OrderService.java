@@ -31,6 +31,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.ergo.connect.common.audit.AuditLogService;
 import com.ergo.connect.common.audit.AuditLogService.AuditEntry;
+import com.ergo.connect.common.event.NotificationKind;
+import com.ergo.connect.common.event.Notifier;
+import com.ergo.connect.common.event.Recipients;
 import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
@@ -139,10 +142,14 @@ public class OrderService {
 	@PersistenceContext
 	private EntityManager entityManager;
 
+	private final Notifier notifier;
+
 	OrderService(OrderRepository orders, OrderMaterialStatusRepository materialStatuses,
 			OrderProductionProgressRepository productionProgress, OrderPackagingDispatchRepository packagingDispatches,
 			ShipmentRepository shipments, NpdApi npdApi, QualityApi qualityApi, Directory directory,
-			MasterDataApi masterData, DocumentStore documents, AuditLogService audit, JdbcTemplate jdbc) {
+			MasterDataApi masterData, DocumentStore documents, AuditLogService audit, JdbcTemplate jdbc,
+			Notifier notifier) {
+		this.notifier = notifier;
 		this.orders = orders;
 		this.materialStatuses = materialStatuses;
 		this.productionProgress = productionProgress;
@@ -271,6 +278,7 @@ public class OrderService {
 		require(OrderAction.ADVANCE, me, order);
 		reasonIfGiven(comment);
 		order.currentStatus = OrderStatus.SEQUENCE.get(OrderStatus.SEQUENCE.indexOf(order.currentStatus) + 1);
+		statusChanged(order, "Now " + pretty(order.currentStatus));
 		return view(me, order);
 	}
 
@@ -281,6 +289,7 @@ public class OrderService {
 		require(OrderAction.HOLD, me, order);
 		audit.reason(required(reason, "A reason is required to put an order on hold"));
 		order.currentStatus = OrderStatus.ON_HOLD;
+		statusChanged(order, "On hold");
 		return view(me, order);
 	}
 
@@ -300,6 +309,7 @@ public class OrderService {
 		}
 		reasonIfGiven(comment);
 		order.currentStatus = previous;
+		statusChanged(order, "Released from hold: " + pretty(previous));
 		return view(me, order);
 	}
 
@@ -381,6 +391,7 @@ public class OrderService {
 		order.currentStatus = OrderStatus.DISPATCHED;
 		// L5 fix (ARCHITECTURE.md §8 2026-09-29): actualDispatchDate was never set anywhere before this.
 		order.actualDispatchDate = LocalDate.now();
+		notifier.send(NotificationKind.DISPATCH_RECORDED, "ofp", order.id, order.orderNumber, null, ergoAndCustomer(order));
 		return view(me, order);
 	}
 
@@ -394,6 +405,7 @@ public class OrderService {
 		require(OrderAction.MARK_IN_TRANSIT, me, order);
 		reasonIfGiven(comment);
 		order.currentStatus = OrderStatus.IN_TRANSIT;
+		statusChanged(order, "In transit");
 		return view(me, order);
 	}
 
@@ -411,6 +423,7 @@ public class OrderService {
 		}
 		reasonIfGiven(comment);
 		order.currentStatus = OrderStatus.DELIVERED;
+		notifier.send(NotificationKind.DELIVERY_CONFIRMED, "ofp", order.id, order.orderNumber, null, ergoAndCustomer(order));
 		return view(me, order);
 	}
 
@@ -428,6 +441,7 @@ public class OrderService {
 		require(OrderAction.CLOSE_ORDER, me, order);
 		reasonIfGiven(comment);
 		order.currentStatus = OrderStatus.CLOSED;
+		statusChanged(order, "Closed");
 		return view(me, order);
 	}
 
@@ -524,6 +538,9 @@ public class OrderService {
 		require(OrderAction.UPDATE_SHIPMENT, me, order);
 		DocumentInfo info = documents.store(POD_MODULE, shipment.id, fileName, content, Visibility.CUSTOMER);
 		shipment.podDocumentId = info.id();
+		// The POD file is ERGO-only (client decision, ARCHITECTURE.md §8 2026-09-29): only ERGO colleagues are told.
+		notifier.send(NotificationKind.DOCUMENT_UPLOADED, "document", info.id(), order.orderNumber, "Proof of delivery",
+				Recipients.ergo(Role.ERGO_ADMIN, Role.ERGO_OFP));
 		return view(me, order);
 	}
 
@@ -655,6 +672,25 @@ public class OrderService {
 		dispatch.dispatchDate = form.dispatchDate();
 		dispatch.dispatchRemarks = text(form.dispatchRemarks());
 		dispatch.updatedByUserId = me.userId();
+	}
+
+	// ---------------------------------------------------------------- notifications (SRS §14.9)
+
+	private static Recipients ergoAndCustomer(Order order) {
+		return Recipients.ergo(Role.ERGO_ADMIN, Role.ERGO_OFP)
+			.and(Recipients.company(order.customerCompanyId, Role.CUSTOMER_OFP));
+	}
+
+	/** Everyone on the order: ERGO OFP, the customer's OFP users and the supplier's staff. The detail is the new status
+	 * only - never the reason an order was put on hold. */
+	private void statusChanged(Order order, String detail) {
+		notifier.send(NotificationKind.ORDER_STATUS_CHANGED, "ofp", order.id, order.orderNumber, detail,
+				ergoAndCustomer(order).and(Recipients.company(order.supplierCompanyId, SUPPLIER_EDITORS.toArray(Role[]::new))));
+	}
+
+	private static String pretty(OrderStatus status) {
+		String text = status.name().toLowerCase().replace('_', ' ');
+		return Character.toUpperCase(text.charAt(0)) + text.substring(1);
 	}
 
 	// ---------------------------------------------------------------- rules
