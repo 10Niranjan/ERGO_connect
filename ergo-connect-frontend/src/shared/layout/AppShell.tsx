@@ -35,6 +35,7 @@ import {
 } from '../../auth/access'
 import { useLogoutMutation, useSwitchRoleMutation } from '../../auth/authApi'
 import type { Role } from '../../auth/authSlice'
+import { NotificationsBell } from '../../features/notifications/NotificationsBell'
 
 // Menu entries per active role (SRS 12.15). Modules add their entries as they are built.
 const NAV: { label: string; to: string; roles?: Role[] }[] = [
@@ -121,6 +122,7 @@ export function AppShell() {
           ) : (
             <Chip label={roleName} sx={{ color: 'inherit', borderColor: 'rgba(255,255,255,0.5)' }} variant="outlined" />
           )}
+          <NotificationsBell />
           <IconButton aria-label="Account menu" onClick={(event) => setMenuAnchor(event.currentTarget)}>
             <Avatar sx={{ width: 32, height: 32, fontSize: 14 }}>{initials}</Avatar>
           </IconButton>
