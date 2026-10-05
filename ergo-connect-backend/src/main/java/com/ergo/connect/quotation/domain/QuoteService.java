@@ -471,6 +471,15 @@ public class QuoteService {
 		documents.delete(document);
 	}
 
+	/** Dashboard "Quotes pending submission" widget (ARCHITECTURE.md §8, 2026-10-05 Phase 7c security review L2):
+	 * same {@code quotingOpen} filter {@link #overdue} already uses, so an invitation on a cancelled/closed RFQ
+	 * doesn't inflate the count forever. */
+	int pendingSubmissionCount() {
+		return (int) invitations.findByStatusIn(QuoteStatus.EDITABLE).stream()
+			.filter(i -> rfqs.forSupplier(i.rfqId).quotingOpen())
+			.count();
+	}
+
 	// ---------------------------------------------------------------- notifications (SRS §14.9)
 
 	/** The daily reminder scan: invitations past their response date whose supplier can still quote and whose RFQ is

@@ -159,6 +159,15 @@ public class NpdService {
 
 	// ---------------------------------------------------------------- conversion queue
 
+	/** Dashboard "Approved projects ready for NPD conversion" widget (ARCHITECTURE.md §8, 2026-10-05 Phase 7c
+	 * security review L2): {@code RfqApi.customerApproved()} alone double-counts RFQs that are CUSTOMER_APPROVED
+	 * but already converted (that status never changes on conversion, SRS §8 2026-09-29) - same unconverted filter
+	 * {@link #conversionQueue} itself uses. */
+	@Transactional(readOnly = true)
+	public int unconvertedApprovedRfqCount() {
+		return (int) rfqApi.customerApproved().stream().filter(r -> !projects.existsBySourceRfqId(r.id())).count();
+	}
+
 	@Transactional(readOnly = true)
 	public List<ConversionQueueRow> conversionQueue() {
 		CurrentUser me = CurrentUser.get();

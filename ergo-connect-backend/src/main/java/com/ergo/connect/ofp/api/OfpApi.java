@@ -1,6 +1,10 @@
 package com.ergo.connect.ofp.api;
 
+import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
+
+import com.ergo.connect.common.record.Awaiting;
 
 /**
  * What other modules may ask of the OFP module. New for Quality's security review M5 (ARCHITECTURE.md §8): a
@@ -42,5 +46,31 @@ public interface OfpApi {
 	 * 6a security review H4 fix).
 	 */
 	void podDocumentReplaced(long shipmentId, long newDocumentId);
+
+	/**
+	 * SRS §12.5.1/§12.5.2 dashboards: the caller's own in-scope, still-open (not CLOSED) orders - same scope as
+	 * {@code OrderService.list()} (ERGO's full-viewer/KAM/NPD roles, the supplier's own company, or the customer's
+	 * own company). {@code customerName}/{@code supplierName} are null for a customer/supplier caller (never
+	 * reveal the other party - two-way anonymity, same as {@code OrderService.list()}). {@code atRisk}/
+	 * {@link Awaiting} are this module's own judgment call (ARCHITECTURE.md §8, 2026-10-05): the SRS gives no
+	 * formula for either - {@code atRisk} = committed dispatch date passed and not yet dispatched.
+	 */
+	record OrderDashboardItem(long id, String orderNumber, String customerName, String supplierName, String status,
+			Awaiting awaiting, LocalDate committedDispatchDate, boolean atRisk) {
+	}
+
+	List<OrderDashboardItem> dashboardItems();
+
+	/**
+	 * ERGO Management's "Supplier performance summary" widget (§12.5.1, built as a simple metric per
+	 * ARCHITECTURE.md §8 2026-10-05): per supplier, how many of its orders are currently open and, of every order
+	 * ever dispatched, how many went out on or before the committed date. Empty for any caller without unrestricted
+	 * order visibility (never exposes one supplier's numbers to another, or to a customer/supplier at all).
+	 */
+	record SupplierPerformance(long supplierCompanyId, String supplierName, int openOrderCount,
+			int dispatchedOrderCount, int onTimeDispatchedCount) {
+	}
+
+	List<SupplierPerformance> supplierPerformance();
 
 }

@@ -1,5 +1,14 @@
 package com.ergo.connect.rfq.domain;
 
+import static com.ergo.connect.common.security.Role.CUSTOMER_KAM;
+import static com.ergo.connect.common.security.Role.CUSTOMER_MANAGEMENT;
+import static com.ergo.connect.common.security.Role.CUSTOMER_RFQ;
+import static com.ergo.connect.common.security.Role.ERGO_ADMIN;
+import static com.ergo.connect.common.security.Role.ERGO_KAM;
+import static com.ergo.connect.common.security.Role.ERGO_MANAGEMENT;
+import static com.ergo.connect.common.security.Role.ERGO_RFQ;
+import static com.ergo.connect.rfq.domain.RfqStatus.CANCELLED;
+import static com.ergo.connect.rfq.domain.RfqStatus.CLOSED;
 import static com.ergo.connect.rfq.domain.RfqStatus.CUSTOMER_APPROVED;
 import static com.ergo.connect.rfq.domain.RfqStatus.CUSTOMER_DECLINED;
 import static com.ergo.connect.rfq.domain.RfqStatus.CUSTOMER_REVISION_REQUESTED;
@@ -10,6 +19,7 @@ import static com.ergo.connect.rfq.domain.RfqStatus.SENT_TO_SUPPLIERS;
 import static com.ergo.connect.rfq.domain.RfqStatus.UNDER_COMPARISON;
 import static com.ergo.connect.rfq.domain.RfqStatus.VALIDATED;
 
+import java.time.LocalDate;
 import java.util.Collection;
 import java.util.EnumSet;
 import java.util.List;
@@ -23,12 +33,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.ergo.connect.common.exception.ApiException;
+import com.ergo.connect.common.record.Awaiting;
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
 import com.ergo.connect.documents.api.DocumentStore;
 import com.ergo.connect.documents.api.DocumentStore.DocumentInfo;
 import com.ergo.connect.documents.api.DocumentStore.Visibility;
 import com.ergo.connect.masterdata.api.Directory;
+import com.ergo.connect.masterdata.api.Directory.CompanyRef;
 import com.ergo.connect.masterdata.api.MasterDataApi;
 import com.ergo.connect.masterdata.api.MasterDataApi.Named;
 import com.ergo.connect.masterdata.api.MasterDataApi.Ref;
@@ -235,6 +247,55 @@ class RfqApiService implements RfqApi {
 			.map(r -> new ApprovedRfq(r.id, r.number, r.customerCompanyId, r.partNumber, r.revision, r.description,
 					r.updatedAt))
 			.toList();
+	}
+
+	/** CUSTOMER_APPROVED is excluded: {@link #customerApproved} already counts it separately. */
+	private static final Set<RfqStatus> DASHBOARD_EXCLUDED = EnumSet.of(CLOSED, CANCELLED, CUSTOMER_DECLINED,
+			CUSTOMER_APPROVED);
+
+	@Override
+	@Transactional(readOnly = true)
+	public List<RfqDashboardItem> dashboardItems() {
+		CurrentUser me = CurrentUser.get();
+		List<Rfq> visible = switch (me.role()) {
+			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_RFQ -> rfqs.findAllByOrderByIdDesc();
+			case ERGO_KAM -> {
+				Set<Long> accounts = directory.accountsOf(me.userId());
+				yield accounts.isEmpty() ? List.of() : rfqs.findByCustomerCompanyIdInOrderByIdDesc(accounts);
+			}
+			case CUSTOMER_RFQ, CUSTOMER_KAM, CUSTOMER_MANAGEMENT ->
+				rfqs.findByCustomerCompanyIdOrderByIdDesc(me.companyId());
+			default -> List.of(); // suppliers (no invitation data here) and ERGO_NPD (dashboard-relevant RFQs are
+									// CUSTOMER_APPROVED only, which DASHBOARD_EXCLUDED drops anyway)
+		};
+		boolean ergo = me.companyType() == CompanyType.ERGO;
+		List<Rfq> open = visible.stream().filter(r -> !DASHBOARD_EXCLUDED.contains(r.status)).toList();
+		Map<Long, CompanyRef> customers = ergo ? directory.companies(ids(open, r -> r.customerCompanyId)) : Map.of();
+		LocalDate today = LocalDate.now();
+		return open.stream()
+			.map(r -> new RfqDashboardItem(r.id, r.number, ergo ? companyName(customers, r.customerCompanyId) : null,
+					ergo ? r.status.name() : r.status.forCustomer().name(), ergo ? awaiting(r.status) : null,
+					r.targetQuoteDate, r.targetQuoteDate != null && r.targetQuoteDate.isBefore(today),
+					r.priority.name()))
+			.toList();
+	}
+
+	/** This module's own judgment call on whose turn it is to act (ARCHITECTURE.md §8, 2026-10-05 Phase 7c) - the
+	 * SRS does not define it. Statuses in {@link #DASHBOARD_EXCLUDED} never reach here. */
+	private static Awaiting awaiting(RfqStatus status) {
+		return switch (status) {
+			case DRAFT, SUBMITTED, UNDER_REVIEW, CLARIFICATION_REQUIRED, VALIDATED, QUOTES_COMPLETE, UNDER_COMPARISON,
+					CUSTOMER_REVISION_REQUESTED ->
+				Awaiting.ERGO;
+			case SENT_TO_SUPPLIERS, QUOTES_PARTIAL -> Awaiting.SUPPLIER;
+			case SENT_TO_CUSTOMER -> Awaiting.CUSTOMER;
+			default -> Awaiting.NONE;
+		};
+	}
+
+	private static String companyName(Map<Long, CompanyRef> names, Long id) {
+		CompanyRef ref = id == null ? null : names.get(id);
+		return ref == null ? null : ref.name();
 	}
 
 	private static Set<Long> ids(Collection<Rfq> rfqs, Function<Rfq, Long> field) {

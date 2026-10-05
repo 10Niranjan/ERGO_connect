@@ -1,6 +1,10 @@
 package com.ergo.connect.npd.api;
 
+import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
+
+import com.ergo.connect.common.record.Awaiting;
 
 /**
  * What other modules may ask of the NPD module. Phase 4a: the OFP module's "Handover to OFP" action reads an NPD
@@ -41,5 +45,27 @@ public interface NpdApi {
 
 	record ProjectRef(long id, long customerCompanyId, long supplierCompanyId) {
 	}
+
+	/**
+	 * SRS §12.5.1/§12.5.2 dashboards: the caller's own in-scope, still-open (not CLOSED) NPD projects - same scope
+	 * as {@code NpdService.list()}/{@code myProjects()} (ERGO's full-viewer/KAM roles, or the caller's own company
+	 * as customer/supplier). {@code customerName}/{@code supplierName} are null for a customer/supplier caller
+	 * (never reveal the other party). {@link Awaiting} and "delayed" are this module's own judgment call
+	 * (ARCHITECTURE.md §8, 2026-10-05): not SRS-defined fields.
+	 */
+	record NpdDashboardItem(long id, String npdNumber, String customerName, String supplierName, String stage,
+			Awaiting awaiting, LocalDate targetSampleDate, Long delayDays, String riskLevel) {
+	}
+
+	List<NpdDashboardItem> dashboardItems();
+
+	/** SRS §12.5.1 Management Dashboard "Approved projects ready for NPD conversion": {@code RfqApi.customerApproved}
+	 * already scoped per caller, minus those already converted (security review, ARCHITECTURE.md §8 2026-10-05). */
+	int unconvertedApprovedRfqCount();
+
+	/** ERGO Management's "Pending approvals" widget (§12.5.1): count of every {@code PENDING} approval across every
+	 * NPD project, for the unrestricted-view roles only (ERGO Admin/Management/RFQ/NPD) - 0 for everyone else,
+	 * including ERGO KAM, since this widget is Management-only and not part of any functional/KAM dashboard. */
+	int pendingApprovalsCount();
 
 }

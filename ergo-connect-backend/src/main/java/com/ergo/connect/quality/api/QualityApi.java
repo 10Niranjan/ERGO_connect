@@ -1,5 +1,10 @@
 package com.ergo.connect.quality.api;
 
+import java.time.LocalDate;
+import java.util.List;
+
+import com.ergo.connect.common.record.Awaiting;
+
 /**
  * What other modules may ask of the Quality module. Phase 5d: OFP's dispatch gate and NPD's Final Sample Readiness
  * stage gate both reach forward into Quality's own facade - a deliberate, accepted exception to the documented
@@ -66,5 +71,34 @@ public interface QualityApi {
 	 * Phase 6a security review H4 fix).
 	 */
 	void capaEvidenceReplaced(long capaActionId, long newDocumentId);
+
+	/**
+	 * SRS §12.5.1/§12.10.1/§12.5.2 dashboards: the caller's own in-scope, still-open (not CLOSED) NCRs - same scope
+	 * as {@code NcrService.list()}. {@code customerName}/{@code supplierName} are null for a customer/supplier
+	 * caller. {@link Awaiting} is this module's own judgment call (ARCHITECTURE.md §8, 2026-10-05): the SRS gives
+	 * no such field.
+	 */
+	record NcrDashboardItem(long id, String ncrNumber, String customerName, String supplierName, String status,
+			Awaiting awaiting, LocalDate targetClosureDate, boolean overdue) {
+	}
+
+	List<NcrDashboardItem> ncrDashboardItems();
+
+	/** Same shape as {@link #ncrDashboardItems}, for deviations (§12.10.1 "deviation approvals pending"). */
+	record DeviationDashboardItem(long id, String deviationNumber, String customerName, String supplierName,
+			String status, Awaiting awaiting, LocalDate validityEndDate) {
+	}
+
+	List<DeviationDashboardItem> deviationDashboardItems();
+
+	/**
+	 * ERGO Management's "Supplier performance summary" widget (§12.5.1, built as a simple metric per
+	 * ARCHITECTURE.md §8 2026-10-05): each supplier's current open-NCR count. Empty for any caller without
+	 * unrestricted NCR visibility (never exposes one supplier's numbers to another, or to a customer/supplier).
+	 */
+	record SupplierNcrCount(long supplierCompanyId, int openNcrCount) {
+	}
+
+	List<SupplierNcrCount> openNcrCountsBySupplier();
 
 }

@@ -1,14 +1,21 @@
 package com.ergo.connect.quality.domain;
 
+import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.ergo.connect.common.audit.AuditLogService;
+import com.ergo.connect.common.record.Awaiting;
+import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
 import com.ergo.connect.common.security.Role;
 import com.ergo.connect.masterdata.api.Directory;
+import com.ergo.connect.masterdata.api.Directory.CompanyRef;
 import com.ergo.connect.quality.api.QualityApi;
 
 /**
@@ -229,6 +236,120 @@ class QualityApiService implements QualityApi {
 		if (a != null) {
 			a.evidenceDocumentId = newDocumentId;
 		}
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public List<NcrDashboardItem> ncrDashboardItems() {
+		CurrentUser me = CurrentUser.get();
+		List<Ncr> visible = switch (me.role()) {
+			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_QUALITY -> ncrs.findAllByOrderByIdDesc();
+			case ERGO_KAM -> {
+				java.util.Set<Long> accounts = directory.accountsOf(me.userId());
+				yield accounts.isEmpty() ? List.of() : ncrs.findByCustomerCompanyIdInOrderByIdDesc(accounts);
+			}
+			case ERGO_NPD -> ncrs.findByLinkedModuleOrderByIdDesc(LinkedModule.NPD);
+			case ERGO_OFP -> ncrs.findByLinkedModuleOrderByIdDesc(LinkedModule.OFP);
+			case SUPPLIER_QUALITY, SUPPLIER_NPD, SUPPLIER_OFP, SUPPLIER_KAM ->
+				ncrs.findBySupplierCompanyIdOrderByIdDesc(me.companyId());
+			case CUSTOMER_QUALITY, CUSTOMER_NPD, CUSTOMER_OFP, CUSTOMER_KAM, CUSTOMER_MANAGEMENT ->
+				ncrs.findByCustomerCompanyIdAndCustomerVisibleTrueOrderByIdDesc(me.companyId());
+			default -> List.of();
+		};
+		boolean ergo = me.companyType() == CompanyType.ERGO;
+		List<Ncr> open = visible.stream().filter(n -> n.currentStatus != NcrStatus.CLOSED).toList();
+		Map<Long, CompanyRef> customers = ergo ? directory.companies(ids(open, n -> n.customerCompanyId)) : Map.of();
+		Map<Long, CompanyRef> suppliers = ergo ? directory.companies(ids(open, n -> n.supplierCompanyId)) : Map.of();
+		LocalDate today = LocalDate.now();
+		return open.stream()
+			.map(n -> new NcrDashboardItem(n.id, n.ncrNumber, ergo ? name(customers, n.customerCompanyId) : null,
+					ergo ? name(suppliers, n.supplierCompanyId) : null, n.currentStatus.name(),
+					ergo ? ncrAwaiting(n.currentStatus) : null, n.targetClosureDate,
+					n.targetClosureDate != null && n.targetClosureDate.isBefore(today)))
+			.toList();
+	}
+
+	/** This module's own judgment call on whose turn it is to act (ARCHITECTURE.md §8, 2026-10-05 Phase 7c) - the
+	 * SRS gives no such field. Containment/root-cause/CAPA are the supplier's own driven phases (SRS §10.8's
+	 * Supplier Quality edit right), even though ERGO Quality may also edit during them. */
+	private static Awaiting ncrAwaiting(NcrStatus status) {
+		return switch (status) {
+			case OPEN, PENDING_CLOSURE_APPROVAL -> Awaiting.ERGO;
+			case CONTAINMENT_IN_PROGRESS, ROOT_CAUSE_IN_PROGRESS, CAPA_IN_PROGRESS -> Awaiting.SUPPLIER;
+			default -> Awaiting.NONE;
+		};
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public List<DeviationDashboardItem> deviationDashboardItems() {
+		CurrentUser me = CurrentUser.get();
+		List<Deviation> visible = switch (me.role()) {
+			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_QUALITY -> deviations.findAllByOrderByIdDesc();
+			case ERGO_KAM -> {
+				java.util.Set<Long> accounts = directory.accountsOf(me.userId());
+				yield accounts.isEmpty() ? List.of() : deviations.findByCustomerCompanyIdInOrderByIdDesc(accounts);
+			}
+			case ERGO_NPD -> deviations.findByLinkedModuleOrderByIdDesc(LinkedModule.NPD);
+			case ERGO_OFP -> deviations.findByLinkedModuleOrderByIdDesc(LinkedModule.OFP);
+			case SUPPLIER_QUALITY, SUPPLIER_NPD, SUPPLIER_OFP, SUPPLIER_KAM ->
+				deviations.findBySupplierCompanyIdAndSupplierVisibleTrueOrderByIdDesc(me.companyId());
+			case CUSTOMER_QUALITY, CUSTOMER_NPD, CUSTOMER_OFP, CUSTOMER_KAM, CUSTOMER_MANAGEMENT ->
+				deviations.findByCustomerCompanyIdAndCustomerVisibleTrueOrderByIdDesc(me.companyId());
+			default -> List.of();
+		};
+		boolean ergo = me.companyType() == CompanyType.ERGO;
+		// "Open" = not in the terminal set (ARCHITECTURE.md §8, 2026-10-05 Phase 7c: CLOSED/EXPIRED/REJECTED).
+		// APPROVED is not terminal on its own - a deviation stays usable until its validity window ends or ERGO
+		// closes it - so it is deliberately not excluded here (fixed after security review: the first cut over-
+		// excluded it, contradicting this phase's own logged "open" definition).
+		List<Deviation> open = visible.stream().filter(d -> d.currentStatus != DeviationStatus.CLOSED
+				&& d.currentStatus != DeviationStatus.REJECTED && d.currentStatus != DeviationStatus.EXPIRED)
+			.toList();
+		Map<Long, CompanyRef> customers = ergo ? directory.companies(ids(open, d -> d.customerCompanyId)) : Map.of();
+		Map<Long, CompanyRef> suppliers = ergo ? directory.companies(ids(open, d -> d.supplierCompanyId)) : Map.of();
+		return open.stream()
+			.map(d -> new DeviationDashboardItem(d.id, d.deviationNumber, ergo ? name(customers, d.customerCompanyId) : null,
+					ergo ? name(suppliers, d.supplierCompanyId) : null, d.currentStatus.name(),
+					ergo ? deviationAwaiting(d.currentStatus) : null, d.validityEndDate))
+			.toList();
+	}
+
+	/** This module's own judgment call (ARCHITECTURE.md §8, 2026-10-05 Phase 7c) - the SRS gives no such field. */
+	private static Awaiting deviationAwaiting(DeviationStatus status) {
+		return switch (status) {
+			case REQUESTED, UNDER_REVIEW -> Awaiting.ERGO;
+			case CUSTOMER_APPROVAL_PENDING -> Awaiting.CUSTOMER;
+			default -> Awaiting.NONE;
+		};
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public List<SupplierNcrCount> openNcrCountsBySupplier() {
+		CurrentUser me = CurrentUser.get();
+		boolean unrestricted = switch (me.role()) {
+			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_QUALITY -> true;
+			default -> false;
+		};
+		if (!unrestricted) {
+			return List.of(); // never one supplier's numbers to another, or to any customer/supplier caller
+		}
+		Map<Long, List<Ncr>> bySupplier = ncrs.findAllByOrderByIdDesc().stream()
+			.filter(n -> n.currentStatus != NcrStatus.CLOSED && n.supplierCompanyId != null)
+			.collect(Collectors.groupingBy(n -> n.supplierCompanyId));
+		return bySupplier.entrySet().stream()
+			.map(e -> new SupplierNcrCount(e.getKey(), e.getValue().size()))
+			.toList();
+	}
+
+	private static <T> java.util.Set<Long> ids(List<T> items, Function<T, Long> field) {
+		return items.stream().map(field).filter(java.util.Objects::nonNull).collect(Collectors.toSet());
+	}
+
+	private static String name(Map<Long, CompanyRef> names, Long id) {
+		CompanyRef ref = id == null ? null : names.get(id);
+		return ref == null ? null : ref.name();
 	}
 
 }

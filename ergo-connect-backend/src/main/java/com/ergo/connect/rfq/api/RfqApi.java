@@ -2,10 +2,12 @@ package com.ergo.connect.rfq.api;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
+import com.ergo.connect.common.record.Awaiting;
 import com.ergo.connect.documents.api.DocumentStore.DocumentInfo;
 
 /**
@@ -117,5 +119,20 @@ public interface RfqApi {
 	 * else (customers, suppliers, and ERGO roles with no RFQ visibility).
 	 */
 	List<ApprovedRfq> customerApproved();
+
+	/**
+	 * SRS §12.5.1/§12.5.2 dashboards: the caller's own in-scope, still-open RFQs (same role-scope switch as
+	 * {@code list()} - ERGO Admin/Management/RFQ get every RFQ, ERGO KAM its assigned accounts, customers their own
+	 * company, suppliers nothing here (RfqApi has no invitation data of its own)). Excludes the terminal statuses
+	 * (CLOSED, CANCELLED, CUSTOMER_DECLINED) and CUSTOMER_APPROVED, which {@link #customerApproved} already counts
+	 * separately for the "ready for NPD conversion" widget. {@code customerName} is null for a customer caller
+	 * (it's their own company). {@link Awaiting} is this module's own judgment call (ARCHITECTURE.md §8,
+	 * 2026-10-05): not an SRS-defined field.
+	 */
+	record RfqDashboardItem(long id, String number, String customerName, String status, Awaiting awaiting,
+			LocalDate targetQuoteDate, boolean overdue, String priority) {
+	}
+
+	List<RfqDashboardItem> dashboardItems();
 
 }

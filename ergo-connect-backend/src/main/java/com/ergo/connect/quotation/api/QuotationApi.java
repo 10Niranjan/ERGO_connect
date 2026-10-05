@@ -1,5 +1,7 @@
 package com.ergo.connect.quotation.api;
 
+import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -53,5 +55,22 @@ public interface QuotationApi {
 	 * (visibility SUPPLIER/ALL), since {@code RfqApi} itself has no invitation data. False for non-supplier callers.
 	 */
 	boolean supplierInvitedToRfq(long rfqId);
+
+	/**
+	 * SRS §12.5.4 Supplier Dashboard ("Assigned RFQs", "Quote due items"): the caller's own invitations, status
+	 * already collapsed through {@link com.ergo.connect.quotation.domain.QuoteStatus#forSupplier} (never ERGO's
+	 * internal shortlist/selection ranking, SRS §11.1). Non-empty only for a supplier caller who actually quotes
+	 * (same role set as {@code QuoteService.SUPPLIER_QUOTERS}) - empty for every ERGO/customer role.
+	 */
+	record SupplierQuoteItem(long invitationId, String rfqNumber, String partNumber, String status,
+			LocalDate responseDueDate, boolean overdue) {
+	}
+
+	List<SupplierQuoteItem> dashboardItems();
+
+	/** SRS §12.5.1 Management Dashboard "Quotes pending submission": count of invitations still editable by their
+	 * supplier (not yet submitted), across every supplier - unrestricted-view roles only (ERGO Admin/Management/
+	 * RFQ), 0 for everyone else. */
+	int pendingSubmissionCount();
 
 }

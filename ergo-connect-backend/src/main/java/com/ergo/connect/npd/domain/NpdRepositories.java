@@ -107,6 +107,9 @@ interface NpdApprovalRepository extends Repository<NpdApproval, Long> {
 	/** ERGO's unrestricted view of one project's approvals. */
 	List<NpdApproval> findByNpdProjectIdOrderById(Long npdProjectId);
 
+	/** Dashboard "Pending approvals" widget (ERGO Management, unrestricted-view roles only). */
+	long countByApprovalStatus(ApprovalStatus approvalStatus);
+
 	/** A customer's own view: only the customer-facing approval types (SRS §10.6; suppliers get none at all). */
 	List<NpdApproval> findByNpdProjectIdAndApprovalTypeInOrderById(Long npdProjectId,
 			Collection<ApprovalType> approvalTypes);

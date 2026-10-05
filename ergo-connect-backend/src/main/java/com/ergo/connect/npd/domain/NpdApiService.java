@@ -1,13 +1,37 @@
 package com.ergo.connect.npd.domain;
 
+import static com.ergo.connect.common.security.Role.CUSTOMER_NPD;
+import static com.ergo.connect.common.security.Role.CUSTOMER_QUALITY;
+import static com.ergo.connect.common.security.Role.ERGO_ADMIN;
+import static com.ergo.connect.common.security.Role.ERGO_KAM;
+import static com.ergo.connect.common.security.Role.ERGO_MANAGEMENT;
+import static com.ergo.connect.common.security.Role.ERGO_NPD;
+import static com.ergo.connect.common.security.Role.ERGO_RFQ;
+import static com.ergo.connect.common.security.Role.SUPPLIER_KAM;
+import static com.ergo.connect.common.security.Role.SUPPLIER_NPD;
+import static com.ergo.connect.common.security.Role.SUPPLIER_OFP;
+import static com.ergo.connect.common.security.Role.SUPPLIER_QUALITY;
+
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
+import java.util.EnumSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.ergo.connect.common.exception.ApiException;
+import com.ergo.connect.common.record.Awaiting;
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
+import com.ergo.connect.common.security.Role;
+import com.ergo.connect.masterdata.api.Directory;
+import com.ergo.connect.masterdata.api.Directory.CompanyRef;
 import com.ergo.connect.npd.api.NpdApi;
 
 /**
@@ -20,13 +44,27 @@ import com.ergo.connect.npd.api.NpdApi;
 @Transactional
 class NpdApiService implements NpdApi {
 
+	private static final Set<Role> FULL_VIEWERS = EnumSet.of(ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_RFQ, ERGO_NPD);
+
+	private static final Set<Role> CUSTOMER_EDITORS = EnumSet.of(CUSTOMER_NPD, CUSTOMER_QUALITY);
+
+	private static final Set<Role> SUPPLIER_EDITORS = EnumSet.of(SUPPLIER_NPD, SUPPLIER_OFP, SUPPLIER_QUALITY,
+			SUPPLIER_KAM);
+
 	private final NpdProjectRepository projects;
+
+	private final NpdApprovalRepository approvals;
 
 	private final NpdService npdService;
 
-	NpdApiService(NpdProjectRepository projects, NpdService npdService) {
+	private final Directory directory;
+
+	NpdApiService(NpdProjectRepository projects, NpdApprovalRepository approvals, NpdService npdService,
+			Directory directory) {
 		this.projects = projects;
+		this.approvals = approvals;
 		this.npdService = npdService;
+		this.directory = directory;
 	}
 
 	@Override
@@ -68,6 +106,86 @@ class NpdApiService implements NpdApi {
 	public Optional<ProjectRef> projectRef(long npdProjectId) {
 		return projects.findById(npdProjectId)
 			.map(p -> new ProjectRef(p.id, p.customerCompanyId, p.supplierCompanyId));
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public List<NpdDashboardItem> dashboardItems() {
+		CurrentUser me = CurrentUser.get();
+		List<NpdProject> visible;
+		if (FULL_VIEWERS.contains(me.role())) {
+			visible = projects.findAllByOrderByIdDesc();
+		}
+		else if (me.role() == ERGO_KAM) {
+			Set<Long> accounts = directory.accountsOf(me.userId());
+			visible = accounts.isEmpty() ? List.of() : projects.findByCustomerCompanyIdInOrderByIdDesc(accounts);
+		}
+		else if (CUSTOMER_EDITORS.contains(me.role())) {
+			visible = projects.findByCustomerCompanyIdInOrderByIdDesc(Set.of(me.companyId()));
+		}
+		else if (SUPPLIER_EDITORS.contains(me.role())) {
+			visible = projects.findBySupplierCompanyIdOrderByIdDesc(me.companyId());
+		}
+		else {
+			visible = List.of();
+		}
+		boolean ergo = me.companyType() == CompanyType.ERGO;
+		List<NpdProject> open = visible.stream().filter(p -> p.stage != NpdStage.CLOSED).toList();
+		Map<Long, CompanyRef> customers = ergo ? directory.companies(ids(open, p -> p.customerCompanyId)) : Map.of();
+		Map<Long, CompanyRef> suppliers = ergo ? directory.companies(ids(open, p -> p.supplierCompanyId)) : Map.of();
+		return open.stream()
+			.map(p -> new NpdDashboardItem(p.id, p.npdNumber, ergo ? name(customers, p.customerCompanyId) : null,
+					ergo ? name(suppliers, p.supplierCompanyId) : null, p.stage.name(), ergo ? awaiting(p.stage) : null,
+					p.targetSampleDate, delayDays(p),
+					ergo && p.riskLevel != null ? p.riskLevel.name() : null))
+			.toList();
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public int unconvertedApprovedRfqCount() {
+		return npdService.unconvertedApprovedRfqCount();
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public int pendingApprovalsCount() {
+		CurrentUser me = CurrentUser.get();
+		if (!FULL_VIEWERS.contains(me.role())) {
+			return 0; // Management-only widget (ARCHITECTURE.md §8, 2026-10-05): not shown on the KAM dashboard
+		}
+		return (int) approvals.countByApprovalStatus(ApprovalStatus.PENDING);
+	}
+
+	/** This module's own judgment call on whose turn it is to act (ARCHITECTURE.md §8, 2026-10-05 Phase 7c) - the
+	 * SRS does not define it. A real pending {@code NpdApproval} would be a more precise signal, but that needs a
+	 * per-project join this dashboard read does not otherwise require; the stage is a reasonable proxy. */
+	private static Awaiting awaiting(NpdStage stage) {
+		return switch (stage) {
+			case CUSTOMER_FEEDBACK -> Awaiting.CUSTOMER;
+			case CLOSED -> Awaiting.NONE;
+			default -> Awaiting.ERGO;
+		};
+	}
+
+	/** Same formula as {@code NpdService}'s own private helper - duplicated rather than exposed, since it is a
+	 * one-line computation over fields this class already reads. */
+	private static Long delayDays(NpdProject p) {
+		if (p.targetSampleDate == null) {
+			return null;
+		}
+		LocalDate reference = p.actualSampleSubmissionDate != null ? p.actualSampleSubmissionDate : LocalDate.now();
+		long days = ChronoUnit.DAYS.between(p.targetSampleDate, reference);
+		return days > 0 ? days : 0L;
+	}
+
+	private static Set<Long> ids(List<NpdProject> items, Function<NpdProject, Long> field) {
+		return items.stream().map(field).filter(java.util.Objects::nonNull).collect(Collectors.toSet());
+	}
+
+	private static String name(Map<Long, CompanyRef> names, Long id) {
+		CompanyRef ref = id == null ? null : names.get(id);
+		return ref == null ? null : ref.name();
 	}
 
 }

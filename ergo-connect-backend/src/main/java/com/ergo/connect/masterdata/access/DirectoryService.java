@@ -10,6 +10,8 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.ergo.connect.common.security.CurrentUser;
+import com.ergo.connect.common.security.Role;
 import com.ergo.connect.masterdata.api.Directory;
 
 @Service
@@ -72,6 +74,15 @@ class DirectoryService implements Directory {
 	@Override
 	public Set<Long> accountsOf(long userId) {
 		return users.findById(userId).map(user -> Set.copyOf(user.accountIds)).orElse(Set.of());
+	}
+
+	@Override
+	public int pendingCompanyApprovalsCount() {
+		Role role = CurrentUser.get().role();
+		if (role != Role.ERGO_ADMIN && role != Role.ERGO_MANAGEMENT) {
+			return 0;
+		}
+		return (int) companies.countByStatus(CompanyStatus.PENDING_APPROVAL);
 	}
 
 	private static CompanyRef ref(Company c) {

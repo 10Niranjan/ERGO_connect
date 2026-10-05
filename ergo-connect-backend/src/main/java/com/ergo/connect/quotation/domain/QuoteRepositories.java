@@ -20,6 +20,10 @@ interface InvitationRepository extends Repository<Invitation, Long> {
 
 	List<Invitation> findBySupplierCompanyIdOrderByIdDesc(Long supplierCompanyId);
 
+	/** Dashboard "Quotes pending submission" widget (ERGO Admin/Management/RFQ only; {@code QuoteService} filters
+	 * by each invitation's own RFQ still being open for quotes). */
+	List<Invitation> findByStatusIn(java.util.Collection<QuoteStatus> statuses);
+
 }
 
 interface SupplierQuoteRepository extends Repository<SupplierQuote, Long> {

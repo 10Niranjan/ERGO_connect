@@ -27,4 +27,7 @@ interface CompanyRepository extends Repository<Company, Long> {
 
 	long count();
 
+	/** Dashboard "Pending approvals" widget (ERGO Admin/Management only). */
+	long countByStatus(CompanyStatus status);
+
 }

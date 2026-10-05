@@ -1,5 +1,7 @@
 package com.ergo.connect.quotation.domain;
 
+import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.stereotype.Service;
@@ -7,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
+import com.ergo.connect.common.security.Role;
 import com.ergo.connect.masterdata.api.Directory;
 import com.ergo.connect.masterdata.api.Directory.CompanyRef;
 import com.ergo.connect.quotation.api.QuotationApi;
@@ -89,6 +92,31 @@ class QuotationApiService implements QuotationApi {
 			return false;
 		}
 		return invitations.findByRfqIdOrderById(rfqId).stream().anyMatch(i -> i.supplierCompanyId == me.companyId());
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public List<SupplierQuoteItem> dashboardItems() {
+		CurrentUser me = CurrentUser.get();
+		if (me.companyType() != CompanyType.SUPPLIER || !QuoteService.SUPPLIER_QUOTERS.contains(me.role())) {
+			return List.of();
+		}
+		LocalDate today = LocalDate.now();
+		return quoteService.mine().stream()
+			.map(r -> new SupplierQuoteItem(r.id(), r.rfqNumber(), r.partNumber(), r.status().name(),
+					r.responseDueDate(), r.quotingOpen() && r.responseDueDate() != null
+							&& r.responseDueDate().isBefore(today) && QuoteStatus.EDITABLE.contains(r.status())))
+			.toList();
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public int pendingSubmissionCount() {
+		Role role = CurrentUser.get().role();
+		if (role != Role.ERGO_ADMIN && role != Role.ERGO_MANAGEMENT && role != Role.ERGO_RFQ) {
+			return 0;
+		}
+		return quoteService.pendingSubmissionCount();
 	}
 
 }
