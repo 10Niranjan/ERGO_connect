@@ -1,4 +1,5 @@
 import { api } from '../../app/store'
+import type { AuditEntry } from '../rfq/rfqApi'
 
 /** SRS §13.5.1/§14.6 order lifecycle. {@link OrderStatus} mirrors the backend enum exactly. ON_HOLD is a side
  * transition reachable from any non-terminal status; the status it interrupted is not exposed to the frontend
@@ -353,6 +354,10 @@ const ofpApi = api.enhanceEndpoints({ addTagTypes: ['Ofp', 'Npd'] }).injectEndpo
       query: (id) => `/ofp/orders/${id}`,
       providesTags: (_r, _e, id) => [{ type: 'Ofp', id }],
     }),
+    ofpOrderHistory: build.query<AuditEntry[], number>({
+      query: (id) => `/ofp/orders/${id}/history`,
+      providesTags: (_r, _e, id) => [{ type: 'Ofp', id }],
+    }),
     createOrder: build.mutation<OrderDetail, OrderForm>({
       query: (body) => ({ url: '/ofp/orders', method: 'POST', body }),
       invalidatesTags: ['Ofp'],
@@ -458,6 +463,7 @@ const ofpApi = api.enhanceEndpoints({ addTagTypes: ['Ofp', 'Npd'] }).injectEndpo
 export const {
   useOfpOrdersQuery,
   useOfpOrderQuery,
+  useOfpOrderHistoryQuery,
   useCreateOrderMutation,
   useHandoverOrderMutation,
   useUpdateOrderMutation,

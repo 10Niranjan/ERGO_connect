@@ -34,6 +34,7 @@ import { HandoverDialog } from '../../ofp/components/HandoverDialog'
 import { Link as RouterLink, useParams } from 'react-router'
 import { CommentsPanel } from '../../communication/components/CommentsPanel'
 import { useUsersQuery, type User } from '../../admin/adminApi'
+import { AuditTrail } from '../../../shared/components/AuditTrail'
 import { CommentDialog } from '../../../shared/components/CommentDialog'
 import { Facts } from '../../../shared/components/Facts'
 import { num, str, text } from '../../../shared/form'
@@ -59,6 +60,7 @@ import {
   useBlockNpdActivityMutation,
   useCloseNpdStageMutation,
   useDecideApprovalMutation,
+  useNpdHistoryQuery,
   useNpdProjectQuery,
   useRaiseIssueMutation,
   useRequestApprovalMutation,
@@ -193,6 +195,7 @@ function NpdDetail({ npd }: { npd: NpdView }) {
         {hasApprovals && <Tab value="approvals" label="Approvals" />}
         <Tab value="history" label="Stage History" />
         <Tab value="comments" label="Comments" />
+        {npd.audience === 'ERGO' && <Tab value="audit" label="Audit trail" />}
       </Tabs>
 
       {tab === 'overview' && (
@@ -209,6 +212,7 @@ function NpdDetail({ npd }: { npd: NpdView }) {
       {tab === 'approvals' && (npd.audience === 'ERGO' || npd.audience === 'CUSTOMER') && <ApprovalsTab npd={npd} />}
       {tab === 'history' && <StageHistoryTab npd={npd} />}
       {tab === 'comments' && <CommentsPanel linkedModule="npd" recordId={npd.id} />}
+      {tab === 'audit' && npd.audience === 'ERGO' && <NpdHistoryTab npdId={npd.id} />}
 
       {editingProject && ergo && (
         <ProjectEditDialog npd={ergo} ergoUsers={ergoUsers} usersLoading={usersLoading} onClose={() => setEditingProject(false)} />
@@ -1479,6 +1483,13 @@ function RequestApprovalDialog({ npd, onClose }: { npd: ErgoNpdView; onClose: ()
 function StageHistoryTab({ npd }: { npd: NpdView }) {
   if (npd.audience === 'ERGO') return <StageHistoryTable rows={npd.stageHistory} />
   return <ExternalStageHistoryTable rows={npd.stageHistory} />
+}
+
+/** SRS §12.8.3/§15.5 audit trail tab, ERGO only (server-enforced; the tab itself is also hidden for other audiences). */
+function NpdHistoryTab({ npdId }: { npdId: number }) {
+  const { data = [], error } = useNpdHistoryQuery(npdId)
+  if (error) return <Alert severity="error">{problemMessage(error)}</Alert>
+  return <AuditTrail rows={data} />
 }
 
 function StageHistoryTable({ rows }: { rows: StageHistoryView[] }) {

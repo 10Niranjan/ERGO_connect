@@ -2,6 +2,7 @@ import { Alert, Button, Chip, LinearProgress, Paper, Stack, Tab, Table, TableBod
 import { useState, type ReactNode } from 'react'
 import { useParams } from 'react-router'
 import { CommentsPanel } from '../../communication/components/CommentsPanel'
+import { AuditTrail } from '../../../shared/components/AuditTrail'
 import { CommentDialog } from '../../../shared/components/CommentDialog'
 import { Facts } from '../../../shared/components/Facts'
 import { useMasterOptionsQuery } from '../../../shared/masterData'
@@ -19,6 +20,7 @@ import {
   useMarkDispatchReadyMutation,
   useMarkInTransitMutation,
   useOfpOrderQuery,
+  useOfpOrderHistoryQuery,
   useReleaseOrderMutation,
   type CustomerProductionProgressView,
   type ExternalShipmentView,
@@ -150,6 +152,7 @@ function OrderDetailView({ order }: { order: OrderDetail }) {
         {packaging && <Tab value="packaging" label="Packaging and dispatch" />}
         <Tab value="shipments" label="Shipments" />
         <Tab value="comments" label="Comments" />
+        {ergo && <Tab value="audit" label="Audit trail" />}
       </Tabs>
 
       {tab === 'overview' && (
@@ -260,6 +263,7 @@ function OrderDetailView({ order }: { order: OrderDetail }) {
       )}
 
       {tab === 'comments' && <CommentsPanel linkedModule="ofp" recordId={order.id} />}
+      {tab === 'audit' && ergo && <OrderHistoryTab orderId={order.id} />}
 
       {tab === 'shipments' && (
         <Section
@@ -301,6 +305,13 @@ function OrderDetailView({ order }: { order: OrderDetail }) {
 /** ProductionProgressView is a structural subtype of the customer's row, so `in` alone cannot narrow it. */
 function isFullProgress(p: ProductionProgressView | CustomerProductionProgressView): p is ProductionProgressView {
   return 'updatedBy' in p
+}
+
+/** SRS §12.9.2/§15.5 audit trail tab, ERGO only (server-enforced; the tab itself is also hidden for other audiences). */
+function OrderHistoryTab({ orderId }: { orderId: number }) {
+  const { data = [], error } = useOfpOrderHistoryQuery(orderId)
+  if (error) return <Alert severity="error">{problemMessage(error)}</Alert>
+  return <AuditTrail rows={data} />
 }
 
 function Section(props: { canAdd: boolean; addLabel: string; onAdd: () => void; head: string[]; empty: boolean; children: ReactNode }) {

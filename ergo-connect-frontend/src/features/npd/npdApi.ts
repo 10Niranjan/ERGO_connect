@@ -1,6 +1,6 @@
 import { api } from '../../app/store'
 import type { CompanyType } from '../../auth/authSlice'
-import type { Named } from '../rfq/rfqApi'
+import type { AuditEntry, Named } from '../rfq/rfqApi'
 
 /** Buttons the backend allows for this user, role and record right now (project-, activity-, issue- or approval-level). */
 export type NpdAction =
@@ -339,6 +339,10 @@ const npdApi = api.enhanceEndpoints({ addTagTypes: ['Npd', 'Rfq'] }).injectEndpo
       query: (id) => `/npd/${id}`,
       providesTags: (_r, _e, id) => [{ type: 'Npd', id }],
     }),
+    npdHistory: build.query<AuditEntry[], number>({
+      query: (id) => `/npd/${id}/history`,
+      providesTags: (_r, _e, id) => [{ type: 'Npd', id }],
+    }),
     updateNpdProject: build.mutation<NpdView, { id: number; form: NpdProjectForm }>({
       query: ({ id, form }) => ({ url: `/npd/${id}`, method: 'PUT', body: form }),
       invalidatesTags: ['Npd'],
@@ -405,6 +409,7 @@ export const {
   useNpdListQuery,
   useMyNpdProjectsQuery,
   useNpdProjectQuery,
+  useNpdHistoryQuery,
   useUpdateNpdProjectMutation,
   useCloseNpdStageMutation,
   useAddNpdActivityMutation,

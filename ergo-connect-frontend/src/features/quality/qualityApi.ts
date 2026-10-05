@@ -1,4 +1,5 @@
 import { api } from '../../app/store'
+import type { AuditEntry } from '../rfq/rfqApi'
 
 /** SRS §13.6.1 {@code inspections.linked_module}: mirrors the backend enum exactly. */
 export type LinkedModule = 'NPD' | 'OFP' | 'INCOMING' | 'FINAL' | 'IN_PROCESS'
@@ -437,6 +438,10 @@ const qualityApi = api.enhanceEndpoints({ addTagTypes: ['Quality', 'Ncr'] }).inj
       query: (id) => `/quality/ncrs/${id}`,
       providesTags: (_r, _e, id) => [{ type: 'Ncr', id }],
     }),
+    ncrHistory: build.query<AuditEntry[], number>({
+      query: (id) => `/quality/ncrs/${id}/history`,
+      providesTags: (_r, _e, id) => [{ type: 'Ncr', id }],
+    }),
     createNcr: build.mutation<NcrDetail, NcrForm>({
       query: (body) => ({ url: '/quality/ncrs', method: 'POST', body }),
       invalidatesTags: ['Ncr'],
@@ -524,6 +529,7 @@ export const {
 
   useNcrsQuery,
   useNcrQuery,
+  useNcrHistoryQuery,
   useCreateNcrMutation,
   useEditNcrMutation,
   useMoveNcrToContainmentMutation,

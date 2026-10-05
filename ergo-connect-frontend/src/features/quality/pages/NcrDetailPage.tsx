@@ -1,7 +1,9 @@
 import { Alert, Box, Button, Chip, LinearProgress, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from '@mui/material'
 import { useState, type ReactNode } from 'react'
 import { useParams } from 'react-router'
+import { useAppSelector } from '../../../app/store'
 import { CommentsSection } from '../../communication/components/CommentsPanel'
+import { AuditTrail } from '../../../shared/components/AuditTrail'
 import { CommentDialog } from '../../../shared/components/CommentDialog'
 import { Facts } from '../../../shared/components/Facts'
 import { problemMessage } from '../../../shared/problem'
@@ -13,6 +15,7 @@ import {
   useCloseNcrMutation,
   useDownloadCapaEvidenceMutation,
   useNcrQuery,
+  useNcrHistoryQuery,
   useReopenNcrMutation,
   useSendBackNcrMutation,
   useUploadCapaEvidenceMutation,
@@ -67,6 +70,10 @@ function NcrDetailView({ ncr }: { ncr: NcrDetail }) {
 
   // Audience is told apart structurally (no discriminant field), same as InspectionDetailPage.
   const ergo = 'customerCompanyId' in ncr ? ncr : null
+  // ERGO_KAM is excluded from the audit trail specifically (server-enforced): an NCR's customer/supplier can be
+  // reassigned while OPEN, which could carry a previous, unassigned customer's data past a KAM's own account scope.
+  const activeRole = useAppSelector((state) => state.auth.session?.activeRole)
+  const canSeeHistory = ergo != null && activeRole !== 'ERGO_KAM'
   const has = (a: NcrAction) => ncr.actions.includes(a)
   // CAPA actions track exactly the NCR's own EDIT action (NcrService.requireCapaEditable == allowed(EDIT, ...) by
   // construction - see qualityApi.ts's NcrAction comment), so the section's own controls reuse that one check.
@@ -267,7 +274,22 @@ function NcrDetailView({ ncr }: { ncr: NcrDetail }) {
             />
           )
         })()}
+      {canSeeHistory && <NcrHistorySection ncrId={ncr.id} />}
       <CommentsSection linkedModule="ncr" recordId={ncr.id} />
+    </Stack>
+  )
+}
+
+/** SRS §12.10.3/§15.5 audit trail tab, ERGO only minus ERGO_KAM (server-enforced; the section itself is also hidden
+ * for other audiences and for KAM). */
+function NcrHistorySection({ ncrId }: { ncrId: number }) {
+  const { data = [], error } = useNcrHistoryQuery(ncrId)
+  return (
+    <Stack spacing={1}>
+      <Typography variant="h6" component="h2">
+        Audit trail
+      </Typography>
+      {error ? <Alert severity="error">{problemMessage(error)}</Alert> : <AuditTrail rows={data} />}
     </Stack>
   )
 }
