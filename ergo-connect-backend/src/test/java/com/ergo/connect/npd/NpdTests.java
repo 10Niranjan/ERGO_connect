@@ -191,6 +191,16 @@ class NpdTests {
 	}
 
 	@Test
+	void auditTrailIsErgoOnly() throws Exception {
+		long projectId = convert(approvedRfq(buyerA, "90"));
+		call(put("/api/npd/{id}", projectId), ergoNpd, "{\"riskLevel\": \"HIGH\"}").andExpect(status().isOk());
+
+		call(get("/api/npd/{id}/history", projectId), npdCustomerA, null).andExpect(status().isForbidden());
+		call(get("/api/npd/{id}/history", projectId), ergoNpd, null)
+			.andExpect(jsonPath("$[*].event", hasItem("CREATE")));
+	}
+
+	@Test
 	void closeStageIsBlockedUntilMandatoryActivitiesAreDoneAndEveryMoveIsRecorded() throws Exception {
 		long projectId = convert(approvedRfq(buyerA, "90"));
 

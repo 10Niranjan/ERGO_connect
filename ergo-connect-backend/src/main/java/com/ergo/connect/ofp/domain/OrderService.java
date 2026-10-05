@@ -208,6 +208,17 @@ public class OrderService {
 		return view(me, visible(me, id));
 	}
 
+	/** SRS §12.9.2/§15.5 audit trail tab. ERGO only, same rule as RFQ's history() (ARCHITECTURE.md §8 2026-10-05). */
+	@Transactional(readOnly = true)
+	public List<AuditEntry> history(long id) {
+		CurrentUser me = CurrentUser.get();
+		visible(me, id);
+		if (me.companyType() != CompanyType.ERGO) {
+			throw ApiException.forbidden("The audit trail is internal to ERGO");
+		}
+		return audit.history("ofp", "Order", id);
+	}
+
 	// ---------------------------------------------------------------- create
 
 	/** Direct standalone create (SRS §13.5.1): repeat/running orders with no NPD/RFQ link. */

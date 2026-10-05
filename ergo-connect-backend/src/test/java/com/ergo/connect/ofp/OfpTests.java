@@ -648,6 +648,18 @@ class OfpTests {
 	}
 
 	@Test
+	void auditTrailIsErgoOnly() throws Exception {
+		long orderId = createStandalone(customerA);
+		call(put("/api/ofp/orders/{id}", orderId), ergoOfp, "{\"customerPoNo\": \"PO-HIST\"}")
+			.andExpect(status().isOk());
+		Login customerOfp = users.login(customerA, "CUSTOMER_OFP");
+
+		call(get("/api/ofp/orders/{id}/history", orderId), customerOfp, null).andExpect(status().isForbidden());
+		call(get("/api/ofp/orders/{id}/history", orderId), ergoOfp, null)
+			.andExpect(jsonPath("$[*].event", hasItem("CREATE")));
+	}
+
+	@Test
 	void customerHasNoWriteAccessAnywhereInOfp() throws Exception {
 		long orderId = advanceToPackagingInProgress(customerA);
 		passedInspection(orderId);

@@ -31,6 +31,7 @@ import com.ergo.connect.ofp.domain.OfpDtos.OrderUpdateForm;
 import com.ergo.connect.ofp.domain.OfpDtos.PackagingDispatchForm;
 import com.ergo.connect.ofp.domain.OfpDtos.ProductionProgressForm;
 import com.ergo.connect.ofp.domain.OfpDtos.ShipmentForm;
+import com.ergo.connect.common.audit.AuditLogService.AuditEntry;
 import com.ergo.connect.ofp.domain.OrderService;
 import com.ergo.connect.ofp.domain.OrderService.PodFile;
 
@@ -87,6 +88,12 @@ class OrderController {
 	@PreAuthorize(VIEWERS)
 	OrderDetail get(@PathVariable long id) {
 		return orders.get(id);
+	}
+
+	@GetMapping("/orders/{id}/history")
+	@PreAuthorize(VIEWERS)
+	List<AuditEntry> history(@PathVariable long id) {
+		return orders.history(id);
 	}
 
 	@PostMapping("/orders")

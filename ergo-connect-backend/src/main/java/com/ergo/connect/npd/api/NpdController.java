@@ -27,6 +27,7 @@ import com.ergo.connect.npd.domain.NpdDtos.NpdProjectForm;
 import com.ergo.connect.npd.domain.NpdDtos.NpdView;
 import com.ergo.connect.npd.domain.NpdDtos.PromptChecklistForm;
 import com.ergo.connect.npd.domain.NpdDtos.PromptResponseForm;
+import com.ergo.connect.common.audit.AuditLogService.AuditEntry;
 import com.ergo.connect.npd.domain.NpdService;
 
 import jakarta.validation.Valid;
@@ -103,6 +104,12 @@ class NpdController {
 	@PreAuthorize(DETAIL_VIEWERS)
 	NpdView get(@PathVariable long id) {
 		return npd.get(id);
+	}
+
+	@GetMapping("/{id}/history")
+	@PreAuthorize(DETAIL_VIEWERS)
+	List<AuditEntry> history(@PathVariable long id) {
+		return npd.history(id);
 	}
 
 	@PutMapping("/{id}")

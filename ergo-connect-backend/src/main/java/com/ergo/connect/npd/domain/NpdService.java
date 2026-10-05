@@ -34,6 +34,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.ergo.connect.common.audit.AuditLogService;
+import com.ergo.connect.common.audit.AuditLogService.AuditEntry;
 import com.ergo.connect.common.event.NotificationKind;
 import com.ergo.connect.common.event.Notifier;
 import com.ergo.connect.common.event.Recipients;
@@ -272,6 +273,18 @@ public class NpdService {
 	public NpdView get(long id) {
 		CurrentUser me = CurrentUser.get();
 		return view(me, visible(me, id));
+	}
+
+	/** SRS §12.8.3/§15.5 audit trail tab. ERGO only, same rule as RFQ's history() (ARCHITECTURE.md §8 2026-10-05).
+	 * Single entity only: {@code NpdProject} header row changes, not its activities/approvals/issues. */
+	@Transactional(readOnly = true)
+	public List<AuditEntry> history(long id) {
+		CurrentUser me = CurrentUser.get();
+		visible(me, id);
+		if (me.companyType() != CompanyType.ERGO) {
+			throw ApiException.forbidden("The audit trail is internal to ERGO");
+		}
+		return audit.history("npd", "NpdProject", id);
 	}
 
 	/** SRS §12.8.1/§12.8.3 project-header fields (owner, risk level, sample dates), ERGO Admin/NPD only. Same shape as

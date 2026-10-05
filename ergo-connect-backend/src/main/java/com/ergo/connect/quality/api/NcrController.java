@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.ergo.connect.common.audit.AuditLogService.AuditEntry;
 import com.ergo.connect.quality.domain.NcrService;
 import com.ergo.connect.quality.domain.NcrService.EvidenceFile;
 import com.ergo.connect.quality.domain.QualityDtos.CapaActionForm;
@@ -70,6 +71,12 @@ class NcrController {
 	@PreAuthorize(VIEWERS)
 	NcrDetail get(@PathVariable long id) {
 		return ncrs.get(id);
+	}
+
+	@GetMapping("/{id}/history")
+	@PreAuthorize(VIEWERS)
+	List<AuditEntry> history(@PathVariable long id) {
+		return ncrs.history(id);
 	}
 
 	@PostMapping

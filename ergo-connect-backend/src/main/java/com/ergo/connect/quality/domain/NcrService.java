@@ -34,6 +34,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.ergo.connect.common.audit.AuditLogService;
+import com.ergo.connect.common.audit.AuditLogService.AuditEntry;
 import com.ergo.connect.common.event.NotificationKind;
 import com.ergo.connect.common.event.Notifier;
 import com.ergo.connect.common.event.Recipients;
@@ -195,6 +196,21 @@ public class NcrService {
 	public NcrDetail get(long id) {
 		CurrentUser me = CurrentUser.get();
 		return view(me, visible(me, id));
+	}
+
+	/** SRS §12.10.3/§15.5 audit trail tab. ERGO only, same rule as RFQ's history() (ARCHITECTURE.md §8 2026-10-05).
+	 * Single entity only: {@code Ncr} row changes, not its {@code CapaAction} children. Excludes ERGO_KAM: unlike
+	 * {@code NpdProject}/{@code Order}, an NCR's customer/supplier company can be reassigned while OPEN, so the
+	 * trail can carry a previous, unassigned customer's company id and root-cause text past a KAM's own
+	 * assigned-accounts scope (security review, ARCHITECTURE.md §8 2026-10-05). */
+	@Transactional(readOnly = true)
+	public List<AuditEntry> history(long id) {
+		CurrentUser me = CurrentUser.get();
+		visible(me, id);
+		if (me.companyType() != CompanyType.ERGO || me.role() == ERGO_KAM) {
+			throw ApiException.forbidden("The audit trail is internal to ERGO");
+		}
+		return audit.history("quality", "Ncr", id);
 	}
 
 	// ---------------------------------------------------------------- create / edit

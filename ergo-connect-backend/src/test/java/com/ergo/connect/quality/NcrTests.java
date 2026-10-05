@@ -563,6 +563,21 @@ class NcrTests {
 				AND event_type = 'REASSIGNED_CONTENT_CLEARED'""", Integer.class, id)).isEqualTo(1);
 	}
 
+	@Test
+	void auditTrailIsErgoOnly() throws Exception {
+		long id = createErgoNcr(141, customerA, supplierX);
+		makeCustomerVisible(id);
+
+		call(get("/api/quality/ncrs/{id}/history", id), customerAQuality, null).andExpect(status().isForbidden());
+		call(get("/api/quality/ncrs/{id}/history", id), supplierXQuality, null).andExpect(status().isForbidden());
+		call(get("/api/quality/ncrs/{id}/history", id), customerBQuality, null).andExpect(status().isNotFound());
+		// ERGO_KAM: excluded even for its own assigned account - reassignment while OPEN could carry a previous,
+		// unassigned customer's data past the KAM's scope (security review, ARCHITECTURE.md §8 2026-10-05)
+		call(get("/api/quality/ncrs/{id}/history", id), ergoKam, null).andExpect(status().isForbidden());
+		call(get("/api/quality/ncrs/{id}/history", id), ergoQuality, null)
+			.andExpect(jsonPath("$[*].event", hasItem("CREATE")));
+	}
+
 	// ---------------------------------------------------------------- internal-vs-shared field split
 
 	@Test
