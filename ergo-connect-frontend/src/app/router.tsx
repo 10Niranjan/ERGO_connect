@@ -28,6 +28,7 @@ import { RoleSelectPage } from '../auth/pages/RoleSelectPage'
 import { RequireAuth } from '../auth/RequireAuth'
 import { RequireRole } from '../auth/RequireRole'
 import { MasterDataPage } from '../features/admin/pages/MasterDataPage'
+import { PermissionMatrixPage } from '../features/admin/pages/PermissionMatrixPage'
 import { UsersPage } from '../features/admin/pages/UsersPage'
 import { CompaniesPage } from '../features/companies/pages/CompaniesPage'
 import { MyCompanyPage } from '../features/companies/pages/MyCompanyPage'
@@ -161,7 +162,13 @@ export const router = createBrowserRouter([
             children: [{ path: '/companies', element: <CompaniesPage /> }],
           },
           { element: <RequireRole roles={EXTERNAL_ROLES} />, children: [{ path: '/company', element: <MyCompanyPage /> }] },
-          { element: <RequireRole roles={['ERGO_ADMIN']} />, children: [{ path: '/admin/users', element: <UsersPage /> }] },
+          {
+            element: <RequireRole roles={['ERGO_ADMIN']} />,
+            children: [
+              { path: '/admin/users', element: <UsersPage /> },
+              { path: '/admin/permissions', element: <PermissionMatrixPage /> },
+            ],
+          },
           {
             element: <RequireRole roles={MASTER_DATA_VIEWERS} />,
             children: [{ path: '/admin/master-data', element: <MasterDataPage /> }],

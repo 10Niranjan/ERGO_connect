@@ -54,6 +54,7 @@ const NAV: { label: string; to: string; roles?: Role[] }[] = [
   { label: 'Customers & suppliers', to: '/companies', roles: COMPANY_MANAGERS },
   { label: 'Company profile', to: '/company', roles: EXTERNAL_ROLES },
   { label: 'Users', to: '/admin/users', roles: ['ERGO_ADMIN'] },
+  { label: 'Permissions', to: '/admin/permissions', roles: ['ERGO_ADMIN'] },
   { label: 'Master data', to: '/admin/master-data', roles: MASTER_DATA_VIEWERS },
 ]
 

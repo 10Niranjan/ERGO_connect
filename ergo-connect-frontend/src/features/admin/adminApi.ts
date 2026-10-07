@@ -50,6 +50,35 @@ export interface MasterEntry {
 
 export type MasterEntryInput = Omit<MasterEntry, 'id'> & { list: string }
 
+/** SRS §10.x legend: V/C/E/S/A grant codes, X = no access, RV = restricted view. */
+export type Grant = 'V' | 'C' | 'E' | 'S' | 'A' | 'X' | 'RV'
+
+export interface GrantCell {
+  value: Grant
+  footnote: string | null
+}
+
+export interface RoleGrant {
+  role: Role
+  view: GrantCell
+  create: GrantCell
+  edit: GrantCell
+  submit: GrantCell
+  approve: GrantCell
+}
+
+export interface PermissionModule {
+  section: string
+  title: string
+  roles: RoleGrant[]
+  notes: string[]
+}
+
+export interface PermissionMatrix {
+  legend: { code: Grant; meaning: string }[]
+  modules: PermissionModule[]
+}
+
 /** 1 `from` = `rate` `to`, from `rateDate` on. */
 export interface ExchangeRate {
   id: number
@@ -102,6 +131,7 @@ const adminApi = api.enhanceEndpoints({ addTagTypes: ['User', 'MasterData', 'Exc
       query: (id) => ({ url: `/users/${id}/reset-password`, method: 'POST' }),
       invalidatesTags: ['User'],
     }),
+    permissionMatrix: build.query<PermissionMatrix, void>({ query: () => '/admin/permission-matrix' }),
     masterLists: build.query<MasterList[], void>({ query: () => '/master-data' }),
     masterEntries: build.query<MasterEntry[], string>({
       query: (list) => `/master-data/${list}`,
@@ -130,6 +160,7 @@ export const {
   useSetUserAccountsMutation,
   useSetUserActiveMutation,
   useResetUserPasswordMutation,
+  usePermissionMatrixQuery,
   useMasterListsQuery,
   useMasterEntriesQuery,
   useCreateMasterEntryMutation,
