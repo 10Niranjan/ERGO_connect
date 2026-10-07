@@ -1,4 +1,15 @@
 # All secrets come from the environment (Azure Key Vault in deployment) — never commit values here.
+server:
+  # Azure terminates TLS at the proxy and forwards plain HTTP; without this, request.isSecure() is
+  # always false behind it, so Spring Security's HSTS header writer would never fire (ARCHITECTURE.md §8, Phase 8c).
+  # "native" (Tomcat's RemoteIpValve), not "framework": the valve only honours X-Forwarded-* from peers
+  # in server.tomcat.remoteip.internal-proxies (private ranges by default) and strips a client-supplied
+  # value, so getRemoteAddr() - which audit_logs and the session store both record - can't be spoofed by
+  # an external caller. "framework" has no trusted-proxy concept at all and would let any caller fake
+  # their IP in the audit trail. Revisit server.tomcat.remoteip.internal-proxies in 8k once the real
+  # Azure ingress topology (and whether Front Door/App Gateway sits in front) is known.
+  forward-headers-strategy: native
+
 spring:
   datasource:
     url: ${DB_URL}
