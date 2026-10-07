@@ -146,6 +146,20 @@ cd ergo-connect-frontend && npm run lint && npm run build
 ```
 CI (GitHub Actions) runs both on every push.
 
+## Deploy configuration (prod profile)
+
+All secrets and environment-specific config come from env vars only — nothing is committed (`application-prod.yml`). Required to run with `-Dspring.profiles.active=prod`:
+
+| Var | Purpose |
+|---|---|
+| `DB_URL` | Postgres JDBC URL |
+| `DB_USERNAME` | Postgres username |
+| `DB_PASSWORD` | Postgres password |
+| `JWT_SECRET` | ≥32 random bytes; app refuses to start otherwise (`SecurityProperties`) |
+| `CORS_ALLOWED_ORIGINS` | comma-separated allow-list — never `*` |
+
+CI-only secret: `NVD_API_KEY` (GitHub repo secret, not an app env var) turns on the Dependency-Check CVE gate — optional, CI skips it with a `::warning::` when unset.
+
 ## Non-negotiables
 
 - Two-layer access control, enforced server-side (see diagram above) — never just hidden in the UI.
