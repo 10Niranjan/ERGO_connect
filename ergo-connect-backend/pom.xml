@@ -124,4 +124,37 @@
 		</plugins>
 	</build>
 
+	<profiles>
+		<!-- CI-only (ARCHITECTURE.md §8, Phase 8a): not bound into the default build, so local
+		     `./mvnw verify` stays fast and offline. Run with `./mvnw -Psecurity dependency-check:check`. -->
+		<profile>
+			<id>security</id>
+			<!-- empty default so a plain `./mvnw -Psecurity dependency-check:check` (no -DnvdApiKey=...) still
+			     resolves to an empty string instead of an unresolved "${nvdApiKey}" literal being sent to NVD -->
+			<properties>
+				<nvdApiKey></nvdApiKey>
+			</properties>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.owasp</groupId>
+						<artifactId>dependency-check-maven</artifactId>
+						<version>13.0.0</version>
+						<configuration>
+							<!-- CVSS 7.0+ is High/Critical (CLAUDE.md non-negotiable: fail build on high/critical CVEs) -->
+							<failBuildOnCVSS>7</failBuildOnCVSS>
+							<nvdApiKey>${nvdApiKey}</nvdApiKey>
+							<!-- predictable path so CI can cache the NVD database between runs instead of
+							     re-downloading it every time (ci.yml) -->
+							<dataDirectory>${settings.localRepository}/../dependency-check-data</dataDirectory>
+							<formats>
+								<format>HTML</format>
+							</formats>
+						</configuration>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+	</profiles>
+
 </project>

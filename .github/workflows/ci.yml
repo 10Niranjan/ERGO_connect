@@ -38,3 +38,41 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run build
+      # Dependency hygiene (ARCHITECTURE.md §4/§8 Phase 8a): fail on high/critical CVEs. npm's own
+      # auditor, no extra tool needed for this half - OWASP Dependency-Check below covers the backend.
+      - run: npm audit --audit-level=high
+
+  dependency-check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ergo-connect-backend
+    env:
+      NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      # dependency-check-maven 13 hard-fails with no NVD data at all if this secret is unset (NVD now
+      # requires a key, no anonymous fallback) - skip gracefully rather than blocking every push/PR on a
+      # one-time setup step. Request a free key at https://nvd.nist.gov/developers/request-an-api-key
+      # and add it as the repo secret NVD_API_KEY to turn this gate on (ARCHITECTURE.md §8, Phase 8a).
+      - if: env.NVD_API_KEY == ''
+        run: echo "::warning::NVD_API_KEY repo secret is not set - skipping the CVE gate for this run. See the comment on this step in .github/workflows/ci.yml."
+      - if: env.NVD_API_KEY != ''
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/dependency-check-data
+          key: dependency-check-data-${{ github.run_id }}
+          restore-keys: dependency-check-data-
+      - if: env.NVD_API_KEY != ''
+        run: ./mvnw -B -Psecurity dependency-check:check -DnvdApiKey=${{ env.NVD_API_KEY }}
+      - if: always() && env.NVD_API_KEY != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-check-report
+          path: ergo-connect-backend/target/dependency-check-report.html
+          if-no-files-found: ignore
