@@ -157,6 +157,7 @@ All secrets and environment-specific config come from env vars only — nothing 
 | `DB_PASSWORD` | Postgres password |
 | `JWT_SECRET` | ≥32 random bytes; app refuses to start otherwise (`SecurityProperties`) |
 | `CORS_ALLOWED_ORIGINS` | comma-separated allow-list — never `*` |
+| `REDIS_URL` | `rediss://:<access-key>@host:6380` (TLS — Azure Cache for Redis disables the plaintext port) — backs the login rate limiter |
 
 CI-only secret: `NVD_API_KEY` (GitHub repo secret, not an app env var) turns on the Dependency-Check CVE gate — optional, CI skips it with a `::warning::` when unset.
 

@@ -14,12 +14,25 @@ spring:
     multipart:
       max-file-size: 50MB # drawings and 3D models; files are held in memory while stored
       max-request-size: 51MB
+  data:
+    redis:
+      # Short on purpose (Phase 8d, ARCHITECTURE.md §8): Lettuce's 60s default would otherwise stall every
+      # login attempt for a minute during a Redis outage before LoginRateLimiter's fail-open catch runs.
+      timeout: 250ms
+      connect-timeout: 250ms
+      repositories:
+        enabled: false # only RedisTemplate is used directly - no @RedisHash entities to scan for
 
 management:
   endpoints:
     web:
       exposure:
         include: health,info
+  health:
+    redis:
+      # The login rate limiter is a resilience add-on, not a core dependency: it already fails open on its
+      # own, so a Redis outage shouldn't also flip the app's overall health to DOWN (Phase 8d).
+      enabled: false
 
 ergo:
   cors:

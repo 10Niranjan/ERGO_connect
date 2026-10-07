@@ -55,24 +55,29 @@ public class AuthService {
 
 	private final AccessTokens accessTokens;
 
+	private final LoginRateLimiter rateLimiter;
+
 	private final Duration sessionTtl;
 
 	/** Checked for unknown emails so they take as long as wrong passwords (no account enumeration by timing). */
 	private final String dummyHash;
 
 	AuthService(UserRepository users, CompanyRepository companies, SessionStore sessions, RoleCatalog roleCatalog,
-			PasswordEncoder passwordEncoder, AccessTokens accessTokens, SecurityProperties props) {
+			PasswordEncoder passwordEncoder, AccessTokens accessTokens, LoginRateLimiter rateLimiter,
+			SecurityProperties props) {
 		this.users = users;
 		this.companies = companies;
 		this.sessions = sessions;
 		this.roleCatalog = roleCatalog;
 		this.passwordEncoder = passwordEncoder;
 		this.accessTokens = accessTokens;
+		this.rateLimiter = rateLimiter;
 		this.sessionTtl = props.sessionTtl();
 		this.dummyHash = passwordEncoder.encode(UUID.randomUUID().toString());
 	}
 
 	public LoginResult login(String email, String password, String ip) {
+		rateLimiter.checkAndRecord(ip); // before the DB/bcrypt: also throttles a flood of the deliberately-slow check
 		User user = users.findByEmail(email.trim()).orElse(null);
 		if (user == null) {
 			passwordEncoder.matches(password, dummyHash);
@@ -80,6 +85,8 @@ public class AuthService {
 		}
 		Instant now = Instant.now();
 		if (user.lockedUntil != null && user.lockedUntil.isAfter(now)) {
+			passwordEncoder.matches(password, dummyHash); // same timing as the unknown-email branch: don't reveal
+			// via a fast response that this account exists and is merely locked rather than nonexistent
 			throw ApiException.unauthorized(INVALID_LOGIN);
 		}
 		if (!passwordEncoder.matches(password, user.passwordHash)) {
@@ -94,6 +101,7 @@ public class AuthService {
 			throw ApiException.unauthorized(INVALID_LOGIN);
 		}
 		Role role = startingRole(user, null);
+		rateLimiter.release(ip); // a successful login shouldn't cost this shared IP one of its attempts
 		user.failedLoginCount = 0;
 		user.lockedUntil = null;
 		user.lastLoginAt = now;

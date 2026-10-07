@@ -28,6 +28,10 @@ public class ApiException extends ErrorResponseException {
 		return new ApiException(HttpStatus.CONFLICT, detail);
 	}
 
+	public static ApiException tooManyRequests(String detail) {
+		return new ApiException(HttpStatus.TOO_MANY_REQUESTS, detail);
+	}
+
 	public static ApiException unprocessable(String detail) {
 		return new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, detail);
 	}

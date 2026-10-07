@@ -15,6 +15,12 @@ spring:
     url: ${DB_URL}
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
+  data:
+    redis:
+      # rediss:// (TLS), not redis:// - Azure Cache for Redis disables the plaintext 6379 port by default,
+      # so a redis:// URL fails every connection and silently disables the rate limiter (fail-open). Format:
+      # rediss://:<access-key>@<name>.redis.cache.windows.net:6380 (Phase 8k provisions the actual instance).
+      url: ${REDIS_URL}
 
 springdoc:
   api-docs:
