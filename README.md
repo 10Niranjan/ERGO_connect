@@ -159,6 +159,13 @@ All secrets and environment-specific config come from env vars only — nothing 
 | `CORS_ALLOWED_ORIGINS` | comma-separated allow-list — never `*` |
 | `REDIS_URL` | `rediss://:<access-key>@host:6380` (TLS — Azure Cache for Redis disables the plaintext port) — backs the login rate limiter |
 
+One-time only, for the very first deploy against an empty database — unset both afterwards:
+
+| Var | Purpose |
+|---|---|
+| `ERGO_BOOTSTRAP_ADMIN_EMAIL` | creates the first ERGO Admin login on startup if no company exists yet |
+| `ERGO_BOOTSTRAP_ADMIN_PASSWORD` | its temporary password (≤72 bytes, bcrypt's limit) — the account must change it on first login |
+
 CI-only secret: `NVD_API_KEY` (GitHub repo secret, not an app env var) turns on the Dependency-Check CVE gate — optional, CI skips it with a `::warning::` when unset.
 
 ## Non-negotiables
