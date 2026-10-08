@@ -14,6 +14,12 @@ spring:
     multipart:
       max-file-size: 50MB # drawings and 3D models; files are held in memory while stored
       max-request-size: 51MB
+      # Without this (Phase 8d-bis, ARCHITECTURE.md §8), DispatcherServlet parses the multipart body - reading
+      # the full 51MB to a temp file - before UploadRateLimitInterceptor's preHandle ever runs, so a caller
+      # already past the upload limit still costs full bandwidth/disk per blocked request. Lazy resolution
+      # defers parsing until a controller actually binds a MultipartFile, which happens after preHandle; Tomcat
+      # also caps an unread body to server.tomcat.max-swallow-size (2MB default) before closing the connection.
+      resolve-lazily: true
   data:
     redis:
       # Short on purpose (Phase 8d, ARCHITECTURE.md §8): Lettuce's 60s default would otherwise stall every

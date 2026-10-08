@@ -57,6 +57,8 @@ public class AuthService {
 
 	private final LoginRateLimiter rateLimiter;
 
+	private final ChangePasswordRateLimiter changePasswordRateLimiter;
+
 	private final Duration sessionTtl;
 
 	/** Checked for unknown emails so they take as long as wrong passwords (no account enumeration by timing). */
@@ -64,7 +66,7 @@ public class AuthService {
 
 	AuthService(UserRepository users, CompanyRepository companies, SessionStore sessions, RoleCatalog roleCatalog,
 			PasswordEncoder passwordEncoder, AccessTokens accessTokens, LoginRateLimiter rateLimiter,
-			SecurityProperties props) {
+			ChangePasswordRateLimiter changePasswordRateLimiter, SecurityProperties props) {
 		this.users = users;
 		this.companies = companies;
 		this.sessions = sessions;
@@ -72,6 +74,7 @@ public class AuthService {
 		this.passwordEncoder = passwordEncoder;
 		this.accessTokens = accessTokens;
 		this.rateLimiter = rateLimiter;
+		this.changePasswordRateLimiter = changePasswordRateLimiter;
 		this.sessionTtl = props.sessionTtl();
 		this.dummyHash = passwordEncoder.encode(UUID.randomUUID().toString());
 	}
@@ -140,8 +143,19 @@ public class AuthService {
 
 	public SessionResponse changePassword(String currentPassword, String newPassword) {
 		CurrentUser me = CurrentUser.get();
+		changePasswordRateLimiter.checkAndRecord(me.userId()); // before bcrypt: a stolen token holder gets no free guesses
 		User user = users.findById(me.userId()).orElseThrow();
+		Instant now = Instant.now();
+		if (user.lockedUntil != null && user.lockedUntil.isAfter(now)) {
+			// the same account lockout login() uses (ARCHITECTURE.md §8, Phase 8d-bis) - the one backstop that
+			// still works if Redis, changePasswordRateLimiter's only protection, is down
+			throw ApiException.tooManyRequests("Too many failed attempts. Please try again later.");
+		}
 		if (!passwordEncoder.matches(currentPassword, user.passwordHash)) {
+			if (++user.failedLoginCount >= MAX_FAILED_LOGINS) {
+				user.lockedUntil = now.plus(LOCKOUT);
+				user.failedLoginCount = 0;
+			}
 			throw ApiException.unprocessable("Current password is incorrect");
 		}
 		if (newPassword.equals(currentPassword)) {
@@ -152,6 +166,9 @@ public class AuthService {
 		}
 		user.passwordHash = passwordEncoder.encode(newPassword);
 		user.mustChangePassword = false;
+		user.failedLoginCount = 0;
+		user.lockedUntil = null;
+		changePasswordRateLimiter.release(me.userId()); // a genuine change shouldn't cost a future legitimate attempt
 		sessions.revokeAll(user.id, me.sessionId()); // sign out every other device
 		return response(user, companyOf(user), startingRole(user, me.role()), me.sessionId());
 	}
