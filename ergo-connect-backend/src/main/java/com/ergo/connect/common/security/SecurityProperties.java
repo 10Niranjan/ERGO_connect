@@ -10,7 +10,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /** {@code ergo.security.*}. The JWT secret comes from the environment in prod and is never committed. */
 @ConfigurationProperties("ergo.security")
-public record SecurityProperties(String jwtSecret, Duration accessTokenTtl, Duration sessionTtl) {
+public record SecurityProperties(String jwtSecret, Duration accessTokenTtl, Duration sessionTtl,
+		Duration passwordResetTokenTtl) {
 
 	public SecurityProperties {
 		if (jwtSecret == null || jwtSecret.getBytes(StandardCharsets.UTF_8).length < 32) {

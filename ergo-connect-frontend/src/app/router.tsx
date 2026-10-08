@@ -23,7 +23,9 @@ import {
   SUPPLIER_QUOTERS,
 } from '../auth/access'
 import { ChangePasswordPage } from '../auth/pages/ChangePasswordPage'
+import { ForgotPasswordPage } from '../auth/pages/ForgotPasswordPage'
 import { LoginPage } from '../auth/pages/LoginPage'
+import { ResetPasswordPage } from '../auth/pages/ResetPasswordPage'
 import { RoleSelectPage } from '../auth/pages/RoleSelectPage'
 import { RequireAuth } from '../auth/RequireAuth'
 import { RequireRole } from '../auth/RequireRole'
@@ -62,6 +64,8 @@ import { AppShell } from '../shared/layout/AppShell'
 // Route guards only hide screens; the backend enforces every permission and record scope itself.
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
+  { path: '/forgot-password', element: <ForgotPasswordPage /> },
+  { path: '/reset-password', element: <ResetPasswordPage /> },
   {
     element: <RequireAuth />,
     children: [

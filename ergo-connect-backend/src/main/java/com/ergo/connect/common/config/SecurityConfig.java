@@ -53,7 +53,9 @@ class SecurityConfig {
 				// swagger paths are disabled entirely in prod (application-prod.yml)
 				.requestMatchers("/actuator/health", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
 				.requestMatchers("/error").permitAll() // so real errors aren't masked as 401; bodies carry no stack traces
-				.requestMatchers(HttpMethod.POST, "/api/auth/login", "/api/auth/refresh", "/api/auth/logout").permitAll()
+				.requestMatchers(HttpMethod.POST, "/api/auth/login", "/api/auth/refresh", "/api/auth/logout",
+						"/api/auth/forgot-password", "/api/auth/reset-password")
+					.permitAll()
 				// the only thing a session that must change its password can do
 				.requestMatchers(HttpMethod.POST, "/api/auth/change-password").authenticated()
 				.anyRequest().hasAuthority(AccessTokens.SESSION_ACTIVE))

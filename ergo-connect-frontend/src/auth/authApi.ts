@@ -35,6 +35,12 @@ export const authApi = api.injectEndpoints({
       query: (body) => ({ url: '/auth/change-password', method: 'POST', body }),
       ...startsSession,
     }),
+    forgotPassword: build.mutation<void, { email: string }>({
+      query: (body) => ({ url: '/auth/forgot-password', method: 'POST', body }),
+    }),
+    resetPassword: build.mutation<void, { token: string; newPassword: string }>({
+      query: (body) => ({ url: '/auth/reset-password', method: 'POST', body }),
+    }),
     refresh: build.mutation<Session, void>({
       query: () => ({ url: '/auth/refresh', method: 'POST' }),
       async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
@@ -60,6 +66,8 @@ export const {
   useLoginMutation,
   useSwitchRoleMutation,
   useChangePasswordMutation,
+  useForgotPasswordMutation,
+  useResetPasswordMutation,
   useRefreshMutation,
   useLogoutMutation,
 } = authApi

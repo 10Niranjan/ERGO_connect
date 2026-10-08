@@ -21,6 +21,22 @@ spring:
       # so a redis:// URL fails every connection and silently disables the rate limiter (fail-open). Format:
       # rediss://:<access-key>@<name>.redis.cache.windows.net:6380 (Phase 8k provisions the actual instance).
       url: ${REDIS_URL}
+  mail:
+    # Required: without this, no MailSender bean exists and RequireMailInProd refuses to start the app
+    # (Phase 8f security review) - a prod deployment must never fall back to logging live reset links.
+    host: ${MAIL_HOST}
+    port: ${MAIL_PORT}
+    username: ${MAIL_USERNAME}
+    password: ${MAIL_PASSWORD}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            # required, not just offered (Phase 8f security review) - "enable" alone lets a network attacker
+            # strip STARTTLS and force plaintext, exposing SMTP credentials and live reset tokens in transit
+            required: true
 
 springdoc:
   api-docs:
@@ -31,5 +47,8 @@ springdoc:
 ergo:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
+  frontend-base-url: ${FRONTEND_BASE_URL}
+  mail:
+    from: ${MAIL_FROM}
   security:
     jwt-secret: ${JWT_SECRET} # at least 32 random bytes; the app refuses to start without it

@@ -158,6 +158,9 @@ All secrets and environment-specific config come from env vars only — nothing 
 | `JWT_SECRET` | ≥32 random bytes; app refuses to start otherwise (`SecurityProperties`) |
 | `CORS_ALLOWED_ORIGINS` | comma-separated allow-list — never `*` |
 | `REDIS_URL` | `rediss://:<access-key>@host:6380` (TLS — Azure Cache for Redis disables the plaintext port) — backs the login rate limiter |
+| `FRONTEND_BASE_URL` | origin the password-reset email links point to, e.g. `https://app.ergoconnect.example` |
+| `MAIL_HOST` / `MAIL_PORT` / `MAIL_USERNAME` / `MAIL_PASSWORD` | SMTP credentials for password-reset email — the app refuses to start without them (`RequireMailInProd`); never falls back to logging a live reset link in prod |
+| `MAIL_FROM` | the `From:` address on password-reset email — must pass the domain's SPF/DMARC |
 
 One-time only, for the very first deploy against an empty database — unset both afterwards:
 

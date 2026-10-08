@@ -11,6 +11,7 @@ import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 
 import com.ergo.connect.common.exception.ApiException;
+import com.ergo.connect.common.security.IpKeys;
 
 /**
  * IP-scoped login attempt limiter (ARCHITECTURE.md §8, Phase 8d), on top of {@link AuthService}'s per-account
@@ -75,22 +76,8 @@ class LoginRateLimiter {
 		}
 	}
 
-	/**
-	 * Some proxies append a port to X-Forwarded-For ("ip:port" or "[ipv6]:port") - without stripping it, every
-	 * new TCP connection from the same client would get its own bucket, bypassing the limit entirely. An IPv6
-	 * address without brackets is left untouched: it always has 2+ colons, so it's never mistaken for "ip:port"
-	 * (exactly one colon) - unlike a naive regex, this can't misread a bare address like "::1" as having a port.
-	 */
 	private static String key(String ip) {
-		if (ip.startsWith("[")) {
-			int closingBracket = ip.indexOf(']');
-			if (closingBracket > 0) {
-				return "login-attempts:" + ip.substring(1, closingBracket);
-			}
-		} else if (ip.indexOf(':') == ip.lastIndexOf(':') && ip.indexOf(':') > 0) {
-			return "login-attempts:" + ip.substring(0, ip.indexOf(':'));
-		}
-		return "login-attempts:" + ip;
+		return "login-attempts:" + IpKeys.normalize(ip);
 	}
 
 }

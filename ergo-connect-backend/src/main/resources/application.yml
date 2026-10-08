@@ -28,6 +28,19 @@ spring:
       connect-timeout: 250ms
       repositories:
         enabled: false # only RedisTemplate is used directly - no @RedisHash entities to scan for
+  mail:
+    properties:
+      mail:
+        smtp:
+          # Jakarta Mail's own defaults are unbounded (Phase 8f security review) - a stalled relay would
+          # otherwise hold a request thread and a Hikari connection open indefinitely.
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
+  task:
+    execution:
+      mode: force # AsyncConfig's passwordResetExecutor is the only Executor bean today - force keeps it that
+                  # way rather than letting it silently satisfy Boot's own unrelated applicationTaskExecutor too
 
 management:
   endpoints:
@@ -39,11 +52,19 @@ management:
       # The login rate limiter is a resilience add-on, not a core dependency: it already fails open on its
       # own, so a Redis outage shouldn't also flip the app's overall health to DOWN (Phase 8d).
       enabled: false
+    mail:
+      # Same reasoning as redis above: a forgot-password email is best-effort (Phase 8f), not something an
+      # SMTP outage should flip the whole app's health to DOWN over.
+      enabled: false
 
 ergo:
   cors:
     # Explicit allow-list, never "*" (ARCHITECTURE.md §4)
     allowed-origins: http://localhost:5173
+  # Where the reset-password link in the email points (Phase 8f, ARCHITECTURE.md §8) - a configured value, not
+  # the request's own host/scheme, since the API and the frontend are served from different origins.
+  frontend-base-url: http://localhost:5173
   security:
     access-token-ttl: 15m # short: role/account changes reach every request within this window
     session-ttl: 12h      # a login lasts one working day at most
+    password-reset-token-ttl: 30m

@@ -11,9 +11,12 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.ergo.connect.common.audit.AuditLogService;
 import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.masterdata.access.AuthDtos.ChangePasswordRequest;
+import com.ergo.connect.masterdata.access.AuthDtos.ForgotPasswordRequest;
 import com.ergo.connect.masterdata.access.AuthDtos.LoginRequest;
+import com.ergo.connect.masterdata.access.AuthDtos.ResetPasswordRequest;
 import com.ergo.connect.masterdata.access.AuthDtos.SessionResponse;
 import com.ergo.connect.masterdata.access.AuthDtos.SwitchRoleRequest;
 import com.ergo.connect.masterdata.access.AuthService;
@@ -67,6 +70,20 @@ class AuthController {
 	@PostMapping("/change-password")
 	SessionResponse changePassword(@Valid @RequestBody ChangePasswordRequest body) {
 		return auth.changePassword(body.currentPassword(), body.newPassword());
+	}
+
+	@PostMapping("/forgot-password")
+	ResponseEntity<Void> forgotPassword(@Valid @RequestBody ForgotPasswordRequest body, HttpServletRequest request) {
+		// captured here, not in the @Async handler: RequestContextHolder (and so AuditLogService's own ip/channel
+		// lookup) is empty once that work moves off this request thread
+		auth.forgotPassword(body.email(), request.getRemoteAddr(), AuditLogService.channelOf(request));
+		return ResponseEntity.noContent().build();
+	}
+
+	@PostMapping("/reset-password")
+	ResponseEntity<Void> resetPassword(@Valid @RequestBody ResetPasswordRequest body) {
+		auth.resetPassword(body.token(), body.newPassword());
+		return ResponseEntity.noContent().build();
 	}
 
 	private static String sessionCookie(String value, Duration maxAge) {

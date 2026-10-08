@@ -19,6 +19,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Base64;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -55,6 +57,9 @@ class AuthAndAccessTests {
 
 	@Autowired
 	JdbcTemplate jdbc;
+
+	@Autowired
+	PasswordResetTokenStore resetTokens;
 
 	Accounts accounts;
 
@@ -179,6 +184,59 @@ class AuthAndAccessTests {
 
 		mvc.perform(post("/api/auth/refresh").cookie(session)).andExpect(status().isUnauthorized());
 		accounts.login(user.email, PASSWORD).andExpect(status().isUnauthorized());
+	}
+
+	/** Phase 8f security review finding "M2": an admin-triggered reset must kill any link that was already
+	 * mailed to the user through self-service forgot-password, not just change the account's own password. */
+	@Test
+	void anAdminTriggeredResetInvalidatesAnOutstandingSelfServiceToken() throws Exception {
+		String admin = accounts.bearer(accounts.user(ergo, Role.ERGO_ADMIN));
+		User user = accounts.user(customerA, Role.CUSTOMER_RFQ);
+		String outstandingToken = resetTokens.create(user.id, Instant.now().plus(Duration.ofMinutes(30)));
+
+		mvc.perform(post("/api/users/{id}/reset-password", user.id).header(HttpHeaders.AUTHORIZATION, admin))
+			.andExpect(status().isOk());
+
+		mvc.perform(post("/api/auth/reset-password").contentType(MediaType.APPLICATION_JSON)
+			.content("""
+					{"token": "%s", "newPassword": "Another-new-pass-1"}""".formatted(outstandingToken)))
+			.andExpect(status().isUnprocessableContent());
+	}
+
+	/** Same finding as above: deactivation must kill any outstanding self-service link too. */
+	@Test
+	void deactivatingAUserInvalidatesAnOutstandingSelfServiceToken() throws Exception {
+		String admin = accounts.bearer(accounts.user(ergo, Role.ERGO_ADMIN));
+		User user = accounts.user(customerA, Role.CUSTOMER_RFQ);
+		String outstandingToken = resetTokens.create(user.id, Instant.now().plus(Duration.ofMinutes(30)));
+
+		mvc.perform(json(put("/api/users/{id}/active", user.id), "{\"active\": false}", admin))
+			.andExpect(status().isOk());
+
+		mvc.perform(post("/api/auth/reset-password").contentType(MediaType.APPLICATION_JSON)
+			.content("""
+					{"token": "%s", "newPassword": "Another-new-pass-1"}""".formatted(outstandingToken)))
+			.andExpect(status().isUnprocessableContent());
+	}
+
+	/** Same finding: a link already mailed to the old address must not still work once the address on file
+	 * changes to something else. */
+	@Test
+	void changingAUsersEmailInvalidatesAnOutstandingSelfServiceToken() throws Exception {
+		String admin = accounts.bearer(accounts.user(ergo, Role.ERGO_ADMIN));
+		User user = accounts.user(customerA, Role.CUSTOMER_RFQ);
+		String outstandingToken = resetTokens.create(user.id, Instant.now().plus(Duration.ofMinutes(30)));
+
+		mvc.perform(json(put("/api/users/{id}", user.id),
+				"""
+						{"firstName": "%s", "lastName": "%s", "email": "changed-%s"}"""
+					.formatted(user.firstName, user.lastName, user.email),
+				admin)).andExpect(status().isOk());
+
+		mvc.perform(post("/api/auth/reset-password").contentType(MediaType.APPLICATION_JSON)
+			.content("""
+					{"token": "%s", "newPassword": "Another-new-pass-1"}""".formatted(outstandingToken)))
+			.andExpect(status().isUnprocessableContent());
 	}
 
 	@Test

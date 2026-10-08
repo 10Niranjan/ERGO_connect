@@ -66,9 +66,30 @@ public class AuditLogService {
 	/** For records written without JPA (e.g. master lists), which the automatic entity listener cannot see. */
 	public void record(String module, String entity, long recordId, String eventType, String field, String oldValue,
 			String newValue) {
-		Optional<CurrentUser> actor = CurrentUser.find();
 		HttpServletRequest request = RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes a
 				? a.getRequest() : null;
+		insert(module, entity, recordId, eventType, field, oldValue, newValue, channel(request),
+				request == null ? null : request.getRemoteAddr());
+	}
+
+	/**
+	 * For a write made off the request thread (e.g. an {@code @Async} handler) - {@code RequestContextHolder} is
+	 * empty there, so the caller must capture the request's own ip/channel on the request thread, before
+	 * dispatching, and pass them through explicitly.
+	 */
+	public void record(Class<?> entity, long recordId, String eventType, String field, String oldValue,
+			String newValue, String ip, String channel) {
+		insert(moduleOf(entity), entity.getSimpleName(), recordId, eventType, field, oldValue, newValue, channel, ip);
+	}
+
+	/** Same channel/ip rule {@link #channel(HttpServletRequest)} applies, exposed for the async case above. */
+	public static String channelOf(HttpServletRequest request) {
+		return channel(request);
+	}
+
+	private void insert(String module, String entity, long recordId, String eventType, String field, String oldValue,
+			String newValue, String channel, String ip) {
+		Optional<CurrentUser> actor = CurrentUser.find();
 		jdbc.update("""
 				INSERT INTO audit_logs (module_name, entity_name, record_id, event_type, field_name, old_value, new_value,
 				                        action_reason, changed_by_user_id, changed_by_role_code, changed_by_company_id,
@@ -77,8 +98,7 @@ public class AuditLogService {
 				module, entity, recordId, eventType, field, oldValue, newValue,
 				TransactionSynchronizationManager.getResource(REASON),
 				actor.map(CurrentUser::userId).orElse(null), actor.map(u -> u.role().name()).orElse(null),
-				actor.map(CurrentUser::companyId).orElse(null), channel(request),
-				request == null ? null : request.getRemoteAddr());
+				actor.map(CurrentUser::companyId).orElse(null), channel, ip);
 	}
 
 	/** The audit trail of one record, oldest first. Callers decide who may read it. */

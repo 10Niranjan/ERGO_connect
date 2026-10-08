@@ -50,14 +50,17 @@ public class UserAdminService {
 
 	private final AuditLogService audit;
 
+	private final PasswordResetTokenStore resetTokens;
+
 	UserAdminService(UserRepository users, CompanyRepository companies, SessionStore sessions, RoleCatalog roleCatalog,
-			PasswordEncoder passwordEncoder, AuditLogService audit) {
+			PasswordEncoder passwordEncoder, AuditLogService audit, PasswordResetTokenStore resetTokens) {
 		this.users = users;
 		this.companies = companies;
 		this.sessions = sessions;
 		this.roleCatalog = roleCatalog;
 		this.passwordEncoder = passwordEncoder;
 		this.audit = audit;
+		this.resetTokens = resetTokens;
 	}
 
 	@Transactional(readOnly = true)
@@ -107,10 +110,16 @@ public class UserAdminService {
 
 	public UserResponse update(long id, UpdateUserRequest request) {
 		User user = visible(id);
-		if (!user.email.equalsIgnoreCase(request.email().trim())) {
+		boolean emailChanged = !user.email.equalsIgnoreCase(request.email().trim());
+		if (emailChanged) {
 			requireUniqueEmail(request.email());
 		}
 		apply(user, request.firstName(), request.lastName(), request.email(), request.mobile());
+		if (emailChanged) {
+			// a link already mailed to the old address must not still work once it no longer belongs to this
+			// user (Phase 8f security review finding)
+			resetTokens.invalidateAllFor(user.id);
+		}
 		return toResponse(user, companyOf(user));
 	}
 
@@ -144,6 +153,7 @@ public class UserAdminService {
 		user.active = active;
 		if (!active) {
 			sessions.revokeAll(user.id, null);
+			resetTokens.invalidateAllFor(user.id); // a still-outstanding emailed link must not reactivate access
 		}
 		return toResponse(user, companyOf(user));
 	}
@@ -156,6 +166,7 @@ public class UserAdminService {
 		user.mustChangePassword = true;
 		user.failedLoginCount = 0;
 		user.lockedUntil = null;
+		resetTokens.invalidateAllFor(user.id); // this reset supersedes any self-service link still outstanding
 		sessions.revokeAll(user.id, null);
 		return new TemporaryPasswordResponse(temporaryPassword);
 	}

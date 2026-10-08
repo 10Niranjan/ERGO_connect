@@ -9,11 +9,16 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.ergo.connect.common.audit.AuditLogService;
 import com.ergo.connect.common.exception.ApiException;
+import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
 import com.ergo.connect.common.security.Role;
 import com.ergo.connect.common.security.SecurityProperties;
@@ -30,6 +35,8 @@ import com.ergo.connect.masterdata.access.AuthDtos.SessionUser;
 @Service
 @Transactional(noRollbackFor = ApiException.class)
 public class AuthService {
+
+	private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 
 	private static final int MAX_FAILED_LOGINS = 5;
 
@@ -59,6 +66,16 @@ public class AuthService {
 
 	private final ChangePasswordRateLimiter changePasswordRateLimiter;
 
+	private final PasswordResetTokenStore resetTokens;
+
+	private final ForgotPasswordRateLimiter forgotPasswordRateLimiter;
+
+	private final PasswordResetRequestHandler resetRequestHandler;
+
+	private final PasswordResetMailer mailer;
+
+	private final AuditLogService audit;
+
 	private final Duration sessionTtl;
 
 	/** Checked for unknown emails so they take as long as wrong passwords (no account enumeration by timing). */
@@ -66,7 +83,9 @@ public class AuthService {
 
 	AuthService(UserRepository users, CompanyRepository companies, SessionStore sessions, RoleCatalog roleCatalog,
 			PasswordEncoder passwordEncoder, AccessTokens accessTokens, LoginRateLimiter rateLimiter,
-			ChangePasswordRateLimiter changePasswordRateLimiter, SecurityProperties props) {
+			ChangePasswordRateLimiter changePasswordRateLimiter, PasswordResetTokenStore resetTokens,
+			ForgotPasswordRateLimiter forgotPasswordRateLimiter, PasswordResetRequestHandler resetRequestHandler,
+			PasswordResetMailer mailer, AuditLogService audit, SecurityProperties props) {
 		this.users = users;
 		this.companies = companies;
 		this.sessions = sessions;
@@ -75,6 +94,11 @@ public class AuthService {
 		this.accessTokens = accessTokens;
 		this.rateLimiter = rateLimiter;
 		this.changePasswordRateLimiter = changePasswordRateLimiter;
+		this.resetTokens = resetTokens;
+		this.forgotPasswordRateLimiter = forgotPasswordRateLimiter;
+		this.resetRequestHandler = resetRequestHandler;
+		this.mailer = mailer;
+		this.audit = audit;
 		this.sessionTtl = props.sessionTtl();
 		this.dummyHash = passwordEncoder.encode(UUID.randomUUID().toString());
 	}
@@ -169,8 +193,58 @@ public class AuthService {
 		user.failedLoginCount = 0;
 		user.lockedUntil = null;
 		changePasswordRateLimiter.release(me.userId()); // a genuine change shouldn't cost a future legitimate attempt
+		resetTokens.invalidateAllFor(user.id); // any outstanding emailed link is now stale
+		mailer.sendPasswordChangedNotice(user.email);
 		sessions.revokeAll(user.id, me.sessionId()); // sign out every other device
 		return response(user, companyOf(user), startingRole(user, me.role()), me.sessionId());
+	}
+
+	/**
+	 * Always the same outcome whether or not the email is registered (SRS §12.4.1 "Forgot password") - the
+	 * caller never learns which. The rate limiters are the only synchronous work: the actual lookup, token and
+	 * email only happen in {@link PasswordResetRequestHandler}, off this request thread, so a real user's extra
+	 * work (an INSERT and a far more variable SMTP send) can never show up as a timing difference here.
+	 */
+	public void forgotPassword(String email, String ip, String channel) {
+		// the IP check runs first: once an IP is over its own limit, it must never still be able to keep
+		// spending a victim's separate per-email budget on each further try (security review finding)
+		forgotPasswordRateLimiter.checkAndRecordByIp(ip);
+		forgotPasswordRateLimiter.checkAndRecord(email);
+		try {
+			resetRequestHandler.handle(email, ip, channel);
+		}
+		catch (TaskRejectedException e) {
+			// the bounded queue is full - happens before any lookup, so it's the same for every email (no
+			// oracle); best-effort delivery just loses this one request rather than 500ing the caller
+			log.warn("Password reset request dropped - executor queue full ({})", e.toString());
+		}
+	}
+
+	/** The token is 256 random bits - unguessable, so unlike login/change-password this needs no rate limit. */
+	public void resetPassword(String token, String newPassword) {
+		// bcrypt's 72-byte limit, checked before consuming the token - a bad password shouldn't burn the one link
+		if (newPassword.getBytes(StandardCharsets.UTF_8).length > 72) {
+			throw ApiException.unprocessable("The new password is too long");
+		}
+		long userId = resetTokens.consume(token)
+			.orElseThrow(() -> ApiException.unprocessable("This reset link is invalid or has expired"));
+		User user = users.findById(userId).orElseThrow();
+		Company company = companyOf(user);
+		// re-checked here, not just when the link was issued (security review finding): closes the race where
+		// the account was deactivated, its company deactivated, or - defence in depth - it's an ERGO user,
+		// after the token was minted but before it was used. The token is already spent either way.
+		if (!user.active || company.status != CompanyStatus.ACTIVE || company.type == CompanyType.ERGO) {
+			throw ApiException.unprocessable("This reset link is invalid or has expired");
+		}
+		user.passwordHash = passwordEncoder.encode(newPassword);
+		user.mustChangePassword = false;
+		user.failedLoginCount = 0;
+		user.lockedUntil = null;
+		resetTokens.invalidateAllFor(user.id); // any other outstanding emailed link is now stale too
+		audit.reason("Self-service password reset via emailed link");
+		audit.record(User.class, user.id, "PASSWORD_RESET_BY_EMAIL", null, null, null);
+		mailer.sendPasswordChangedNotice(user.email);
+		sessions.revokeAll(user.id, null); // a recovery flow, not a self-service change: every device signed out
 	}
 
 	public void logout(String sessionToken) {

@@ -1,6 +1,6 @@
-import { Alert, Box, Button, TextField, Typography } from '@mui/material'
+import { Alert, Box, Button, TextField } from '@mui/material'
 import type { FormEvent } from 'react'
-import { useLocation, useNavigate } from 'react-router'
+import { Link, useLocation, useNavigate } from 'react-router'
 import { CenteredCard } from '../../shared/components/CenteredCard'
 import { problemMessage } from '../../shared/problem'
 import { useLoginMutation } from '../authApi'
@@ -35,9 +35,9 @@ export function LoginPage() {
         <Button type="submit" variant="contained" size="large" loading={isLoading}>
           Sign in
         </Button>
-        <Typography variant="body2" color="text.secondary">
-          Forgot your password? Ask your ERGO Connect administrator to reset it.
-        </Typography>
+        <Button component={Link} to="/forgot-password">
+          Forgot password?
+        </Button>
       </Box>
     </CenteredCard>
   )
