@@ -59,6 +59,9 @@ class CompanyManagementTests {
 	PasswordEncoder encoder;
 
 	@Autowired
+	OtpCodeStore otpCodes;
+
+	@Autowired
 	JdbcTemplate jdbc;
 
 	Accounts accounts;
@@ -79,7 +82,7 @@ class CompanyManagementTests {
 
 	@BeforeEach
 	void setUp() throws Exception {
-		accounts = new Accounts(companies, users, encoder, mvc);
+		accounts = new Accounts(companies, users, encoder, mvc, otpCodes);
 		ergo = accounts.company(ERGO);
 		customerA = accounts.company(CUSTOMER);
 		customerB = accounts.company(CUSTOMER);

@@ -40,11 +40,14 @@ class ChangePasswordAccountLockoutTest {
 	@Autowired
 	PasswordEncoder encoder;
 
+	@Autowired
+	OtpCodeStore otpCodes;
+
 	Accounts accounts;
 
 	@BeforeEach
 	void setUp() {
-		accounts = new Accounts(companies, users, encoder, mvc);
+		accounts = new Accounts(companies, users, encoder, mvc, otpCodes);
 	}
 
 	@Test

@@ -56,6 +56,9 @@ class AuthAndAccessTests {
 	PasswordEncoder encoder;
 
 	@Autowired
+	OtpCodeStore otpCodes;
+
+	@Autowired
 	JdbcTemplate jdbc;
 
 	@Autowired
@@ -75,7 +78,7 @@ class AuthAndAccessTests {
 
 	@BeforeEach
 	void setUp() {
-		accounts = new Accounts(companies, users, encoder, mvc);
+		accounts = new Accounts(companies, users, encoder, mvc, otpCodes);
 		ergo = accounts.company(ERGO);
 		customerA = accounts.company(CUSTOMER);
 		customerB = accounts.company(CUSTOMER);

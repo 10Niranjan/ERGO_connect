@@ -1,18 +1,18 @@
 package com.ergo.connect.masterdata.access;
 
-import java.util.Locale;
-
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import com.ergo.connect.common.exception.ApiException;
+import com.ergo.connect.common.security.IpKeys;
 import com.ergo.connect.common.security.RedisFixedWindowLimiter;
 
 /**
  * OTP verification attempt limiter (ARCHITECTURE.md §8, Phase 8g) - a 6-digit code is only 10^6 possibilities, so
- * guessing it needs its own cap independent of {@link LoginRateLimiter}'s IP bucket. Keyed by email like
- * {@link ForgotPasswordRateLimiter}: whoever reaches this endpoint already knows the email (it's the one they
- * just logged in with), so email is bucket enough.
+ * guessing it needs its own cap. Keyed by IP, like {@link LoginRateLimiter}, not by the submitted email: an
+ * attacker who merely knows (or guesses) a victim's address but not their password must not be able to spend the
+ * victim's own attempt budget on junk codes and lock them out of their own correct one (security review finding
+ * H1) - the same reasoning login's own IP-keyed limiter exists for, on top of its separate per-account lockout.
  */
 @Component
 class OtpRateLimiter {
@@ -29,14 +29,19 @@ class OtpRateLimiter {
 		this.maxAttempts = maxAttempts;
 	}
 
-	void checkAndRecord(String email) {
-		if (limiter.increment(key(email), WINDOW_SECONDS) > maxAttempts) {
-			throw ApiException.tooManyRequests("Too many attempts. Please sign in again to get a new code.");
+	void checkAndRecord(String ip) {
+		if (limiter.increment(key(ip), WINDOW_SECONDS) > maxAttempts) {
+			throw ApiException.tooManyRequests("Too many attempts from this network. Please wait a few minutes and try again.");
 		}
 	}
 
-	private static String key(String email) {
-		return "otp-attempts:" + email.trim().toLowerCase(Locale.ROOT);
+	/** Gives the attempt back on a successful verify, so a few early typos don't cost a later legitimate retry. */
+	void release(String ip) {
+		limiter.release(key(ip));
+	}
+
+	private static String key(String ip) {
+		return "otp-attempts:" + IpKeys.normalize(ip);
 	}
 
 }

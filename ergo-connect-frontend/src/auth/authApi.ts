@@ -44,7 +44,7 @@ export const authApi = api.injectEndpoints({
       query: (body) => ({ url: '/auth/verify-otp', method: 'POST', body }),
       ...startsSession,
     }),
-    setTwoFactor: build.mutation<void, { enabled: boolean }>({
+    setTwoFactor: build.mutation<void, { enabled: boolean; currentPassword?: string }>({
       query: (body) => ({ url: '/auth/2fa', method: 'POST', body }),
     }),
     switchRole: build.mutation<Session, Role>({

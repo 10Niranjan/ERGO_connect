@@ -43,6 +43,9 @@ class AuditTrailTests {
 	PasswordEncoder encoder;
 
 	@Autowired
+	OtpCodeStore otpCodes;
+
+	@Autowired
 	JdbcTemplate jdbc;
 
 	@Autowired
@@ -60,7 +63,7 @@ class AuditTrailTests {
 
 	@BeforeEach
 	void setUp() throws Exception {
-		accounts = new Accounts(companies, users, encoder, mvc);
+		accounts = new Accounts(companies, users, encoder, mvc, otpCodes);
 		ergo = accounts.company(ERGO);
 		customer = accounts.company(CUSTOMER);
 		admin = accounts.user(ergo, Role.ERGO_ADMIN);

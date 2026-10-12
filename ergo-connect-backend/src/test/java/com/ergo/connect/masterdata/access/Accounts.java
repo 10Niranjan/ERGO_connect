@@ -3,6 +3,8 @@ package com.ergo.connect.masterdata.access;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -32,12 +34,16 @@ class Accounts {
 
 	private final MockMvc mvc;
 
+	private final OtpCodeStore otpCodes;
+
 	private final String hash;
 
-	Accounts(CompanyRepository companies, UserRepository users, PasswordEncoder encoder, MockMvc mvc) {
+	Accounts(CompanyRepository companies, UserRepository users, PasswordEncoder encoder, MockMvc mvc,
+			OtpCodeStore otpCodes) {
 		this.companies = companies;
 		this.users = users;
 		this.mvc = mvc;
+		this.otpCodes = otpCodes;
 		this.hash = encoder.encode(PASSWORD);
 	}
 
@@ -69,8 +75,23 @@ class Accounts {
 				{"email": "%s", "password": "%s"}""".formatted(email, password)));
 	}
 
+	/**
+	 * A ready-to-use session, even for an ERGO_ADMIN account - which self-heals {@code twoFactorEnabled} to true
+	 * on its very first login (ARCHITECTURE.md §8, Phase 8g security review finding M1). Transparently completes
+	 * that OTP challenge with a code minted directly through {@link OtpCodeStore} (bypassing email, same as
+	 * {@link TwoFactorAuthTest} does for its own cases), so every existing caller of this method/{@link #bearer}
+	 * keeps working unchanged.
+	 */
 	MvcResult login(User user) throws Exception {
-		return login(user.email, PASSWORD).andExpect(status().isOk()).andReturn();
+		MvcResult result = login(user.email, PASSWORD).andExpect(status().isOk()).andReturn();
+		if (result.getResponse().getContentAsString().contains("\"otpRequired\":true")) {
+			String code = otpCodes.create(user.id, Instant.now().plus(Duration.ofMinutes(5)));
+			result = mvc.perform(post("/api/auth/verify-otp").contentType(MediaType.APPLICATION_JSON).content("""
+					{"email": "%s", "code": "%s"}""".formatted(user.email, code)))
+				.andExpect(status().isOk())
+				.andReturn();
+		}
+		return result;
 	}
 
 	/** "Bearer ..." header value for the user's default role. */

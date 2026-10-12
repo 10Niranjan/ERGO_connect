@@ -108,6 +108,7 @@ class AdminBootstrapRunner implements ApplicationRunner {
 
 		audit.record(User.class, admin.id, "BOOTSTRAP_ADMIN_CREATED", null, null, admin.email);
 		audit.record(User.class, admin.id, "ROLE_ADDED", "roles", null, Role.ERGO_ADMIN.name());
+		audit.record(User.class, admin.id, "TWO_FACTOR_ENABLED", null, null, null);
 		log.warn("Bootstrapped first ERGO Admin {} - must change password on first login. Remove the "
 				+ "ergo.bootstrap-admin.* env vars now so this can never run again.", admin.email);
 	}

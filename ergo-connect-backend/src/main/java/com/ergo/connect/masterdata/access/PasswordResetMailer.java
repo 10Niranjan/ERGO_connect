@@ -71,6 +71,20 @@ class PasswordResetMailer {
 				ttl.toMinutes()));
 	}
 
+	/** Phase 8g security review finding M2: the owner should hear about this even though, unlike a password
+	 * change, nothing else about their session changes to tip them off. */
+	void sendTwoFactorDisabledNotice(String toEmail) {
+		if (mailSender.isEmpty()) {
+			log.warn("No MailSender configured - could not notify {} that two-factor authentication was turned off",
+					toEmail);
+			return;
+		}
+		send(toEmail, "Two-factor authentication was turned off on your ERGO Connect account", """
+				Two-factor authentication was just turned off on your ERGO Connect account.
+
+				If this wasn't you, contact your ERGO Connect administrator immediately.""");
+	}
+
 	/** Security review finding (M3): the account owner should hear about this from somewhere other than being
 	 * signed out everywhere at once. */
 	void sendPasswordChangedNotice(String toEmail) {

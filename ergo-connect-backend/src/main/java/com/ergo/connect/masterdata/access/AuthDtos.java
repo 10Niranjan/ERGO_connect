@@ -38,7 +38,8 @@ public final class AuthDtos {
 			@NotBlank @Pattern(regexp = "\\d{6}") String code) {
 	}
 
-	public record TwoFactorRequest(boolean enabled) {
+	/** {@code currentPassword} is required only when turning the feature off (security review finding M2). */
+	public record TwoFactorRequest(boolean enabled, @Size(max = 200) String currentPassword) {
 	}
 
 	/** Returned by {@code /login} instead of a session when the account has 2FA enabled (Phase 8g). */

@@ -53,6 +53,9 @@ class PasswordResetFlowTest {
 	PasswordEncoder encoder;
 
 	@Autowired
+	OtpCodeStore otpCodes;
+
+	@Autowired
 	JdbcTemplate jdbc;
 
 	@Autowired
@@ -62,7 +65,7 @@ class PasswordResetFlowTest {
 
 	@BeforeEach
 	void setUp() {
-		accounts = new Accounts(companies, users, encoder, mvc);
+		accounts = new Accounts(companies, users, encoder, mvc, otpCodes);
 	}
 
 	@Test

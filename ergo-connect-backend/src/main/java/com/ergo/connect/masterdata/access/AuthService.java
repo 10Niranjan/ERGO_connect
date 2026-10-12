@@ -147,29 +147,46 @@ public class AuthService {
 		if (!user.active || company.status != CompanyStatus.ACTIVE) {
 			throw ApiException.unauthorized(INVALID_LOGIN);
 		}
-		rateLimiter.release(ip); // a successful login shouldn't cost this shared IP one of its attempts
 		user.failedLoginCount = 0;
 		user.lockedUntil = null;
+		// checked here, not just at grant time (security review finding M1): a flag set only when ERGO_ADMIN is
+		// granted misses any row that predates this feature or was granted outside UserAdminService/AdminBootstrapRunner
+		if (!user.twoFactorEnabled && user.roles.contains(Role.ERGO_ADMIN)) {
+			user.twoFactorEnabled = true;
+			audit.record(User.class, user.id, "TWO_FACTOR_ENABLED", null, null, null);
+		}
 		if (user.twoFactorEnabled) {
-			// no session yet - credentials proved identity, but the login isn't complete until verifyOtp()
+			// no session yet - credentials proved identity, but the login isn't complete until verifyOtp(). The IP
+			// slot is deliberately NOT released here (security review finding L4): a password holder could
+			// otherwise call /login over and over at no cost, each time emailing the victim's inbox a fresh code.
 			String code = otpCodes.create(user.id, now.plus(OTP_TTL));
 			mailer.sendLoginCode(user.email, code, OTP_TTL);
 			return LoginResult.otpChallenge();
 		}
+		rateLimiter.release(ip); // a successful login shouldn't cost this shared IP one of its attempts
 		return finishLogin(user, company, ip);
 	}
 
 	/** Completes a login once the password (and, if enabled, the OTP) are both verified. */
 	public LoginResult verifyOtp(String email, String code, String ip) {
-		otpRateLimiter.checkAndRecord(email); // a 6-digit code needs its own brute-force cap, independent of login's
+		// keyed by IP, not email (security review finding H1): an email-keyed limiter let anyone who merely knows
+		// a victim's address burn their attempt budget with junk codes, locking them out of their own correct one
+		// with no password needed - exactly the targeted-lockout DoS login's own IP-keyed limiter avoids.
+		otpRateLimiter.checkAndRecord(ip);
 		User user = users.findByEmail(email.trim()).orElse(null);
-		if (user == null || !otpCodes.verify(user.id, code)) {
+		// an unknown email still costs a real UPDATE statement (dummy user id, never matches) - the same
+		// equal-cost-either-way precedent login()'s own dummy-hash check sets, so response time can't tell an
+		// unregistered email apart from a wrong code (security review finding H1, secondary note)
+		boolean valid = otpCodes.verify(user == null ? -1L : user.id, code);
+		if (user == null || !valid) {
+			log.warn("Rejected OTP verify attempt for {} from {}", email, ip); // leaves a trace of brute-forcing
 			throw ApiException.unauthorized(INVALID_CODE);
 		}
 		Company company = companyOf(user);
 		if (!user.active || company.status != CompanyStatus.ACTIVE) {
 			throw ApiException.unauthorized(INVALID_CODE);
 		}
+		otpRateLimiter.release(ip); // a genuine success shouldn't cost a later legitimate attempt from this IP
 		return finishLogin(user, company, ip);
 	}
 
@@ -181,12 +198,34 @@ public class AuthService {
 		return LoginResult.ofSession(response(user, company, role, session.id()), session.token(), sessionTtl);
 	}
 
-	/** Self-service toggle (SRS §12.4.1). ERGO Admin accounts can't turn it off (ARCHITECTURE.md §8, Phase 8g). */
-	public void setTwoFactor(boolean enabled) {
+	/**
+	 * Self-service toggle (SRS §12.4.1). ERGO Admin accounts can't turn it off. Turning it off needs the current
+	 * password (security review finding M2) - otherwise a stolen in-memory access token alone would be enough to
+	 * permanently drop the second factor on an account the attacker also happens to know the password for, with
+	 * the owner never told; {@code currentPassword} is required precisely for the disable path.
+	 */
+	public void setTwoFactor(boolean enabled, String currentPassword) {
 		CurrentUser me = CurrentUser.get();
 		User user = users.findById(me.userId()).orElseThrow();
 		if (!enabled && user.roles.contains(Role.ERGO_ADMIN)) {
 			throw ApiException.unprocessable("ERGO Admin accounts require two-factor authentication");
+		}
+		if (!enabled) {
+			changePasswordRateLimiter.checkAndRecord(me.userId()); // same brute-force cap changePassword() uses
+			Instant now = Instant.now();
+			if (user.lockedUntil != null && user.lockedUntil.isAfter(now)) {
+				throw ApiException.tooManyRequests("Too many failed attempts. Please try again later.");
+			}
+			if (currentPassword == null || !passwordEncoder.matches(currentPassword, user.passwordHash)) {
+				if (++user.failedLoginCount >= MAX_FAILED_LOGINS) {
+					user.lockedUntil = now.plus(LOCKOUT);
+					user.failedLoginCount = 0;
+				}
+				throw ApiException.unprocessable("Current password is incorrect");
+			}
+			changePasswordRateLimiter.release(me.userId());
+			user.failedLoginCount = 0;
+			user.lockedUntil = null;
 		}
 		if (user.twoFactorEnabled != enabled) {
 			user.twoFactorEnabled = enabled;
@@ -194,6 +233,7 @@ public class AuthService {
 		}
 		if (!enabled) {
 			otpCodes.invalidateAllFor(user.id); // no outstanding code should still work once the feature is off
+			mailer.sendTwoFactorDisabledNotice(user.email); // the owner should hear about this from somewhere else
 		}
 	}
 
@@ -255,6 +295,7 @@ public class AuthService {
 		user.lockedUntil = null;
 		changePasswordRateLimiter.release(me.userId()); // a genuine change shouldn't cost a future legitimate attempt
 		resetTokens.invalidateAllFor(user.id); // any outstanding emailed link is now stale
+		otpCodes.invalidateAllFor(user.id); // a code sent under the old password must not still complete a login
 		mailer.sendPasswordChangedNotice(user.email);
 		sessions.revokeAll(user.id, me.sessionId()); // sign out every other device
 		return response(user, companyOf(user), startingRole(user, me.role()), me.sessionId());
@@ -302,6 +343,7 @@ public class AuthService {
 		user.failedLoginCount = 0;
 		user.lockedUntil = null;
 		resetTokens.invalidateAllFor(user.id); // any other outstanding emailed link is now stale too
+		otpCodes.invalidateAllFor(user.id); // a code sent under the old password must not still complete a login
 		audit.reason("Self-service password reset via emailed link");
 		audit.record(User.class, user.id, "PASSWORD_RESET_BY_EMAIL", null, null, null);
 		mailer.sendPasswordChangedNotice(user.email);

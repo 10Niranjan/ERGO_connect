@@ -107,9 +107,13 @@ public class UserAdminService {
 		user.mustChangePassword = true;
 		user.roles.addAll(request.roles());
 		user.defaultRole = defaultRole;
-		user.twoFactorEnabled = request.roles().contains(Role.ERGO_ADMIN); // mandatory for ERGO Admin (ARCHITECTURE.md §8)
+		boolean mandatoryTwoFactor = request.roles().contains(Role.ERGO_ADMIN); // mandatory for ERGO Admin (ARCHITECTURE.md §8)
+		user.twoFactorEnabled = mandatoryTwoFactor;
 		users.save(user);
 		request.roles().forEach(role -> audit.record(User.class, user.id, "ROLE_ADDED", "roles", null, role.name()));
+		if (mandatoryTwoFactor) {
+			audit.record(User.class, user.id, "TWO_FACTOR_ENABLED", null, null, null);
+		}
 		return new CreatedUserResponse(toResponse(user, company), temporaryPassword);
 	}
 

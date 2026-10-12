@@ -62,7 +62,7 @@ class AuthController {
 
 	@PostMapping("/2fa")
 	ResponseEntity<Void> setTwoFactor(@Valid @RequestBody TwoFactorRequest body) {
-		auth.setTwoFactor(body.enabled());
+		auth.setTwoFactor(body.enabled(), body.currentPassword());
 		return ResponseEntity.noContent().build();
 	}
 
