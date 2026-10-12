@@ -44,7 +44,7 @@ class PasswordResetMailer {
 
 	void sendResetLink(String toEmail, String resetLink, Duration ttl) {
 		if (mailSender.isEmpty()) {
-			logUnsentLink(toEmail, resetLink);
+			logUnsent(toEmail, "password reset link", resetLink);
 			return;
 		}
 		send(toEmail, "Reset your ERGO Connect password", """
@@ -53,6 +53,21 @@ class PasswordResetMailer {
 				%s
 
 				This link expires in %d minutes. If you didn't request this, you can ignore this email.""".formatted(resetLink,
+				ttl.toMinutes()));
+	}
+
+	/** The second-factor login code (Phase 8g, SRS §12.4.1 "optional two-factor authentication"). */
+	void sendLoginCode(String toEmail, String code, Duration ttl) {
+		if (mailSender.isEmpty()) {
+			logUnsent(toEmail, "login code", code);
+			return;
+		}
+		send(toEmail, "Your ERGO Connect login code", """
+				Your ERGO Connect login code is:
+
+				%s
+
+				This code expires in %d minutes. If you didn't try to sign in, you can ignore this email.""".formatted(code,
 				ttl.toMinutes()));
 	}
 
@@ -71,12 +86,12 @@ class PasswordResetMailer {
 				If this wasn't you, contact your ERGO Connect administrator immediately.""");
 	}
 
-	private void logUnsentLink(String toEmail, String resetLink) {
+	private void logUnsent(String toEmail, String label, String value) {
 		if (env.matchesProfiles("dev")) {
-			log.warn("No spring.mail.host configured - password reset link for {}: {}", toEmail, resetLink);
+			log.warn("No spring.mail.host configured - {} for {}: {}", label, toEmail, value);
 		}
 		else {
-			log.error("No MailSender configured - could not deliver a password reset email to {}", toEmail);
+			log.error("No MailSender configured - could not deliver {} to {}", label, toEmail);
 		}
 	}
 

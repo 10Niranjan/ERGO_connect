@@ -20,7 +20,7 @@ public final class UserDtos {
 
 	public record UserResponse(long id, long companyId, String companyName, CompanyType companyType,
 			String firstName, String lastName, String email, String mobile, boolean active, List<Role> roles,
-			Role defaultRole, List<Long> accountIds, Instant lastLoginAt) {
+			Role defaultRole, List<Long> accountIds, Instant lastLoginAt, boolean twoFactorEnabled) {
 	}
 
 	public record CreateUserRequest(@NotNull Long companyId, @NotBlank @Size(max = 100) String firstName,

@@ -14,12 +14,14 @@ export function LoginPage() {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
+    const email = String(form.get('email'))
     try {
-      const session = await login({
-        email: String(form.get('email')),
-        password: String(form.get('password')),
-      }).unwrap()
-      const next = session.mustChangePassword ? '/change-password' : session.roles.length > 1 ? '/select-role' : from
+      const result = await login({ email, password: String(form.get('password')) }).unwrap()
+      if ('otpRequired' in result) {
+        navigate('/verify-otp', { replace: true, state: { email, from } })
+        return
+      }
+      const next = result.mustChangePassword ? '/change-password' : result.roles.length > 1 ? '/select-role' : from
       navigate(next, { replace: true })
     } catch {
       // shown below

@@ -103,6 +103,7 @@ class AdminBootstrapRunner implements ApplicationRunner {
 		admin.mustChangePassword = true; // the env-var password is never the password they actually keep using
 		admin.roles.add(Role.ERGO_ADMIN);
 		admin.defaultRole = Role.ERGO_ADMIN;
+		admin.twoFactorEnabled = true; // mandatory for ERGO Admin (ARCHITECTURE.md §8, Phase 8g)
 		users.save(admin);
 
 		audit.record(User.class, admin.id, "BOOTSTRAP_ADMIN_CREATED", null, null, admin.email);

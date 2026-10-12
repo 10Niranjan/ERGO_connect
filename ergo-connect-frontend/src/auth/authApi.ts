@@ -2,6 +2,15 @@ import type { UnknownAction } from '@reduxjs/toolkit'
 import { api } from '../app/store'
 import { sessionEnded, sessionStarted, type Role, type Session } from './authSlice'
 
+/** What {@code /login} returns when the account has 2FA enabled, instead of a session (Phase 8g). */
+export interface OtpChallenge {
+  otpRequired: true
+}
+
+function isOtpChallenge(data: Session | OtpChallenge): data is OtpChallenge {
+  return 'otpRequired' in data
+}
+
 /**
  * A new or changed session starts with an empty cache: data loaded under the previous role must never be shown
  * under the next one.
@@ -9,10 +18,14 @@ import { sessionEnded, sessionStarted, type Role, type Session } from './authSli
 const startsSession = {
   async onQueryStarted(
     _arg: unknown,
-    { dispatch, queryFulfilled }: { dispatch: (action: UnknownAction) => unknown; queryFulfilled: Promise<{ data: Session }> },
+    {
+      dispatch,
+      queryFulfilled,
+    }: { dispatch: (action: UnknownAction) => unknown; queryFulfilled: Promise<{ data: Session | OtpChallenge }> },
   ) {
     try {
       const { data } = await queryFulfilled
+      if (isOtpChallenge(data)) return // login isn't complete until verifyOtp() succeeds
       dispatch(api.util.resetApiState())
       dispatch(sessionStarted(data))
     } catch {
@@ -23,9 +36,16 @@ const startsSession = {
 
 export const authApi = api.injectEndpoints({
   endpoints: (build) => ({
-    login: build.mutation<Session, { email: string; password: string }>({
+    login: build.mutation<Session | OtpChallenge, { email: string; password: string }>({
       query: (body) => ({ url: '/auth/login', method: 'POST', body }),
       ...startsSession,
+    }),
+    verifyOtp: build.mutation<Session, { email: string; code: string }>({
+      query: (body) => ({ url: '/auth/verify-otp', method: 'POST', body }),
+      ...startsSession,
+    }),
+    setTwoFactor: build.mutation<void, { enabled: boolean }>({
+      query: (body) => ({ url: '/auth/2fa', method: 'POST', body }),
     }),
     switchRole: build.mutation<Session, Role>({
       query: (role) => ({ url: '/auth/switch-role', method: 'POST', body: { role } }),
@@ -64,6 +84,8 @@ export const authApi = api.injectEndpoints({
 
 export const {
   useLoginMutation,
+  useVerifyOtpMutation,
+  useSetTwoFactorMutation,
   useSwitchRoleMutation,
   useChangePasswordMutation,
   useForgotPasswordMutation,

@@ -27,6 +27,7 @@ import { ForgotPasswordPage } from '../auth/pages/ForgotPasswordPage'
 import { LoginPage } from '../auth/pages/LoginPage'
 import { ResetPasswordPage } from '../auth/pages/ResetPasswordPage'
 import { RoleSelectPage } from '../auth/pages/RoleSelectPage'
+import { VerifyOtpPage } from '../auth/pages/VerifyOtpPage'
 import { RequireAuth } from '../auth/RequireAuth'
 import { RequireRole } from '../auth/RequireRole'
 import { MasterDataPage } from '../features/admin/pages/MasterDataPage'
@@ -64,6 +65,7 @@ import { AppShell } from '../shared/layout/AppShell'
 // Route guards only hide screens; the backend enforces every permission and record scope itself.
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
+  { path: '/verify-otp', element: <VerifyOtpPage /> },
   { path: '/forgot-password', element: <ForgotPasswordPage /> },
   { path: '/reset-password', element: <ResetPasswordPage /> },
   {

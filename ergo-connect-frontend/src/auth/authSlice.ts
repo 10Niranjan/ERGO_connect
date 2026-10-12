@@ -41,6 +41,7 @@ export interface Session {
     companyId: number
     companyName: string
     companyType: CompanyType
+    twoFactorEnabled: boolean
   }
   /** One role at a time; switching issues a new token. */
   activeRole: Role

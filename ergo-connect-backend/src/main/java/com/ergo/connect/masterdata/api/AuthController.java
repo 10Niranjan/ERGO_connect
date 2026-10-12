@@ -16,9 +16,12 @@ import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.masterdata.access.AuthDtos.ChangePasswordRequest;
 import com.ergo.connect.masterdata.access.AuthDtos.ForgotPasswordRequest;
 import com.ergo.connect.masterdata.access.AuthDtos.LoginRequest;
+import com.ergo.connect.masterdata.access.AuthDtos.OtpChallengeResponse;
 import com.ergo.connect.masterdata.access.AuthDtos.ResetPasswordRequest;
 import com.ergo.connect.masterdata.access.AuthDtos.SessionResponse;
 import com.ergo.connect.masterdata.access.AuthDtos.SwitchRoleRequest;
+import com.ergo.connect.masterdata.access.AuthDtos.TwoFactorRequest;
+import com.ergo.connect.masterdata.access.AuthDtos.VerifyOtpRequest;
 import com.ergo.connect.masterdata.access.AuthService;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -39,11 +42,28 @@ class AuthController {
 	}
 
 	@PostMapping("/login")
-	ResponseEntity<SessionResponse> login(@Valid @RequestBody LoginRequest body, HttpServletRequest request) {
+	ResponseEntity<Object> login(@Valid @RequestBody LoginRequest body, HttpServletRequest request) {
 		AuthService.LoginResult result = auth.login(body.email(), body.password(), request.getRemoteAddr());
+		if (result.otpRequired()) {
+			return ResponseEntity.ok(new OtpChallengeResponse(true));
+		}
 		return ResponseEntity.ok()
 			.header(HttpHeaders.SET_COOKIE, sessionCookie(result.sessionToken(), result.sessionTtl()))
 			.body(result.session());
+	}
+
+	@PostMapping("/verify-otp")
+	ResponseEntity<SessionResponse> verifyOtp(@Valid @RequestBody VerifyOtpRequest body, HttpServletRequest request) {
+		AuthService.LoginResult result = auth.verifyOtp(body.email(), body.code(), request.getRemoteAddr());
+		return ResponseEntity.ok()
+			.header(HttpHeaders.SET_COOKIE, sessionCookie(result.sessionToken(), result.sessionTtl()))
+			.body(result.session());
+	}
+
+	@PostMapping("/2fa")
+	ResponseEntity<Void> setTwoFactor(@Valid @RequestBody TwoFactorRequest body) {
+		auth.setTwoFactor(body.enabled());
+		return ResponseEntity.noContent().build();
 	}
 
 	@PostMapping("/refresh")

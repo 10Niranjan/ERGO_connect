@@ -50,6 +50,9 @@ class User {
 
 	boolean mustChangePassword = true;
 
+	/** Email-OTP second factor (SRS §12.4.1), mandatory for ERGO_ADMIN (ARCHITECTURE.md §8, Phase 8g). */
+	boolean twoFactorEnabled = false;
+
 	/** Mapped roles (user_role_mappings). Changes are audited explicitly as ROLE_ADDED / ROLE_REMOVED. */
 	@ElementCollection
 	@CollectionTable(name = "user_role_mappings", joinColumns = @JoinColumn(name = "user_id"))

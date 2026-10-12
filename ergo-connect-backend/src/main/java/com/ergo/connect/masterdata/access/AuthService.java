@@ -46,8 +46,21 @@ public class AuthService {
 
 	private static final String SESSION_EXPIRED = "Your session has expired. Please sign in again.";
 
-	/** A new login: the session payload plus the raw session token for the HttpOnly cookie. */
-	public record LoginResult(SessionResponse session, String sessionToken, Duration sessionTtl) {
+	private static final String INVALID_CODE = "Invalid or expired code. Please sign in again.";
+
+	private static final Duration OTP_TTL = Duration.ofMinutes(5);
+
+	/** A new login: the session payload plus the raw session token for the HttpOnly cookie - unless the account has
+	 * 2FA enabled, in which case {@code otpRequired} is true and every other field is null (Phase 8g). */
+	public record LoginResult(SessionResponse session, String sessionToken, Duration sessionTtl, boolean otpRequired) {
+
+		static LoginResult otpChallenge() {
+			return new LoginResult(null, null, null, true);
+		}
+
+		static LoginResult ofSession(SessionResponse session, String sessionToken, Duration sessionTtl) {
+			return new LoginResult(session, sessionToken, sessionTtl, false);
+		}
 	}
 
 	private final UserRepository users;
@@ -74,6 +87,10 @@ public class AuthService {
 
 	private final PasswordResetMailer mailer;
 
+	private final OtpCodeStore otpCodes;
+
+	private final OtpRateLimiter otpRateLimiter;
+
 	private final AuditLogService audit;
 
 	private final Duration sessionTtl;
@@ -85,7 +102,8 @@ public class AuthService {
 			PasswordEncoder passwordEncoder, AccessTokens accessTokens, LoginRateLimiter rateLimiter,
 			ChangePasswordRateLimiter changePasswordRateLimiter, PasswordResetTokenStore resetTokens,
 			ForgotPasswordRateLimiter forgotPasswordRateLimiter, PasswordResetRequestHandler resetRequestHandler,
-			PasswordResetMailer mailer, AuditLogService audit, SecurityProperties props) {
+			PasswordResetMailer mailer, OtpCodeStore otpCodes, OtpRateLimiter otpRateLimiter, AuditLogService audit,
+			SecurityProperties props) {
 		this.users = users;
 		this.companies = companies;
 		this.sessions = sessions;
@@ -98,6 +116,8 @@ public class AuthService {
 		this.forgotPasswordRateLimiter = forgotPasswordRateLimiter;
 		this.resetRequestHandler = resetRequestHandler;
 		this.mailer = mailer;
+		this.otpCodes = otpCodes;
+		this.otpRateLimiter = otpRateLimiter;
 		this.audit = audit;
 		this.sessionTtl = props.sessionTtl();
 		this.dummyHash = passwordEncoder.encode(UUID.randomUUID().toString());
@@ -127,13 +147,54 @@ public class AuthService {
 		if (!user.active || company.status != CompanyStatus.ACTIVE) {
 			throw ApiException.unauthorized(INVALID_LOGIN);
 		}
-		Role role = startingRole(user, null);
 		rateLimiter.release(ip); // a successful login shouldn't cost this shared IP one of its attempts
 		user.failedLoginCount = 0;
 		user.lockedUntil = null;
+		if (user.twoFactorEnabled) {
+			// no session yet - credentials proved identity, but the login isn't complete until verifyOtp()
+			String code = otpCodes.create(user.id, now.plus(OTP_TTL));
+			mailer.sendLoginCode(user.email, code, OTP_TTL);
+			return LoginResult.otpChallenge();
+		}
+		return finishLogin(user, company, ip);
+	}
+
+	/** Completes a login once the password (and, if enabled, the OTP) are both verified. */
+	public LoginResult verifyOtp(String email, String code, String ip) {
+		otpRateLimiter.checkAndRecord(email); // a 6-digit code needs its own brute-force cap, independent of login's
+		User user = users.findByEmail(email.trim()).orElse(null);
+		if (user == null || !otpCodes.verify(user.id, code)) {
+			throw ApiException.unauthorized(INVALID_CODE);
+		}
+		Company company = companyOf(user);
+		if (!user.active || company.status != CompanyStatus.ACTIVE) {
+			throw ApiException.unauthorized(INVALID_CODE);
+		}
+		return finishLogin(user, company, ip);
+	}
+
+	private LoginResult finishLogin(User user, Company company, String ip) {
+		Instant now = Instant.now();
+		Role role = startingRole(user, null);
 		user.lastLoginAt = now;
 		SessionStore.NewSession session = sessions.create(user.id, role, now.plus(sessionTtl), ip);
-		return new LoginResult(response(user, company, role, session.id()), session.token(), sessionTtl);
+		return LoginResult.ofSession(response(user, company, role, session.id()), session.token(), sessionTtl);
+	}
+
+	/** Self-service toggle (SRS §12.4.1). ERGO Admin accounts can't turn it off (ARCHITECTURE.md §8, Phase 8g). */
+	public void setTwoFactor(boolean enabled) {
+		CurrentUser me = CurrentUser.get();
+		User user = users.findById(me.userId()).orElseThrow();
+		if (!enabled && user.roles.contains(Role.ERGO_ADMIN)) {
+			throw ApiException.unprocessable("ERGO Admin accounts require two-factor authentication");
+		}
+		if (user.twoFactorEnabled != enabled) {
+			user.twoFactorEnabled = enabled;
+			audit.record(User.class, user.id, enabled ? "TWO_FACTOR_ENABLED" : "TWO_FACTOR_DISABLED", null, null, null);
+		}
+		if (!enabled) {
+			otpCodes.invalidateAllFor(user.id); // no outstanding code should still work once the feature is off
+		}
 	}
 
 	/** Fresh access token for an existing login. Re-checks everything that may have changed since. */
@@ -288,7 +349,7 @@ public class AuthService {
 				user.mustChangePassword);
 		return new SessionResponse(token, accessTokens.ttl().toSeconds(),
 				new SessionUser(user.id, user.firstName, user.lastName, user.email, company.id, company.name,
-						company.type),
+						company.type, user.twoFactorEnabled),
 				role, roles, user.mustChangePassword);
 	}
 

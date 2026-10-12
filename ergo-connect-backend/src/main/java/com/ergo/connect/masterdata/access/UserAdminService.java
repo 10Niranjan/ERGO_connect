@@ -52,8 +52,11 @@ public class UserAdminService {
 
 	private final PasswordResetTokenStore resetTokens;
 
+	private final OtpCodeStore otpCodes;
+
 	UserAdminService(UserRepository users, CompanyRepository companies, SessionStore sessions, RoleCatalog roleCatalog,
-			PasswordEncoder passwordEncoder, AuditLogService audit, PasswordResetTokenStore resetTokens) {
+			PasswordEncoder passwordEncoder, AuditLogService audit, PasswordResetTokenStore resetTokens,
+			OtpCodeStore otpCodes) {
 		this.users = users;
 		this.companies = companies;
 		this.sessions = sessions;
@@ -61,6 +64,7 @@ public class UserAdminService {
 		this.passwordEncoder = passwordEncoder;
 		this.audit = audit;
 		this.resetTokens = resetTokens;
+		this.otpCodes = otpCodes;
 	}
 
 	@Transactional(readOnly = true)
@@ -103,6 +107,7 @@ public class UserAdminService {
 		user.mustChangePassword = true;
 		user.roles.addAll(request.roles());
 		user.defaultRole = defaultRole;
+		user.twoFactorEnabled = request.roles().contains(Role.ERGO_ADMIN); // mandatory for ERGO Admin (ARCHITECTURE.md §8)
 		users.save(user);
 		request.roles().forEach(role -> audit.record(User.class, user.id, "ROLE_ADDED", "roles", null, role.name()));
 		return new CreatedUserResponse(toResponse(user, company), temporaryPassword);
@@ -116,9 +121,10 @@ public class UserAdminService {
 		}
 		apply(user, request.firstName(), request.lastName(), request.email(), request.mobile());
 		if (emailChanged) {
-			// a link already mailed to the old address must not still work once it no longer belongs to this
-			// user (Phase 8f security review finding)
+			// a link or code already mailed to the old address must not still work once it no longer belongs to
+			// this user (Phase 8f security review finding; same reasoning for OTP codes in Phase 8g)
 			resetTokens.invalidateAllFor(user.id);
+			otpCodes.invalidateAllFor(user.id);
 		}
 		return toResponse(user, companyOf(user));
 	}
@@ -142,6 +148,11 @@ public class UserAdminService {
 		user.roles.retainAll(request.roles());
 		user.roles.addAll(request.roles());
 		user.defaultRole = defaultRole;
+		if (request.roles().contains(Role.ERGO_ADMIN) && !user.twoFactorEnabled) {
+			// mandatory for ERGO Admin (ARCHITECTURE.md §8, Phase 8g) - granted here, not just at creation
+			user.twoFactorEnabled = true;
+			audit.record(User.class, user.id, "TWO_FACTOR_ENABLED", null, null, null);
+		}
 		return toResponse(user, companyOf(user));
 	}
 
@@ -154,6 +165,7 @@ public class UserAdminService {
 		if (!active) {
 			sessions.revokeAll(user.id, null);
 			resetTokens.invalidateAllFor(user.id); // a still-outstanding emailed link must not reactivate access
+			otpCodes.invalidateAllFor(user.id);
 		}
 		return toResponse(user, companyOf(user));
 	}
@@ -252,7 +264,7 @@ public class UserAdminService {
 	private static UserResponse toResponse(User user, Company company) {
 		return new UserResponse(user.id, company.id, company.name, company.type, user.firstName, user.lastName,
 				user.email, user.mobile, user.active, user.roles.stream().sorted().toList(), user.defaultRole,
-				user.accountIds.stream().sorted().toList(), user.lastLoginAt);
+				user.accountIds.stream().sorted().toList(), user.lastLoginAt, user.twoFactorEnabled);
 	}
 
 }

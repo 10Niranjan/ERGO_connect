@@ -1,16 +1,29 @@
-import { Alert, Box, Button, TextField } from '@mui/material'
+import { Alert, Box, Button, FormControlLabel, Switch, TextField } from '@mui/material'
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router'
 import { useAppSelector } from '../../app/store'
 import { CenteredCard } from '../../shared/components/CenteredCard'
 import { problemMessage } from '../../shared/problem'
-import { useChangePasswordMutation } from '../authApi'
+import { useChangePasswordMutation, useRefreshMutation, useSetTwoFactorMutation } from '../authApi'
 
 export function ChangePasswordPage() {
   const forced = useAppSelector((state) => state.auth.session?.mustChangePassword ?? false)
+  const user = useAppSelector((state) => state.auth.session?.user)
+  const isErgoAdmin = useAppSelector((state) => state.auth.session?.roles.some((r) => r.code === 'ERGO_ADMIN') ?? false)
   const [changePassword, { isLoading, error }] = useChangePasswordMutation()
+  const [setTwoFactor, { isLoading: twoFactorSaving, error: twoFactorError }] = useSetTwoFactorMutation()
+  const [refresh] = useRefreshMutation()
   const [mismatch, setMismatch] = useState(false)
   const navigate = useNavigate()
+
+  async function handleTwoFactorToggle(enabled: boolean) {
+    try {
+      await setTwoFactor({ enabled }).unwrap()
+      await refresh().unwrap() // picks up the new twoFactorEnabled flag; refresh's own onQueryStarted updates the store
+    } catch {
+      // shown below
+    }
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -66,6 +79,22 @@ export function ChangePasswordPage() {
         </Button>
         {!forced && <Button onClick={() => navigate(-1)}>Cancel</Button>}
       </Box>
+      {!forced && user && (
+        <Box sx={{ mt: 3, display: 'grid', gap: 1 }}>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={user.twoFactorEnabled}
+                disabled={twoFactorSaving || (isErgoAdmin && user.twoFactorEnabled)}
+                onChange={(event) => handleTwoFactorToggle(event.target.checked)}
+              />
+            }
+            label="Email a code at sign-in (two-factor authentication)"
+          />
+          {isErgoAdmin && <Alert severity="info">ERGO Admin accounts must keep this on.</Alert>}
+          {twoFactorError && <Alert severity="error">{problemMessage(twoFactorError)}</Alert>}
+        </Box>
+      )}
     </CenteredCard>
   )
 }
