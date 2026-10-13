@@ -243,9 +243,12 @@ public class DocumentService {
 		// same as a brand-new upload starts narrow.
 		Visibility newVisibility = me.companyType() == CompanyType.ERGO ? d.visibility
 				: me.companyType() == CompanyType.CUSTOMER ? Visibility.CUSTOMER : Visibility.SUPPLIER;
+		// Validated before the upload, not after (security review, Phase 8h): an invalid category must never leave
+		// an uploaded blob orphaned with no metadata row to ever reference or clean it up.
+		Long resolvedCategoryId = newCategoryId != null ? requireActiveCategory(newCategoryId) : d.documentCategoryId;
 		DocumentInfo created = documentStore.store(d.linkedModule, d.linkedRecordId, fileName, content, newVisibility);
 		Document newRow = documents.findById(created.id()).orElseThrow();
-		newRow.documentCategoryId = newCategoryId != null ? requireActiveCategory(newCategoryId) : d.documentCategoryId;
+		newRow.documentCategoryId = resolvedCategoryId;
 		newRow.versionNo = (d.versionNo == null ? 1 : d.versionNo) + 1;
 		newRow.supersedesDocumentId = d.id;
 		// H4 fix: keep the owning module's own single-document FK pointed at the latest version, so its own

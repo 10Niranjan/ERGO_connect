@@ -52,3 +52,8 @@ ergo:
     from: ${MAIL_FROM}
   security:
     jwt-secret: ${JWT_SECRET} # at least 32 random bytes; the app refuses to start without it
+  storage:
+    azure:
+      # Secret (Key Vault) - the app refuses to start without it (AzureBlobDocumentStorage, Phase 8h).
+      connection-string: ${AZURE_STORAGE_CONNECTION_STRING}
+      container: ${AZURE_STORAGE_CONTAINER:documents}

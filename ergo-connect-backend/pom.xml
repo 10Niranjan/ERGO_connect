@@ -64,6 +64,26 @@
 			<groupId>org.flywaydb</groupId>
 			<artifactId>flyway-database-postgresql</artifactId>
 		</dependency>
+		<dependency>
+			<groupId>com.azure</groupId>
+			<artifactId>azure-storage-blob</artifactId>
+			<version>12.33.0</version>
+			<exclusions>
+				<!-- Security review (Phase 8h, L3): azure-core-http-netty 1.16.2 pulls a Netty/tcnative version that
+				     mismatches the one Spring Boot's webmvc starter resolves, plus HTTP/3-QUIC native libraries this
+				     app never uses - avoidable CVE surface for the 8a Dependency-Check gate. The JDK's own
+				     HttpClient (already used, nothing new to trust) replaces it below. -->
+				<exclusion>
+					<groupId>com.azure</groupId>
+					<artifactId>azure-core-http-netty</artifactId>
+				</exclusion>
+			</exclusions>
+		</dependency>
+		<dependency>
+			<groupId>com.azure</groupId>
+			<artifactId>azure-core-http-jdk-httpclient</artifactId>
+			<version>1.2.0</version>
+		</dependency>
 
 		<dependency>
 			<groupId>org.postgresql</groupId>
@@ -113,6 +133,11 @@
 		<dependency>
 			<groupId>org.testcontainers</groupId>
 			<artifactId>testcontainers-postgresql</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>testcontainers-azure</artifactId>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
