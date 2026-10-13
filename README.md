@@ -146,6 +146,17 @@ cd ergo-connect-frontend && npm run lint && npm run build
 ```
 CI (GitHub Actions) runs both on every push.
 
+## Containers
+
+`ergo-connect-backend/Dockerfile` and `ergo-connect-frontend/Dockerfile` build production images (backend: JRE 21 Alpine, non-root, defaults to the `prod` profile; frontend: static build served by non-root nginx, reverse-proxying `/api` to the backend container so the bundle never hardcodes a backend URL).
+
+```bash
+docker compose build          # both images
+docker compose up -d          # local smoke-test stack: Postgres/Redis/ClamAV + both images, backend on the dev profile
+docker compose down
+```
+The root `docker-compose.yml` is for local verification only — it is not the deployment manifest (8k provisions the real Azure infra).
+
 ## Deploy configuration (prod profile)
 
 All secrets and environment-specific config come from env vars only — nothing is committed (`application-prod.yml`). Required to run with `-Dspring.profiles.active=prod`:
