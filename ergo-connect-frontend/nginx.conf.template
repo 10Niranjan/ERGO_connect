@@ -23,8 +23,21 @@ server {
         # disk (security-reviewer M1).
         client_max_body_size 51m;
         proxy_request_buffering off;
-        proxy_pass http://backend:8080;
-        proxy_set_header Host $host;
+        # ${BACKEND_UPSTREAM} is envsubst'd at container start (this file is a template -
+        # see Dockerfile) because the correct upstream differs by host: plain Docker (local
+        # smoke test) reaches the backend container directly on its own port (backend:8080),
+        # but Azure Container Apps fronts every app's ingress on port 80/443 regardless of
+        # its containers' actual listening port - calling another app in the same
+        # environment is always "http://<app-name>", never ":8080" (Phase 8k). The Dockerfile
+        # ENV default keeps local/docker-compose.yml working unchanged.
+        proxy_pass ${BACKEND_UPSTREAM};
+        # Container Apps' Envoy routes by Host, so there the upstream's own name must go out ($proxy_host; the
+        # public host would land on this app again) and Spring then sees a cross-origin call, which the CORS
+        # allow-list permits. Plain Docker keeps $host (same-origin, no CORS). Envoy also answers HTTP/1.0 - nginx's
+        # upstream default - with 426. Both unverified until a real deploy (security-reviewer M1).
+        proxy_http_version 1.1;
+        proxy_set_header Host ${BACKEND_HOST_HEADER};
+        proxy_set_header X-Forwarded-Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $fwd_proto;
     }

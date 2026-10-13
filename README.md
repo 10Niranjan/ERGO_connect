@@ -155,7 +155,7 @@ docker compose build          # both images
 docker compose up -d          # local smoke-test stack: Postgres/Redis/ClamAV + both images, backend on the dev profile
 docker compose down
 ```
-The root `docker-compose.yml` is for local verification only — it is not the deployment manifest (8k provisions the real Azure infra).
+The root `docker-compose.yml` is for local verification only — it is not the deployment manifest. The Azure environment is defined in `infra/main.bicep` (authored, not yet deployed — see `infra/README.md` for the deploy steps and the list of what is unverified).
 
 ## Deploy configuration (prod profile)
 
