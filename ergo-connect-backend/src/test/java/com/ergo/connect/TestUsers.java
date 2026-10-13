@@ -9,6 +9,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.ergo.connect.masterdata.access.TestOtp;
 import com.jayway.jsonpath.JsonPath;
 
 /** Fresh companies and signed-in users for any module's tests (tests share one database). */
@@ -57,6 +58,17 @@ public class TestUsers {
 			.andReturn()
 			.getResponse()
 			.getContentAsString();
+		if (session.contains("\"otpRequired\":true")) {
+			// ERGO Admin gets 2FA force-enabled on its very first login (AuthService, Phase 8g) - complete the
+			// challenge with a code minted directly (bypassing email, which isn't configured in tests).
+			String code = TestOtp.mint(jdbc, user);
+			session = mvc.perform(post("/api/auth/verify-otp").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"email\": \"%s\", \"code\": \"%s\"}".formatted(email, code)))
+				.andExpect(status().isOk())
+				.andReturn()
+				.getResponse()
+				.getContentAsString();
+		}
 		return new Login(user, companyId, "Bearer " + JsonPath.read(session, "$.accessToken"));
 	}
 

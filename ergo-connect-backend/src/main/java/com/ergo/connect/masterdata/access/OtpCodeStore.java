@@ -16,6 +16,9 @@ import org.springframework.stereotype.Component;
  * Email-delivered login codes (otp_codes, Phase 8g). Same hash-at-rest precedent as
  * {@link PasswordResetTokenStore}/{@link SessionStore} - a database leak doesn't leak a usable code. Creating a
  * new code invalidates any still-outstanding one for that user, so only the most recently emailed code works.
+ * Package-private on purpose (security review, Phase 8h): only code in this package can mint a valid login code
+ * for a given user id. Test code outside this package goes through {@code TestOtp} (test sources, same package),
+ * never through widened production visibility.
  */
 @Component
 class OtpCodeStore {

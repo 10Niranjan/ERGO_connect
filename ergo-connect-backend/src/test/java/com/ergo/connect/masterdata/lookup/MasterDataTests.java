@@ -204,25 +204,10 @@ class MasterDataTests {
 		return jdbc.queryForObject("SELECT currency_code FROM currencies WHERE currency_id = ?", String.class, currencyId);
 	}
 
-	/** A fresh company + user with this role, signed in (password set directly for the test). */
+	/** A fresh company + user with this role, signed in. */
 	private String signIn(String companyType, String role) throws Exception {
-		int n = SEQ.incrementAndGet();
-		long company = jdbc.queryForObject("""
-				INSERT INTO companies (company_code, company_name, company_type, status)
-				VALUES (?, ?, ?, 'ACTIVE') RETURNING company_id""", Long.class, "MD" + n, "MD test " + n, companyType);
-		long user = jdbc.queryForObject("""
-				INSERT INTO users (company_id, first_name, last_name, email, password_hash, must_change_password,
-				                   default_role_code)
-				VALUES (?, 'Master', 'Data', ?, ?, false, ?) RETURNING user_id""", Long.class, company,
-				"md" + n + "@test.dev", "{noop}Master-data-9", role);
-		jdbc.update("INSERT INTO user_role_mappings (user_id, role_code) VALUES (?, ?)", user, role);
-		String session = mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON).content("""
-				{"email": "md%d@test.dev", "password": "Master-data-9"}""".formatted(n)))
-			.andExpect(status().isOk())
-			.andReturn()
-			.getResponse()
-			.getContentAsString();
-		return "Bearer " + JsonPath.read(session, "$.accessToken");
+		TestUsers users = new TestUsers(jdbc, mvc);
+		return users.login(users.company(companyType), role).bearer();
 	}
 
 	private static MockHttpServletRequestBuilder json(MockHttpServletRequestBuilder request, String body, String token) {
