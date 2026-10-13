@@ -163,6 +163,7 @@ All secrets and environment-specific config come from env vars only — nothing 
 | `MAIL_FROM` | the `From:` address on password-reset email — must pass the domain's SPF/DMARC |
 | `AZURE_STORAGE_CONNECTION_STRING` | Azure Blob Storage connection string for document bytes — the app refuses to start without it (`AzureBlobDocumentStorage`) |
 | `AZURE_STORAGE_CONTAINER` | optional, defaults to `documents` |
+| `CLAMAV_HOST` / `CLAMAV_PORT` | optional, default `localhost:3310` — the ClamAV sidecar every upload is scanned against before it's stored; override once 8k/8l deploy the real sidecar |
 
 One-time only, for the very first deploy against an empty database — unset both afterwards:
 

@@ -36,4 +36,8 @@ public class ApiException extends ErrorResponseException {
 		return new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, detail);
 	}
 
+	public static ApiException serviceUnavailable(String detail) {
+		return new ApiException(HttpStatus.SERVICE_UNAVAILABLE, detail);
+	}
+
 }

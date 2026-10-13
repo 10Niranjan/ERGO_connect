@@ -68,3 +68,9 @@ ergo:
     access-token-ttl: 15m # short: role/account changes reach every request within this window
     session-ttl: 12h      # a login lasts one working day at most
     password-reset-token-ttl: 30m
+  # ClamAV sidecar (Phase 8i) - docker/docker-compose.local.yml runs the same image dev points at here; prod
+  # overrides the host via CLAMAV_HOST once 8k/8l deploy the real sidecar.
+  clamav:
+    host: ${CLAMAV_HOST:localhost}
+    port: ${CLAMAV_PORT:3310}
+    timeout-ms: 10000

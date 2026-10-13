@@ -10,6 +10,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
@@ -19,6 +21,9 @@ import com.ergo.connect.common.audit.AuditLogService;
 import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.common.security.CurrentUser;
 import com.ergo.connect.documents.domain.DocumentStorage;
+import com.ergo.connect.documents.domain.InfectedFileException;
+import com.ergo.connect.documents.domain.VirusScanException;
+import com.ergo.connect.documents.domain.VirusScanner;
 
 /**
  * Stores files attached to records (SRS §13.7.1, basic). This module does not decide access: the module that owns the
@@ -31,6 +36,12 @@ import com.ergo.connect.documents.domain.DocumentStorage;
  * rows (version 1, unlocked, pending) exactly as before - the new columns are read here (so the 4 existing callers
  * and the new {@code documents.domain.DocumentService} agree on one row's state) and written only by
  * {@code DocumentService}.
+ * <p>
+ * Phase 8i: every upload is scanned by {@link VirusScanner} right after the type/empty-content checks, before
+ * anything reaches storage - this is the one place all 6 upload endpoints (grepped, not assumed: {@code
+ * DocumentController}, {@code CommentController}, {@code OrderController}, {@code NcrController}, {@code
+ * QuoteController}, {@code RfqController}) converge, so gating here covers every one of them with no per-module
+ * change.
  */
 @Service
 @Transactional
@@ -61,6 +72,8 @@ public class DocumentStore {
 
 	private static final String MODULE = "documents";
 
+	private static final Logger log = LoggerFactory.getLogger(DocumentStore.class);
+
 	private static final RowMapper<DocumentInfo> INFO = (rs, n) -> new DocumentInfo(rs.getLong("document_id"),
 			rs.getString("file_name"), rs.getString("content_type"), rs.getLong("file_size"),
 			Visibility.valueOf(rs.getString("visibility")), rs.getLong("uploaded_by_user_id"),
@@ -74,10 +87,13 @@ public class DocumentStore {
 
 	private final DocumentStorage storage;
 
-	DocumentStore(JdbcTemplate jdbc, AuditLogService audit, DocumentStorage storage) {
+	private final VirusScanner scanner;
+
+	DocumentStore(JdbcTemplate jdbc, AuditLogService audit, DocumentStorage storage, VirusScanner scanner) {
 		this.jdbc = jdbc;
 		this.audit = audit;
 		this.storage = storage;
+		this.scanner = scanner;
 	}
 
 	public DocumentInfo store(String module, long recordId, String fileName, byte[] content, Visibility visibility) {
@@ -91,6 +107,19 @@ public class DocumentStore {
 		}
 		if (content.length == 0) {
 			throw ApiException.unprocessable("The file is empty");
+		}
+		try {
+			scanner.scan(content);
+		}
+		catch (InfectedFileException e) {
+			log.warn("Rejected infected upload: module={} recordId={} file={} user={} signature={}", module, recordId,
+					name, me.userId(), e.signature());
+			throw ApiException.unprocessable("This file was rejected by malware scanning and was not saved");
+		}
+		catch (VirusScanException e) {
+			log.error("Malware scan failed, rejecting upload (fail closed): module={} recordId={} file={} - {}", module,
+					recordId, name, e.getMessage());
+			throw ApiException.serviceUnavailable("Malware scanning is temporarily unavailable - please try again shortly");
 		}
 		Long id = jdbc.queryForObject("""
 				INSERT INTO documents (linked_module, linked_record_id, file_name, content_type, file_size, sha256,

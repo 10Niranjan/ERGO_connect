@@ -1,5 +1,6 @@
 package com.ergo.connect.documents;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasItem;
@@ -37,6 +38,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import com.ergo.connect.IntegrationTest;
 import com.ergo.connect.TestUsers;
 import com.ergo.connect.TestUsers.Login;
+import com.ergo.connect.documents.domain.EicarOnlyVirusScanner;
 import com.jayway.jsonpath.JsonPath;
 
 /**
@@ -502,6 +504,52 @@ class DocumentsTests {
 		call(get("/api/documents?linkedModule=rfq"), buyerA, null).andExpect(jsonPath("$.totalElements").value(1));
 	}
 
+	// ---------------------------------------------------------------- malware scanning (Phase 8i)
+
+	@Test
+	void anInfectedUploadIsRejectedAndNothingIsPersisted() throws Exception {
+		long rfqId = draftRfq(buyerA);
+
+		mvc.perform(multipart("/api/rfqs/{id}/documents", rfqId)
+				.file(new MockMultipartFile("file", "invoice.pdf", "application/octet-stream",
+						EicarOnlyVirusScanner.EICAR.getBytes(StandardCharsets.US_ASCII)))
+				.header(HttpHeaders.AUTHORIZATION, buyerA.bearer()))
+			.andExpect(status().isUnprocessableEntity())
+			// the engine's detection name must never reach the response body, only logs (security review)
+			.andExpect(jsonPath("$.detail").value("This file was rejected by malware scanning and was not saved"));
+
+		assertThat(documentCount(rfqId)).isZero();
+	}
+
+	@Test
+	void aScannerOutageFailsClosedAndNothingIsPersisted() throws Exception {
+		long rfqId = draftRfq(buyerA);
+
+		mvc.perform(multipart("/api/rfqs/{id}/documents", rfqId)
+				.file(new MockMultipartFile("file", "drawing.pdf", "application/octet-stream",
+						EicarOnlyVirusScanner.SIMULATE_SCANNER_DOWN.getBytes(StandardCharsets.US_ASCII)))
+				.header(HttpHeaders.AUTHORIZATION, buyerA.bearer()))
+			.andExpect(status().isServiceUnavailable());
+
+		assertThat(documentCount(rfqId)).isZero();
+	}
+
+	@Test
+	void anInfectedReplacementIsRejectedAndTheOriginalVersionIsUntouched() throws Exception {
+		long rfqId = draftRfq(buyerA);
+		long v1 = idOf(upload("/api/rfqs/{id}/documents", rfqId, buyerA, "drawing-v1.pdf"));
+
+		mvc.perform(multipart("/api/documents/{id}/replace", v1)
+				.file(new MockMultipartFile("file", "drawing-v2.pdf", "application/octet-stream",
+						EicarOnlyVirusScanner.EICAR.getBytes(StandardCharsets.US_ASCII)))
+				.header(HttpHeaders.AUTHORIZATION, buyerA.bearer()))
+			.andExpect(status().isUnprocessableEntity());
+
+		assertThat(documentCount(rfqId)).isEqualTo(1);
+		call(get("/api/documents/{id}/content", v1), buyerA, null).andExpect(status().isOk())
+			.andExpect(content().bytes("drawing-v1.pdf".getBytes(StandardCharsets.UTF_8)));
+	}
+
 	@Test
 	void aSupplierRoleThatDoesNotWorkQuotesCannotSeeSharedRfqDrawings() throws Exception {
 		long rfqId = validatedRfq(buyerA);
@@ -653,6 +701,12 @@ class DocumentsTests {
 	}
 
 	// ---------------------------------------------------------------- generic helpers
+
+	private int documentCount(long recordId) {
+		return jdbc.queryForObject(
+				"SELECT count(*) FROM documents WHERE linked_record_id = ? AND linked_module = 'rfq'", Integer.class,
+				recordId);
+	}
 
 	private ResultActions call(MockHttpServletRequestBuilder request, Login user, String body) throws Exception {
 		request.header(HttpHeaders.AUTHORIZATION, user.bearer());
