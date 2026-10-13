@@ -34,6 +34,79 @@ Phase 1 (no image params) creates everything except the two Container Apps. Afte
   from every later deploy, and after the first admin login run `az keyvault secret delete` + `az keyvault secret purge`
   for `bootstrap-admin-password`** — an incremental deploy never removes it.
 
+## CI deploy setup (Phase 8l) — once, by the repo admin who also has rights in Azure
+
+`.github/workflows/deploy.yml` (manual `workflow_dispatch` only) runs CI, then builds and Trivy-scans the backend,
+frontend and ClamAV images in a job with **no cloud access**; a second job checks the two tarballs against the
+build job's checksums, pushes them to the registry **by digest**, rolls the two Container Apps with
+`az containerapp update`, waits until each latest revision is ready *and* running the new image, and runs
+`.github/scripts/smoke.sh`. It authenticates with OIDC — no stored Azure secret — and never touches infrastructure,
+which stays a manual `az deployment` because it needs secrets the pipeline should not hold.
+
+**Order matters.** The Azure trust is only as strong as the GitHub environment it is scoped to, and the Azure IDs are
+identifiers, not secrets: any workflow on any branch that declares `environment: staging` with `id-token: write` gets
+a token matching the credential. Create the protection first, the trust second.
+
+1. **GitHub → Settings → Environments → New `staging`** (admin only; an environment created implicitly by a first run
+   has no protection at all): required reviewers, **Prevent self-review on**, **Allow administrators to bypass off**,
+   and deployment branches restricted to exactly one branch. Protect that branch (pull request + review) — otherwise
+   whoever can push to it can edit `deploy.yml`. Merge `deploy.yml` to the repository's default branch: a
+   `workflow_dispatch` workflow does not appear until it exists there.
+2. **Then** create the Azure side:
+
+```bash
+APP_ID=$(az ad app create --display-name ergo-connect-github-staging --query appId -o tsv)
+az ad sp create --id "$APP_ID"
+az ad app federated-credential create --id "$APP_ID" --parameters '{
+  "name": "github-staging", "issuer": "https://token.actions.githubusercontent.com",
+  "subject": "repo:varadyadav02/ERGO_connect:environment:staging", "audiences": ["api://AzureADTokenExchange"] }'
+az role assignment create --assignee "$APP_ID" --role AcrPush --scope "$(az acr show -n <acr> --query id -o tsv)"
+az role assignment create --assignee "$APP_ID" --role Contributor --scope "$(az group show -n rg-ergo-staging --query id -o tsv)"
+```
+
+3. Add environment *secrets* `AZURE_CLIENT_ID` (= `$APP_ID`), `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID` and
+   environment *variables* `AZURE_RESOURCE_GROUP` (`rg-ergo-staging`) and `ACR_NAME` (without `.azurecr.io`).
+   (They gate nothing by being secret; they are stored there for tidiness.)
+4. The repo secret **`NVD_API_KEY` must exist.** On push/PR a missing key only skips the Java CVE gate with a warning;
+   on a deploy it fails the run, because a green deploy has to mean the gate ran (8a).
+
+Optional hardening that moves the protection into code: customise the repository's OIDC subject claim to include
+`job_workflow_ref` and use that subject in the federated credential, so only `deploy.yml` on the allowed branch can
+obtain a token.
+
+**First run:** the apps don't exist until infra phase 2, so the first run pushes the images, then stops with an error
+that prints the exact `backendImage=… frontendImage=…` digests to pass to `az deployment group create`. Run that, then
+re-run the workflow. From then on the pipeline owns the image versions; an infra-only change should be deployed
+*without* image parameters (the apps are then left untouched), otherwise it would revert them.
+
+**Rollback** is not "re-run on an old commit": `workflow_dispatch` takes a branch, the images are rebuilt from floating
+base tags, and the rebuild must pass Trivy again, so a newly published base-image CVE can block a rollback exactly
+when you need it. The real rollback is `az containerapp update --name <app> --container-name <app> --image <previous
+digest>` using the digests in that earlier run's summary (the images stay in the registry). **Schema changes are
+forward-only:** Flyway runs from the new revision and is never undone, so migrations must stay backward-compatible with
+the previous release. During any switch the old and new backend revisions overlap, so the unlocked `@Scheduled` jobs can
+fire twice.
+
+**Unverified (never run on GitHub or against Azure):** the OIDC login; `az acr login`; that `az containerapp update
+--container-name` on a multi-container app preserves the Key Vault secret references and `identitySettings` set by Bicep;
+that the `az containerapp` core command set on the runner's CLI version needs no extension; the revision-readiness
+query against a real app (tested only on sample JSON); that Trivy reads the runner's `docker save` format; artifact
+quota for the two tarballs on a private repo; and that a revision which never becomes ready fails `update` (the script
+does not rely on it). The smoke test sends one bad login per deploy, which counts toward the per-IP login limiter — if
+the backend sees every client as one Envoy address (the open forwarded-headers item), a full shared bucket would fail
+a deploy and the smoke test cannot tell the two apart. The CI gate builds with Node 24, the image with Node 22.
+
+**Known limits.** `Contributor` on the resource group is broad: it can add a federated credential to the backend's
+managed identity (and so read Key Vault), reset the Postgres admin password, read the storage, Redis and Log Analytics
+keys, change network rules and delete everything. A custom role needs at least `Microsoft.App/containerApps/*`,
+`Microsoft.App/managedEnvironments/join/action`, `Microsoft.ManagedIdentity/userAssignedIdentities/*/assign/action` and
+`Microsoft.ContainerRegistry/registries/read` — and is still broad (it can delete apps, list their secrets, and attach
+the Key Vault-reading identity to the frontend). Anything that can deploy can run code holding every backend secret;
+least privilege here limits blast radius, not secret exposure. The Trivy digest in `deploy.yml` and the ClamAV tag in
+`main.bicep` are not updated by Dependabot. The ClamAV sidecar is scanned on every deploy but its tag is still
+floating (pinning it by digest in Bicep is open). Failure diagnostics print revision state only; backend logs hold user
+emails and IPs and live in Log Analytics.
+
 ## How the pieces connect
 
 - `frontend` is the only public ingress. Its nginx proxies `/api` to `http://backend` (`BACKEND_UPSTREAM`; see
@@ -93,6 +166,6 @@ Phase 1 (no image params) creates everything except the two Container Apps. Afte
 | More than one backend replica (single-run scheduled jobs first, e.g. ShedLock) | before scaling out |
 | Application Insights, diagnostic settings, alerts (incl. a Redis fail-open counter) | 8m |
 | Backup retention / geo-redundancy decisions, restore runbook | 8n |
-| Pin the ClamAV image by digest; image CVE scan | 8l |
+| Pin the ClamAV image by digest in `main.bicep` (it is now scanned on every deploy) | after first deploy |
 | Narrow `server.tomcat.remoteip.internal-proxies`; confirm `X-Forwarded-For` format. Any app later added to the environment can spoof audit-log IPs until then | after first deploy |
 | Upload byte-quota sizing (8d-bis) | with real traffic |

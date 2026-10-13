@@ -8,7 +8,7 @@ RUN npm run build
 
 # Runs as the image's built-in non-root "nginx" user, which can't bind <1024 - nginx.conf
 # listens on 8080 to match (security-reviewer L2).
-FROM nginxinc/nginx-unprivileged:1.27-alpine
+FROM nginxinc/nginx-unprivileged:1.30-alpine
 COPY --from=build /build/dist /usr/share/nginx/html
 # A template, not a static conf: the base image's entrypoint envsubst's it into
 # conf.d/default.conf on container start, substituting only real container env vars (nginx's

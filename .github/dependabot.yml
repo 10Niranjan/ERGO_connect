@@ -9,3 +9,10 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
+  # Base images (8j/8l): deploy.yml's Trivy gate fails on fixable OS CVEs, so keep the bases current.
+  - package-ecosystem: docker
+    directory: /ergo-connect-backend
+    schedule: { interval: weekly }
+  - package-ecosystem: docker
+    directory: /ergo-connect-frontend
+    schedule: { interval: weekly }
