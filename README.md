@@ -111,17 +111,50 @@ stateDiagram-v2
 
 | Path | What |
 |---|---|
+| `GUIDE.md` | **Step-by-step developer guide**: pull, dependencies, run locally, test credentials, and troubleshooting |
 | `ARCHITECTURE.md` | Architecture, security plan, build phases, **decisions log (§8)** |
-| `docs/SRS.md` | Software Requirements Document (Markdown conversion of the .docx) — business rules, permissions, workflow states, DB tables, API |
+| `docs/SRS.md` | Software Requirements Document — business rules, permissions, workflow states, DB tables, API |
 | `ergo-connect-backend/` | Java 21 · Spring Boot 4.1 · PostgreSQL 17 · Flyway: modular monolith |
-| `ergo-connect-frontend/` | React 19 · TypeScript · MUI · Redux Toolkit / RTK Query · Vite |
-| `.claude/agents/` | Claude Code agents used to build this repo: `srs-analyst`, `db-migration-author`, `backend-module-builder`, `frontend-feature-builder`, `security-reviewer` |
+| `ergo-connect-frontend/` | React 19 · TypeScript · MUI · Redux Toolkit / RTK Query · Vite — feature-based structure with responsive sidebar navigation |
+| `.claude/agents/` | Claude Code agents used to build this repo |
 | `ergo-connect-mvp/` | Early UI demo (reference only, not part of the build) |
+
+### Frontend Structure (`ergo-connect-frontend/src/`)
+```
+src/
+├── app/                 # Entry point: App.tsx, router.tsx, providers.tsx, store.ts
+├── assets/              # Static assets, logos, and icons
+├── components/ui/       # Shared UI components (AuditTrail, CenteredCard, Facts, FormSection, etc.)
+├── constants/           # Global configuration and environment constants
+├── features/            # Feature-based domain modules (pages, components, services, utils):
+│   ├── admin/           # Users & master data management
+│   ├── auth/            # Authentication, OTP 2FA, session, role switching, guards
+│   ├── communication/   # Threaded comments, mentions, inbox communication center
+│   ├── companies/       # Company profile & customer/supplier management
+│   ├── dashboard/       # Management, Functional, Customer & Supplier dashboards
+│   ├── documents/       # Cross-module document library, versions & approvals
+│   ├── notifications/   # Real-time notification bell & drawer
+│   ├── npd/             # 9-stage New Product Development workflow
+│   ├── ofp/             # Order fulfillment, milestone & dispatch tracking
+│   ├── quality/         # Inspections, NCRs, Deviations & CAPA workflows
+│   ├── quotation/       # Float RFQs, supplier quote comparison, negotiation
+│   └── rfq/             # RFQ creation, BOM process flow, validation
+├── hooks/               # Typed Redux hooks (useAppDispatch, useAppSelector)
+├── layouts/             # App shell with responsive sidebar navigation & role switcher
+├── services/            # Base RTK Query setup with automatic JWT refresh
+├── styles/              # MUI theme configuration and tokens
+├── types/               # Shared global TypeScript types
+└── utils/               # Shared formatting, download, problem, and form utilities
+```
 
 ## Prerequisites
 JDK 21 (`JAVA_HOME` must point to it) · Node 24 · Docker Desktop (running)
 
 ## Run locally
+
+> [!TIP]
+> For a detailed, command-by-command guide with troubleshooting, see **[`GUIDE.md`](GUIDE.md)**.
+
 ```bash
 # 1. dependencies (Postgres + Redis)
 cd ergo-connect-backend
@@ -135,6 +168,7 @@ docker compose -f docker/docker-compose.local.yml up -d
 
 # 3. frontend → http://localhost:5173  (proxies /api to the backend)
 cd ../ergo-connect-frontend
+cp .env.example .env    # On Windows PowerShell: Copy-Item .env.example .env
 npm install
 npm run dev
 ```
@@ -204,11 +238,12 @@ CI-only secret: `NVD_API_KEY` (GitHub repo secret, not an app env var) turns on 
 - [x] Phase 2b: supplier float (invite with due date), supplier quotes (tooling lines, cost breakdown, own process route), clarification, regret, re-open with reason, immutable versions with a change view, RFQ close
 - [x] Phase 2c: exchange rates, quote comparison (converted prices, best-value highlighting, scores, shortlist/select), quotes to the customer (supplier quote as-is or ERGO quote with hidden margin), customer approve/revise/decline
 - [x] Phase 3a: NPD — manual RFQ→NPD conversion queue, 9-stage workflow (Pending Conversion → Closed), stage history, ERGO-only activities with mandatory-gate on Close Stage, project edit (owner, risk, sample dates)
-- [ ] Phase 3b: NPD supplier/customer participation
-- [ ] Phase 4: OFP
-- [ ] Phase 5: Quality
-- [ ] Phase 6: Documents + Communication
-- [ ] Phase 7: Dashboards + audit refinement
-- [ ] Phase 8: hardening / deploy
+- [x] Phase 3b: NPD supplier/customer participation (shared visibility, timeline, gate approvals)
+- [x] Phase 4: OFP (Purchase Orders, 7 milestone stages, dispatch tracking, shipment documents)
+- [x] Phase 5: Quality (Inspections, Defect severity, NCRs, Deviations workflow & approvals, CAPA)
+- [x] Phase 6: Documents Library (versions, locking, approvals) + Communication Center (threaded per-record comments, @mentions, attachments)
+- [x] Phase 7: Role-specific Dashboards (Management, Functional, Customer, Supplier)
+- [x] Sprint 2: Frontend refactored to scalable feature-based layout with responsive sidebar navigation for all logins
+- [ ] Phase 8: Azure cloud deployment & hardening
 
 See `ARCHITECTURE.md` §6 for the full build order and rationale.
