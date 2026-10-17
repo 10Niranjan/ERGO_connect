@@ -1,5 +1,4 @@
 import {
-  Alert,
   Button,
   Checkbox,
   Chip,
@@ -20,11 +19,11 @@ import {
 import { useState } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router'
 import { useAppSelector } from '../../../app/store'
-import { OFP_EDITORS } from '../../../auth/access'
-import { problemMessage } from '../../../shared/problem'
-import { formatDate, formatNumber } from '../../rfq/labels'
-import { ORDER_STATUS, isDelayed, statusProgress } from '../labels'
-import { useOfpOrdersQuery, type OrderRow, type OrderStatus } from '../ofpApi'
+import { OFP_EDITORS } from '@/features/auth/utils/access'
+import { formatDate, formatNumber } from '@/features/rfq/utils/labels'
+import { ORDER_STATUS, isDelayed, statusProgress } from '@/features/ofp/utils/labels'
+import { useOfpOrdersQuery, type OrderRow, type OrderStatus } from '@/features/ofp/services/ofpApi'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 // SRS §12.9.1. OrderService.list() returns one shape per caller's own company type — ERGO sees both companies and
 // the owner, a supplier only its own PO (never the customer), a customer only its own PO (never the supplier).
@@ -77,7 +76,7 @@ export function OrderListPage() {
         </TextField>
         <FormControlLabel control={<Checkbox checked={delayedOnly} onChange={(e) => setDelayedOnly(e.target.checked)} />} label="Delayed only" />
       </Stack>
-      {error && <Alert severity="error">{problemMessage(error)}</Alert>}
+      {error && <ProblemAlert error={error} />}
       <TableContainer component={Paper} variant="outlined">
         {isLoading && <LinearProgress />}
         <Table size="small">

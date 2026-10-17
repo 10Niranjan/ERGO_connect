@@ -1,5 +1,4 @@
 import {
-  Alert,
   Button,
   Checkbox,
   Chip,
@@ -19,10 +18,9 @@ import {
   Typography,
 } from '@mui/material'
 import { useState } from 'react'
-import { str, text } from '../../../shared/form'
-import { problemMessage } from '../../../shared/problem'
-import { useCompaniesQuery } from '../../companies/companiesApi'
-import { DEFECT_SEVERITY } from '../labels'
+import { str, text } from '@/utils/form'
+import { useCompaniesQuery } from '@/features/companies/services/companiesApi'
+import { DEFECT_SEVERITY } from '@/features/quality/utils/labels'
 import {
   useEditInspectionMutation,
   useSubmitInspectionMutation,
@@ -30,7 +28,8 @@ import {
   type DefectSeverity,
   type InspectionDetail,
   type InspectionUpdateForm,
-} from '../qualityApi'
+} from '@/features/quality/services/qualityApi'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 /** SRS §12.10.2 header/result fields, shared by EDIT and SUBMIT (OPEN -> IN_INSPECTION) - one form for both, the
  * status move is the only difference (QualityDtos.InspectionUpdateForm's own comment). */
@@ -197,7 +196,7 @@ export function InspectionUpdateDialog({ mode, inspection, onClose }: { mode: 'e
           </TableBody>
         </Table>
 
-        {running.error != null && <Alert severity="error">{problemMessage(running.error)}</Alert>}
+        {running.error != null && <ProblemAlert error={running.error} />}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>

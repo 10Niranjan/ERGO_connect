@@ -1,12 +1,12 @@
-import { Alert, Button, Chip, LinearProgress, MenuItem, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Typography } from '@mui/material'
+import { Button, Chip, LinearProgress, MenuItem, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Typography } from '@mui/material'
 import { useState } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router'
 import { useAppSelector } from '../../../app/store'
-import { QUALITY_EDITORS } from '../../../auth/access'
-import { problemMessage } from '../../../shared/problem'
-import { formatDate } from '../../rfq/labels'
-import { LINKED_MODULE, RESULT_STATUS } from '../labels'
-import { useInspectionsQuery, type InspectionRow, type LinkedModule, type ResultStatus } from '../qualityApi'
+import { QUALITY_EDITORS } from '@/features/auth/utils/access'
+import { formatDate } from '@/features/rfq/utils/labels'
+import { LINKED_MODULE, RESULT_STATUS } from '@/features/quality/utils/labels'
+import { useInspectionsQuery, type InspectionRow, type LinkedModule, type ResultStatus } from '@/features/quality/services/qualityApi'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 // SRS §10.8/§12.10. InspectionService.list() returns one shape per caller's own scope - ERGO sees both companies,
 // a supplier only its own rows, a customer only its own customer-visible rows.
@@ -59,7 +59,7 @@ export function InspectionListPage() {
           ))}
         </TextField>
       </Stack>
-      {error && <Alert severity="error">{problemMessage(error)}</Alert>}
+      {error && <ProblemAlert error={error} />}
       <TableContainer component={Paper} variant="outlined">
         {isLoading && <LinearProgress />}
         <Table size="small">

@@ -27,13 +27,10 @@ export function MainLayout() {
           onToggleMobile={() => setMobileOpen((prev) => !prev)}
         />
 
-        <Box component="main" sx={{ p: 3, flexGrow: 1 }}>
+        <Box component="main" sx={{ p: { xs: 2, sm: 3 }, flexGrow: 1, minWidth: 0, overflowX: 'auto' }}>
           <Outlet />
         </Box>
       </Box>
     </Box>
   )
 }
-
-// Export alias for backwards compatibility
-export const AppShell = MainLayout

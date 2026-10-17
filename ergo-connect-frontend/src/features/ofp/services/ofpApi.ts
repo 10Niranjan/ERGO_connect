@@ -1,5 +1,5 @@
 import { api } from '@/services/baseApi'
-import type { AuditEntry } from '@/features/rfq/rfqApi'
+import type { AuditEntry } from '@/features/rfq/services/rfqApi'
 
 /** SRS §13.5.1/§14.6 order lifecycle. {@link OrderStatus} mirrors the backend enum exactly. ON_HOLD is a side
  * transition reachable from any non-terminal status; the status it interrupted is not exposed to the frontend

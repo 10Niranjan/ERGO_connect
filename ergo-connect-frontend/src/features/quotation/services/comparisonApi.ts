@@ -1,5 +1,5 @@
 import { api } from '@/services/baseApi'
-import type { Named } from '@/features/rfq/rfqApi'
+import type { Named } from '@/features/rfq/services/rfqApi'
 import type { QuoteAction, QuoteData, QuoteStatus } from './quoteApi'
 
 /** 0-10, higher is better (risk 10 = lowest risk). */

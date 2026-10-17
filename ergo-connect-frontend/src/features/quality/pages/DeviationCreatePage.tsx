@@ -1,10 +1,11 @@
-import { Alert, Box, Button, Checkbox, FormControlLabel, MenuItem, Stack, TextField, Typography } from '@mui/material'
+import { Box, Button, Checkbox, FormControlLabel, MenuItem, Stack, TextField, Typography } from '@mui/material'
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router'
-import { str } from '../../../shared/form'
-import { problemMessage } from '../../../shared/problem'
-import { useCreateDeviationMutation } from '../deviationApi'
-import { LINKED_MODULE } from '../labels'
+import { str } from '@/utils/form'
+import { useCreateDeviationMutation } from '@/features/quality/services/deviationApi'
+import { LINKED_MODULE } from '@/features/quality/utils/labels'
+import { LinkedRecordPicker } from '@/features/quality/components/LinkedRecordPicker'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 /** SRS §12.10.4 create. A deviation can only be linked to an NPD project or an OFP order (DeviationService.create) -
  * unlike Inspection/NCR's LinkedModule, the picker below is restricted to those two. customerCompanyId/
@@ -56,23 +57,20 @@ export function DeviationCreatePage() {
     s.validityEndDate.trim() !== ''
 
   return (
-    <Stack spacing={2} component="form" onSubmit={(e) => void submit(e)} sx={{ maxWidth: 720 }}>
+    <Stack spacing={2} component="form" onSubmit={(e) => void submit(e)} sx={{ maxWidth: 960 }}>
       <Typography variant="h5" component="h1">
         New deviation
       </Typography>
       <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' } }}>
-        <TextField select required label="Linked module" value={s.linkedModule} onChange={(e) => setS((p) => ({ ...p, linkedModule: e.target.value as 'NPD' | 'OFP' }))}>
+        <TextField select required label="Linked module" value={s.linkedModule} onChange={(e) => setS((p) => ({ ...p, linkedModule: e.target.value as 'NPD' | 'OFP', linkedRecordId: '' }))}>
           <MenuItem value="NPD">{LINKED_MODULE.NPD}</MenuItem>
           <MenuItem value="OFP">{LINKED_MODULE.OFP}</MenuItem>
         </TextField>
-        <TextField
-          required
-          label="Linked record id"
-          type="number"
+        <LinkedRecordPicker
+          module={s.linkedModule}
           value={s.linkedRecordId}
-          onChange={set('linkedRecordId')}
-          helperText="The NPD project or OFP order id this deviation is raised against"
-          slotProps={{ htmlInput: { min: 1 } }}
+          onChange={(id, partNumber) => setS((p) => ({ ...p, linkedRecordId: id, partNumber: p.partNumber || partNumber || '' }))}
+          helperText="The NPD project or order this deviation is raised against"
         />
         <TextField required label="Part number" value={s.partNumber} onChange={set('partNumber')} slotProps={{ htmlInput: { maxLength: 100 } }} />
         <TextField required label="Validity quantity" type="number" value={s.validityQuantity} onChange={set('validityQuantity')} slotProps={{ htmlInput: { min: 0.01, step: '0.01' } }} />
@@ -88,7 +86,7 @@ export function DeviationCreatePage() {
         control={<Checkbox checked={s.customerApprovalRequiredFlag} onChange={(e) => setS((p) => ({ ...p, customerApprovalRequiredFlag: e.target.checked }))} />}
         label="Requires customer approval"
       />
-      {creating.error != null && <Alert severity="error">{problemMessage(creating.error)}</Alert>}
+      {creating.error != null && <ProblemAlert error={creating.error} />}
       <Stack direction="row" spacing={1}>
         <Button onClick={() => void navigate('/quality/deviations')}>Cancel</Button>
         <Button type="submit" variant="contained" loading={creating.isLoading} disabled={!valid}>

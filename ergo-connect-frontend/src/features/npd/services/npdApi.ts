@@ -1,6 +1,6 @@
 import { api } from '@/services/baseApi'
 import type { CompanyType } from '@/features/auth/store/authSlice'
-import type { AuditEntry, Named } from '@/features/rfq/rfqApi'
+import type { AuditEntry, Named } from '@/features/rfq/services/rfqApi'
 
 /** Buttons the backend allows for this user, role and record right now (project-, activity-, issue- or approval-level). */
 export type NpdAction =

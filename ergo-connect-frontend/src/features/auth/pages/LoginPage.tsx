@@ -4,7 +4,6 @@ import {
   Accordion,
   AccordionDetails,
   AccordionSummary,
-  Alert,
   Box,
   Button,
   Container,
@@ -14,18 +13,14 @@ import {
 } from '@mui/material'
 import type { FormEvent } from 'react'
 import { useState } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router'
+import { Link, Navigate, useLocation, useNavigate } from 'react-router'
 import { useAppDispatch } from '@/hooks/useAppDispatch'
-import { problemMessage } from '@/utils/problem'
+import { useAppSelector } from '@/hooks/useAppSelector'
 import { RolePickerGrid } from '../components/RolePickerGrid'
 import { useLoginMutation } from '../services/authApi'
-import { sessionStarted } from '../store/authSlice'
-import {
-  buildDemoSession,
-  createSignedDemoJwt,
-  DEMO_STORAGE_KEY,
-  type DemoAccount,
-} from '../utils/demoAccounts'
+import type { DemoAccount } from '../utils/demoAccounts'
+import { startDemoSession } from '../utils/demoSession'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 export function LoginPage() {
   const dispatch = useAppDispatch()
@@ -33,14 +28,14 @@ export function LoginPage() {
   const navigate = useNavigate()
   const from = (useLocation().state as { from?: string } | null)?.from ?? '/'
   const [manualOpen, setManualOpen] = useState(false)
+  const session = useAppSelector((state) => state.auth.session)
+  const [landing, setLanding] = useState<string | null>(null)
+  const [hadSession] = useState(Boolean(session)) // visiting /login while already signed in
 
-  // Direct 1-Click Role Login
+  // Direct 1-Click Role Login: the redirect below sends the new persona to its landing page.
   const handleSelectAccount = async (account: DemoAccount) => {
-    const token = await createSignedDemoJwt(account)
-    const session = buildDemoSession(account, token)
-    sessionStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(session))
-    dispatch(sessionStarted(session))
-    navigate(account.landingPath)
+    setLanding(account.landingPath)
+    await startDemoSession(dispatch, account)
   }
 
   // Fallback Manual Credentials Login
@@ -60,6 +55,9 @@ export function LoginPage() {
       // shown below
     }
   }
+
+  // Only a demo pick or an already-signed-in visitor is redirected; a manual sign-in routes itself above.
+  if (session && (landing || hadSession)) return <Navigate to={landing ?? '/'} replace />
 
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: 'background.default', py: { xs: 3, md: 5 } }}>
@@ -105,7 +103,7 @@ export function LoginPage() {
               <Box component="form" onSubmit={handleManualSubmit} sx={{ display: 'grid', gap: 2, pt: 1 }}>
                 <TextField name="email" type="email" label="Email" autoComplete="username" size="small" required />
                 <TextField name="password" type="password" label="Password" autoComplete="current-password" size="small" required />
-                {error && <Alert severity="error">{problemMessage(error)}</Alert>}
+                {error && <ProblemAlert error={error} />}
                 <Button type="submit" variant="contained" loading={isLoading}>
                   Sign in
                 </Button>

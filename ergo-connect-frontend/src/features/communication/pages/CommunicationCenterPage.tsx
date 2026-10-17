@@ -1,10 +1,10 @@
-import { Alert, FormControlLabel, LinearProgress, Link, MenuItem, Stack, Switch, TablePagination, TextField, Typography } from '@mui/material'
+import { FormControlLabel, LinearProgress, Link, MenuItem, Stack, Switch, TablePagination, TextField, Typography } from '@mui/material'
 import { useState } from 'react'
 import { Link as RouterLink } from 'react-router'
-import { problemMessage } from '../../../shared/problem'
 import { CommentCard } from '../components/CommentCard'
-import { useCommentInboxQuery, type CommentLinkedModule } from '../communicationApi'
-import { MODULE_LABEL, recordPath } from '../labels'
+import { useCommentInboxQuery, type CommentLinkedModule } from '@/features/communication/services/communicationApi'
+import { MODULE_LABEL, recordPath } from '@/features/communication/utils/labels'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 // SRS §12.12.1 Communication Center: module-wise threaded communication across every record the caller can read, with
 // internal/external tagging, mentions, attachments and the unresolved-query and escalation markers. New comments are
@@ -76,7 +76,7 @@ export function CommunicationCenterPage() {
         />
       </Stack>
       {(isLoading || isFetching) && <LinearProgress />}
-      {error != null && <Alert severity="error">{problemMessage(error)}</Alert>}
+      {error != null && <ProblemAlert error={error} />}
       {!isLoading && error == null && threads.length === 0 && <Typography color="text.secondary">No conversations match.</Typography>}
       {threads.map((thread) => (
         <Stack key={thread.id} spacing={0.5}>

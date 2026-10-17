@@ -3,8 +3,8 @@ import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router'
 import { CenteredCard } from '@/components/ui/CenteredCard'
 import { useAppSelector } from '@/hooks/useAppSelector'
-import { problemMessage } from '@/utils/problem'
 import { useChangePasswordMutation, useRefreshMutation, useSetTwoFactorMutation } from '../services/authApi'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 export function ChangePasswordPage() {
   const forced = useAppSelector((state) => state.auth.session?.mustChangePassword ?? false)
@@ -80,7 +80,7 @@ export function ChangePasswordPage() {
           required
         />
         {mismatch && <Alert severity="error">The new passwords do not match.</Alert>}
-        {error && <Alert severity="error">{problemMessage(error)}</Alert>}
+        {error && <ProblemAlert error={error} />}
         <Button type="submit" variant="contained" size="large" loading={isLoading}>
           Change password
         </Button>
@@ -121,7 +121,7 @@ export function ChangePasswordPage() {
               </Box>
             </Box>
           )}
-          {twoFactorError && <Alert severity="error">{problemMessage(twoFactorError)}</Alert>}
+          {twoFactorError && <ProblemAlert error={twoFactorError} />}
         </Box>
       )}
     </CenteredCard>

@@ -1,16 +1,16 @@
-import { Alert, Button, Card, CardContent, LinearProgress, MenuItem, Stack, TextField, Typography } from '@mui/material'
+import { Button, Card, CardContent, LinearProgress, MenuItem, Stack, TextField, Typography } from '@mui/material'
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { useAppSelector } from '../../../app/store'
-import { FormSection as Section } from '../../../shared/components/FormSection'
-import { num, str, text } from '../../../shared/form'
-import { useMasterOptionsQuery } from '../../../shared/masterData'
-import { problemMessage } from '../../../shared/problem'
-import { useCompaniesQuery } from '../../companies/companiesApi'
+import { FormSection as Section } from '@/components/ui/FormSection'
+import { num, str, text } from '@/utils/form'
+import { useMasterOptionsQuery } from '@/utils/masterData'
+import { useCompaniesQuery } from '@/features/companies/services/companiesApi'
 import { ProcessFlowTable } from '../components/ProcessFlowTable'
-import { EMPTY_STEP, toProcessSteps, toStepRows, type StepRow } from '../processFlow'
-import { PRIORITIES } from '../labels'
-import { useCreateRfqMutation, useRfqQuery, useUpdateRfqMutation, type Priority, type RfqForm, type RfqView } from '../rfqApi'
+import { newStep, toProcessSteps, toStepRows, type StepRow } from '@/features/rfq/utils/processFlow'
+import { PRIORITIES } from '@/features/rfq/utils/labels'
+import { useCreateRfqMutation, useRfqQuery, useUpdateRfqMutation, type Priority, type RfqForm, type RfqView } from '@/features/rfq/services/rfqApi'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 type FormState = Record<
   Exclude<keyof RfqForm, 'processSteps' | 'priority' | 'customerCompanyId'> | 'customerCompanyId',
@@ -48,7 +48,7 @@ function fromView(view: RfqView | undefined): FormState {
     internalNotes: view?.audience === 'ERGO' ? text(view.internalNotes) : '',
     steps: view
       ? toStepRows(view.part.processSteps.map((s) => ({ ...s, processId: s.process?.id ?? null })))
-      : [{ ...EMPTY_STEP }, { ...EMPTY_STEP }], // SRS §5.5: starts with 2 rows
+      : [newStep(), newStep()], // SRS §5.5: starts with 2 rows
   }
 }
 
@@ -88,7 +88,7 @@ export function RfqEditPage() {
   const { id } = useParams()
   const { data: view, isLoading, error } = useRfqQuery(Number(id), { skip: id === undefined })
   if (id !== undefined && isLoading) return <LinearProgress />
-  if (error) return <Alert severity="error">{problemMessage(error)}</Alert>
+  if (error) return <ProblemAlert error={error} />
   return <RfqFormEditor key={view?.id ?? 'new'} view={view} />
 }
 
@@ -220,7 +220,7 @@ function RfqFormEditor({ view }: { view: RfqView | undefined }) {
           field('internalNotes', 'Internal notes (ERGO only)', { multiline: true, minRows: 3, sx: { gridColumn: '1 / -1' }, slotProps: { htmlInput: { maxLength: 4000 } } })}
       </Section>
 
-      {error != null && <Alert severity="error">{problemMessage(error)}</Alert>}
+      {error != null && <ProblemAlert error={error} />}
       <Stack direction="row" spacing={1}>
         <Button variant="contained" onClick={() => void save()} loading={creating.isLoading || updating.isLoading} disabled={!state.partNumber.trim()}>
           {view ? 'Save changes' : 'Save draft'}

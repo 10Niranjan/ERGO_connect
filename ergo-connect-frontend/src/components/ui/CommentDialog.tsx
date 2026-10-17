@@ -1,6 +1,6 @@
-import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField, Typography } from '@mui/material'
+import { Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField, Typography } from '@mui/material'
 import type { FormEvent } from 'react'
-import { problemMessage } from '@/utils/problem'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 interface Props {
   title: string
@@ -38,7 +38,7 @@ export function CommentDialog({ title, label, required, confirmLabel, intro, dan
             autoFocus
             slotProps={{ htmlInput: { maxLength: 2000 } }}
           />
-          {error != null && <Alert severity="error">{problemMessage(error)}</Alert>}
+          {error != null && <ProblemAlert error={error} />}
         </DialogContent>
         <DialogActions>
           <Button onClick={onClose}>Cancel</Button>

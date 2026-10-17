@@ -1,7 +1,7 @@
 import { Autocomplete, TextField } from '@mui/material'
 import { useState } from 'react'
-import { MAX_MENTIONS } from '../labels'
-import { useMentionableQuery, type CommentLinkedModule, type CommentType, type MentionOption } from '../communicationApi'
+import { MAX_MENTIONS } from '@/features/communication/utils/labels'
+import { useMentionableQuery, type CommentLinkedModule, type CommentType, type MentionOption } from '@/features/communication/services/communicationApi'
 
 interface Props {
   linkedModule: CommentLinkedModule

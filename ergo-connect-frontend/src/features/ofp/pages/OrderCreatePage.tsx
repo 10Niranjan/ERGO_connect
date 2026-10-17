@@ -1,11 +1,11 @@
-import { Alert, Box, Button, MenuItem, Stack, TextField, Typography } from '@mui/material'
+import { Box, Button, MenuItem, Stack, TextField, Typography } from '@mui/material'
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router'
-import { num, str } from '../../../shared/form'
-import { problemMessage } from '../../../shared/problem'
-import { useUsersQuery } from '../../admin/adminApi'
-import { useCompaniesQuery } from '../../companies/companiesApi'
-import { useCreateOrderMutation } from '../ofpApi'
+import { num, str } from '@/utils/form'
+import { useUsersQuery } from '@/features/admin/services/adminApi'
+import { useCompaniesQuery } from '@/features/companies/services/companiesApi'
+import { useCreateOrderMutation } from '@/features/ofp/services/ofpApi'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 /** SRS §17.5 standalone (repeat/running) order. Orders coming from NPD use the handover endpoint instead. */
 export function OrderCreatePage() {
@@ -40,7 +40,7 @@ export function OrderCreatePage() {
 
   const valid = s.customerCompanyId && s.supplierCompanyId && s.partNumber.trim() && Number(s.orderedQuantity) > 0
   return (
-    <Stack spacing={2} component="form" onSubmit={(e) => void submit(e)} sx={{ maxWidth: 720 }}>
+    <Stack spacing={2} component="form" onSubmit={(e) => void submit(e)} sx={{ maxWidth: 960 }}>
       <Typography variant="h5" component="h1">
         New order
       </Typography>
@@ -75,7 +75,7 @@ export function OrderCreatePage() {
         <TextField label="Due date" type="date" value={s.dueDate} onChange={set('dueDate')} slotProps={{ inputLabel: { shrink: true } }} />
         <TextField label="Committed dispatch date" type="date" value={s.committedDispatchDate} onChange={set('committedDispatchDate')} slotProps={{ inputLabel: { shrink: true } }} />
       </Box>
-      {creating.error != null && <Alert severity="error">{problemMessage(creating.error)}</Alert>}
+      {creating.error != null && <ProblemAlert error={creating.error} />}
       <Stack direction="row" spacing={1}>
         <Button onClick={() => void navigate('/ofp')}>Cancel</Button>
         <Button type="submit" variant="contained" loading={creating.isLoading} disabled={!valid}>

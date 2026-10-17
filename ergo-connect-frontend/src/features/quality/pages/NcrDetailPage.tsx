@@ -1,15 +1,14 @@
-import { Alert, Box, Button, Chip, LinearProgress, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from '@mui/material'
+import { Box, Button, Chip, LinearProgress, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from '@mui/material'
 import { useState, type ReactNode } from 'react'
 import { useParams } from 'react-router'
 import { useAppSelector } from '../../../app/store'
 import { CommentsSection } from '../../communication/components/CommentsPanel'
-import { AuditTrail } from '../../../shared/components/AuditTrail'
-import { CommentDialog } from '../../../shared/components/CommentDialog'
-import { Facts } from '../../../shared/components/Facts'
-import { problemMessage } from '../../../shared/problem'
-import { formatDate } from '../../rfq/labels'
+import { AuditTrail } from '@/components/ui/AuditTrail'
+import { CommentDialog } from '@/components/ui/CommentDialog'
+import { Facts } from '@/components/ui/Facts'
+import { formatDate } from '@/features/rfq/utils/labels'
 import { CapaActionDialog, NcrUpdateDialog } from '../components/NcrDialogs'
-import { CAPA_ACTION_STATUS, CAPA_ACTION_TYPE, LINKED_MODULE, NCR_STATUS } from '../labels'
+import { CAPA_ACTION_STATUS, CAPA_ACTION_TYPE, LINKED_MODULE, NCR_STATUS } from '@/features/quality/utils/labels'
 import {
   useCloseCapaActionMutation,
   useCloseNcrMutation,
@@ -21,13 +20,15 @@ import {
   useUploadCapaEvidenceMutation,
   type NcrAction,
   type NcrDetail,
-} from '../qualityApi'
+} from '@/features/quality/services/qualityApi'
+import { LinkedRecordLink } from '@/features/quality/components/LinkedRecordLink'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 export function NcrDetailPage() {
   const id = Number(useParams().id)
   const { data: ncr, isLoading, error } = useNcrQuery(id)
   if (isLoading) return <LinearProgress />
-  if (!ncr) return <Alert severity="error">{problemMessage(error)}</Alert>
+  if (!ncr) return <ProblemAlert error={error} />
   return <NcrDetailView ncr={ncr} />
 }
 
@@ -119,9 +120,10 @@ function NcrDetailView({ ncr }: { ncr: NcrDetail }) {
     }
   }
 
+  const linkedRecord = <LinkedRecordLink module={ncr.linkedModule} id={ncr.linkedRecordId} />
   const facts: [string, ReactNode][] = [
     ['Issue category', ncr.issueCategory],
-    ['Linked module', `${LINKED_MODULE[ncr.linkedModule]} #${ncr.linkedRecordId}`],
+    ['Linked record', linkedRecord],
     ['Target closure date', formatDate(ncr.targetClosureDate)],
     ['Closure date', formatDate(ncr.closureDate)],
   ]
@@ -248,9 +250,9 @@ function NcrDetailView({ ncr }: { ncr: NcrDetail }) {
           </TableBody>
         </Table>
       </TableContainer>
-      {uploading.error != null && <Alert severity="error">{problemMessage(uploading.error)}</Alert>}
-      {closingCapa.error != null && <Alert severity="error">{problemMessage(closingCapa.error)}</Alert>}
-      {downloading.error != null && <Alert severity="error">{problemMessage(downloading.error)}</Alert>}
+      {uploading.error != null && <ProblemAlert error={uploading.error} />}
+      {closingCapa.error != null && <ProblemAlert error={closingCapa.error} />}
+      {downloading.error != null && <ProblemAlert error={downloading.error} />}
 
       {dialog?.kind === 'update' && <NcrUpdateDialog mode={dialog.action} ncr={ncr} onClose={closeDialog} />}
       {dialog?.kind === 'capa' && <CapaActionDialog ncr={ncr} row={dialog.row} onClose={closeDialog} />}
@@ -289,7 +291,7 @@ function NcrHistorySection({ ncrId }: { ncrId: number }) {
       <Typography variant="h6" component="h2">
         Audit trail
       </Typography>
-      {error ? <Alert severity="error">{problemMessage(error)}</Alert> : <AuditTrail rows={data} />}
+      {error ? <ProblemAlert error={error} /> : <AuditTrail rows={data} />}
     </Stack>
   )
 }

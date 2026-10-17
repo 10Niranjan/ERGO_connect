@@ -1,5 +1,4 @@
 import {
-  Alert,
   Button,
   Chip,
   LinearProgress,
@@ -17,10 +16,10 @@ import {
 } from '@mui/material'
 import { useState } from 'react'
 import { useAppSelector } from '../../../app/store'
-import { problemMessage } from '../../../shared/problem'
-import { useMasterEntriesQuery, useMasterListsQuery, type MasterEntry } from '../adminApi'
+import { useMasterEntriesQuery, useMasterListsQuery, type MasterEntry } from '@/features/admin/services/adminApi'
 import { ExchangeRatesPanel } from '../components/ExchangeRatesPanel'
 import { MasterEntryDialog } from '../components/MasterEntryDialog'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 const RATES = 'exchange-rates'
 
@@ -54,7 +53,7 @@ export function MasterDataPage() {
         </Tabs>
       )}
       {key === RATES && <ExchangeRatesPanel canEdit={canEdit} />}
-      {error && <Alert severity="error">{problemMessage(error)}</Alert>}
+      {error && <ProblemAlert error={error} />}
       {key !== RATES && (
         <TableContainer component={Paper} variant="outlined">
           {isFetching && <LinearProgress />}

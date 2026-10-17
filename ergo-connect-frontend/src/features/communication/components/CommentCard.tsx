@@ -1,10 +1,10 @@
 import { Alert, Box, Button, Checkbox, Chip, Dialog as MuiDialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, Paper, Stack, TextField, Tooltip, Typography } from '@mui/material'
 import { useRef, useState, type FormEvent } from 'react'
 import { useAppSelector } from '../../../app/store'
-import { CommentDialog } from '../../../shared/components/CommentDialog'
-import { saveObjectUrl } from '../../../shared/download'
-import { formatSize } from '../../documents/labels'
-import { problemMessage } from '../../../shared/problem'
+import { CommentDialog } from '@/components/ui/CommentDialog'
+import { saveObjectUrl } from '@/utils/download'
+import { formatSize } from '@/features/documents/utils/labels'
+import { problemMessage } from '@/utils/problem'
 import {
   useAttachToCommentMutation,
   useDeescalateCommentMutation,
@@ -17,10 +17,11 @@ import {
   type CommentAction,
   type CommentView,
   type MentionOption,
-} from '../communicationApi'
-import { EXTERNAL_TYPE_LABEL, MAX_ATTACHMENTS, MAX_COMMENT_LENGTH, TYPE_LABEL, formatDateTime } from '../labels'
+} from '@/features/communication/services/communicationApi'
+import { EXTERNAL_TYPE_LABEL, MAX_ATTACHMENTS, MAX_COMMENT_LENGTH, TYPE_LABEL, formatDateTime } from '@/features/communication/utils/labels'
 import { CommentComposer } from './CommentComposer'
 import { MentionPicker } from './MentionPicker'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 type Dialog = 'resolve' | 'reopen' | 'escalate' | 'deescalate'
 
@@ -159,7 +160,7 @@ export function CommentCard({ comment, isReply }: Props) {
             </Stack>
           )}
 
-          {actionError != null && <Alert severity="error">{problemMessage(actionError)}</Alert>}
+          {actionError != null && <ProblemAlert error={actionError} />}
 
           {!editing && (
             <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }} useFlexGap>

@@ -1,5 +1,4 @@
 import {
-  Alert,
   Button,
   Dialog,
   DialogActions,
@@ -11,13 +10,13 @@ import {
   TextField,
 } from '@mui/material'
 import type { FormEvent } from 'react'
-import { problemMessage } from '../../../shared/problem'
 import {
   useCreateMasterEntryMutation,
   useUpdateMasterEntryMutation,
   type MasterEntry,
   type MasterList,
-} from '../adminApi'
+} from '@/features/admin/services/adminApi'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 /** One form for every master list: its extra fields come from the list definition sent by the backend. */
 export function MasterEntryDialog({ list, entry, onClose }: { list: MasterList; entry: MasterEntry | null; onClose: () => void }) {
@@ -85,7 +84,7 @@ export function MasterEntryDialog({ list, entry, onClose }: { list: MasterList; 
               control={<Switch name="active" defaultChecked={entry.active} />}
             />
           )}
-          {error && <Alert severity="error">{problemMessage(error)}</Alert>}
+          {error && <ProblemAlert error={error} />}
         </DialogContent>
         <DialogActions>
           <Button onClick={onClose}>Cancel</Button>

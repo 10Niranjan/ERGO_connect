@@ -1,5 +1,5 @@
 import { Stack } from '@mui/material'
-import type { ManagementDashboard } from '../dashboardApi'
+import type { ManagementDashboard } from '@/features/dashboard/services/dashboardApi'
 import { KpiTile } from './KpiTile'
 import { NpdSection, OrderSection, SupplierPerformanceSection } from './sections'
 

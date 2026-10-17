@@ -1,10 +1,10 @@
-import { Alert, List, ListItemButton, ListItemText } from '@mui/material'
+import { List, ListItemButton, ListItemText } from '@mui/material'
 import { useNavigate } from 'react-router'
 import { CenteredCard } from '@/components/ui/CenteredCard'
 import { useAppSelector } from '@/hooks/useAppSelector'
-import { problemMessage } from '@/utils/problem'
 import { useSwitchRoleMutation } from '../services/authApi'
 import type { Role } from '../store/authSlice'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 // SRS 12.4.2: shown only to users with more than one role.
 export function RoleSelectPage() {
@@ -39,7 +39,7 @@ export function RoleSelectPage() {
           </ListItemButton>
         ))}
       </List>
-      {error && <Alert severity="error">{problemMessage(error)}</Alert>}
+      {error && <ProblemAlert error={error} />}
     </CenteredCard>
   )
 }

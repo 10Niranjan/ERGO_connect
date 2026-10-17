@@ -1,5 +1,4 @@
 import {
-  Alert,
   Button,
   Checkbox,
   Dialog,
@@ -16,9 +15,8 @@ import {
   TextField,
 } from '@mui/material'
 import { useState, type FormEvent } from 'react'
-import type { Role } from '../../../auth/authSlice'
-import { problemMessage } from '../../../shared/problem'
-import { useCompaniesQuery } from '../../companies/companiesApi'
+import type { Role } from '@/features/auth/store/authSlice'
+import { useCompaniesQuery } from '@/features/companies/services/companiesApi'
 import {
   useCreateUserMutation,
   useRolesQuery,
@@ -26,7 +24,8 @@ import {
   useSetUserRolesMutation,
   useUpdateUserMutation,
   type User,
-} from '../adminApi'
+} from '@/features/admin/services/adminApi'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 interface Props {
   /** null = create a new user */
@@ -180,7 +179,7 @@ export function UserDialog({ user, onClose, onCreated }: Props) {
               ))}
             </TextField>
           )}
-          {error && <Alert severity="error">{problemMessage(error)}</Alert>}
+          {error && <ProblemAlert error={error} />}
         </DialogContent>
         <DialogActions>
           <Button onClick={onClose}>Cancel</Button>

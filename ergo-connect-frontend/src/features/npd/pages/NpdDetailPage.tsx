@@ -1,5 +1,4 @@
 import {
-  Alert,
   Box,
   Button,
   Card,
@@ -29,19 +28,19 @@ import {
 } from '@mui/material'
 import { useState } from 'react'
 import { useAppSelector } from '../../../app/store'
-import { OFP_EDITORS } from '../../../auth/access'
+import { OFP_EDITORS } from '@/features/auth/utils/access'
 import { HandoverDialog } from '../../ofp/components/HandoverDialog'
 import { Link as RouterLink, useParams } from 'react-router'
 import { CommentsPanel } from '../../communication/components/CommentsPanel'
-import { useUsersQuery, type User } from '../../admin/adminApi'
-import { AuditTrail } from '../../../shared/components/AuditTrail'
-import { CommentDialog } from '../../../shared/components/CommentDialog'
-import { Facts } from '../../../shared/components/Facts'
-import { num, str, text } from '../../../shared/form'
-import { problemMessage } from '../../../shared/problem'
-import type { CompanyType } from '../../../auth/authSlice'
-import type { Named } from '../../rfq/rfqApi'
-import { formatDate } from '../../rfq/labels'
+import { useUsersQuery, type User } from '@/features/admin/services/adminApi'
+import { AuditTrail } from '@/components/ui/AuditTrail'
+import { CommentDialog } from '@/components/ui/CommentDialog'
+import { Facts } from '@/components/ui/Facts'
+import { num, str, text } from '@/utils/form'
+import { problemMessage } from '@/utils/problem'
+import type { CompanyType } from '@/features/auth/store/authSlice'
+import type { Named } from '@/features/rfq/services/rfqApi'
+import { formatDate } from '@/features/rfq/utils/labels'
 import {
   ACTIVITY_STATUS,
   APPROVAL_STATUS,
@@ -53,7 +52,7 @@ import {
   PROMPT_RESPONSE_TYPE,
   RISK_LEVEL,
   stageProgress,
-} from '../labels'
+} from '@/features/npd/utils/labels'
 import {
   useAddNpdActivityMutation,
   useAddPromptChecklistMutation,
@@ -91,13 +90,16 @@ import {
   type PromptResponseType,
   type RiskLevel,
   type StageHistoryView,
-} from '../npdApi'
+} from '@/features/npd/services/npdApi'
+import { formatDateTime } from '@/utils/date'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
+import { roleTitle } from '@/features/auth/utils/demoAccounts'
 
 export function NpdDetailPage() {
   const id = Number(useParams().id)
   const { data: npd, isLoading, error } = useNpdProjectQuery(id)
   if (isLoading) return <LinearProgress />
-  if (!npd) return <Alert severity="error">{problemMessage(error)}</Alert>
+  if (!npd) return <ProblemAlert error={error} />
   return <NpdDetail npd={npd} />
 }
 
@@ -317,7 +319,7 @@ function ProjectEditForm({ npd, ergoUsers, onClose }: { npd: ErgoNpdView; ergoUs
           onChange={(e) => setActualSampleSubmissionDate(e.target.value)}
           slotProps={{ inputLabel: { shrink: true } }}
         />
-        {saving.error != null && <Alert severity="error">{problemMessage(saving.error)}</Alert>}
+        {saving.error != null && <ProblemAlert error={saving.error} />}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>
@@ -751,7 +753,7 @@ function ActivityDialogForm({
             ))}
           </TextField>
         )}
-        {error != null && <Alert severity="error">{problemMessage(error)}</Alert>}
+        {error != null && <ProblemAlert error={error} />}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>
@@ -837,7 +839,7 @@ function ActivityProgressDialog({ activity, onClose }: { activity: ActivityView;
           onChange={(e) => setState((s) => ({ ...s, remarks: e.target.value }))}
           slotProps={{ htmlInput: { maxLength: 2000 } }}
         />
-        {updating.error != null && <Alert severity="error">{problemMessage(updating.error)}</Alert>}
+        {updating.error != null && <ProblemAlert error={updating.error} />}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>
@@ -979,10 +981,10 @@ function PromptQuestionCard({
         {question.respondedBy && (
           <Typography variant="caption" color="text.secondary">
             Answered by {question.respondedBy}
-            {question.respondedAt && ` · ${new Date(question.respondedAt).toLocaleString()}`}
+            {question.respondedAt && ` · ${formatDateTime(question.respondedAt)}`}
           </Typography>
         )}
-        {responding.error != null && <Alert severity="error">{problemMessage(responding.error)}</Alert>}
+        {responding.error != null && <ProblemAlert error={responding.error} />}
       </CardContent>
     </Card>
   )
@@ -1067,7 +1069,7 @@ function PromptChecklistDialog({
           control={<Checkbox checked={state.mandatory} onChange={(e) => setState((s) => ({ ...s, mandatory: e.target.checked }))} />}
           label="Mandatory"
         />
-        {error != null && <Alert severity="error">{problemMessage(error)}</Alert>}
+        {error != null && <ProblemAlert error={error} />}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>
@@ -1315,7 +1317,7 @@ function RaiseIssueDialog({ npd, onClose }: { npd: ErgoNpdView; onClose: () => v
             </MenuItem>
           ))}
         </TextField>
-        {raising.error != null && <Alert severity="error">{problemMessage(raising.error)}</Alert>}
+        {raising.error != null && <ProblemAlert error={raising.error} />}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>
@@ -1374,8 +1376,8 @@ function ApprovalsTab({ npd }: { npd: ErgoNpdView | CustomerNpdView }) {
                 <TableCell>{APPROVAL_TYPE[a.approvalType].label}</TableCell>
                 <TableCell>{NPD_STAGE[a.stageName].label}</TableCell>
                 <TableCell>{a.requestedBy ?? '—'}</TableCell>
-                <TableCell sx={{ whiteSpace: 'nowrap' }}>{new Date(a.requestedAt).toLocaleString()}</TableCell>
-                <TableCell>{a.approverRole}</TableCell>
+                <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDateTime(a.requestedAt)}</TableCell>
+                <TableCell>{roleTitle(a.approverRole)}</TableCell>
                 <TableCell>
                   <Chip size="small" label={APPROVAL_STATUS[a.approvalStatus].label} color={APPROVAL_STATUS[a.approvalStatus].color} />
                 </TableCell>
@@ -1383,7 +1385,7 @@ function ApprovalsTab({ npd }: { npd: ErgoNpdView | CustomerNpdView }) {
                   {a.approvedBy ?? '—'}
                   {a.approvedAt && (
                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                      {new Date(a.approvedAt).toLocaleString()}
+                      {formatDateTime(a.approvedAt)}
                     </Typography>
                   )}
                 </TableCell>
@@ -1465,7 +1467,7 @@ function RequestApprovalDialog({ npd, onClose }: { npd: ErgoNpdView; onClose: ()
             </MenuItem>
           ))}
         </TextField>
-        {requesting.error != null && <Alert severity="error">{problemMessage(requesting.error)}</Alert>}
+        {requesting.error != null && <ProblemAlert error={requesting.error} />}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>
@@ -1488,7 +1490,7 @@ function StageHistoryTab({ npd }: { npd: NpdView }) {
 /** SRS §12.8.3/§15.5 audit trail tab, ERGO only (server-enforced; the tab itself is also hidden for other audiences). */
 function NpdHistoryTab({ npdId }: { npdId: number }) {
   const { data = [], error } = useNpdHistoryQuery(npdId)
-  if (error) return <Alert severity="error">{problemMessage(error)}</Alert>
+  if (error) return <ProblemAlert error={error} />
   return <AuditTrail rows={data} />
 }
 
@@ -1506,9 +1508,9 @@ function StageHistoryTable({ rows }: { rows: StageHistoryView[] }) {
           </TableRow>
         </TableHead>
         <TableBody>
-          {rows.map((h, index) => (
-            <TableRow key={index}>
-              <TableCell sx={{ whiteSpace: 'nowrap' }}>{new Date(h.changedAt).toLocaleString()}</TableCell>
+          {rows.map((h) => (
+            <TableRow key={`${h.changedAt}-${h.stage}`}>
+              <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDateTime(h.changedAt)}</TableCell>
               <TableCell>{h.changedBy ?? 'System'}</TableCell>
               <TableCell>{h.previousStage ? NPD_STAGE[h.previousStage].label : '—'}</TableCell>
               <TableCell>{NPD_STAGE[h.stage].label}</TableCell>
@@ -1543,9 +1545,9 @@ function ExternalStageHistoryTable({ rows }: { rows: ExternalStageHistoryView[] 
           </TableRow>
         </TableHead>
         <TableBody>
-          {rows.map((h, index) => (
-            <TableRow key={index}>
-              <TableCell sx={{ whiteSpace: 'nowrap' }}>{new Date(h.changedAt).toLocaleString()}</TableCell>
+          {rows.map((h) => (
+            <TableRow key={`${h.changedAt}-${h.stage}`}>
+              <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDateTime(h.changedAt)}</TableCell>
               <TableCell>{h.changedBy ?? 'System'}</TableCell>
               <TableCell>{h.previousStage ? NPD_STAGE[h.previousStage].label : '—'}</TableCell>
               <TableCell>{NPD_STAGE[h.stage].label}</TableCell>

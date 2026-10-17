@@ -1,12 +1,13 @@
-import { Alert, Box, Button, Checkbox, FormControlLabel, MenuItem, Stack, TextField, Typography } from '@mui/material'
+import { Box, Button, Checkbox, FormControlLabel, MenuItem, Stack, TextField, Typography } from '@mui/material'
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router'
 import { useAppSelector } from '../../../app/store'
-import { str } from '../../../shared/form'
-import { problemMessage } from '../../../shared/problem'
-import { useCompaniesQuery } from '../../companies/companiesApi'
-import { LINKED_MODULE } from '../labels'
-import { useCreateInspectionMutation, type LinkedModule } from '../qualityApi'
+import { str } from '@/utils/form'
+import { useCompaniesQuery } from '@/features/companies/services/companiesApi'
+import { LINKED_MODULE } from '@/features/quality/utils/labels'
+import { useCreateInspectionMutation, type LinkedModule } from '@/features/quality/services/qualityApi'
+import { LinkedRecordPicker } from '@/features/quality/components/LinkedRecordPicker'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 /** SRS §12.10.2 create. customerCompanyId/customerVisible only take effect for an ERGO caller - a supplier's own
  * create is always tagged to its own company (InspectionService.create), so those fields are hidden for suppliers. */
@@ -50,26 +51,23 @@ export function InspectionCreatePage() {
 
   const valid = s.partNumber.trim() && Number(s.linkedRecordId) > 0
   return (
-    <Stack spacing={2} component="form" onSubmit={(e) => void submit(e)} sx={{ maxWidth: 720 }}>
+    <Stack spacing={2} component="form" onSubmit={(e) => void submit(e)} sx={{ maxWidth: 960 }}>
       <Typography variant="h5" component="h1">
         New inspection
       </Typography>
       <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' } }}>
-        <TextField select required label="Linked module" value={s.linkedModule} onChange={set('linkedModule')}>
+        <TextField select required label="Linked module" value={s.linkedModule} onChange={(e) => setS((p) => ({ ...p, linkedModule: e.target.value as LinkedModule, linkedRecordId: '' }))}>
           {(Object.keys(LINKED_MODULE) as LinkedModule[]).map((m) => (
             <MenuItem key={m} value={m}>
               {LINKED_MODULE[m]}
             </MenuItem>
           ))}
         </TextField>
-        <TextField
-          required
-          label="Linked record id"
-          type="number"
+        <LinkedRecordPicker
+          module={s.linkedModule}
           value={s.linkedRecordId}
-          onChange={set('linkedRecordId')}
-          helperText="The NPD project or order id this inspection is checked against"
-          slotProps={{ htmlInput: { min: 1 } }}
+          onChange={(id, partNumber) => setS((p) => ({ ...p, linkedRecordId: id, partNumber: p.partNumber || partNumber || '' }))}
+          helperText="The NPD project or order this inspection is checked against"
         />
         <TextField required label="Part number" value={s.partNumber} onChange={set('partNumber')} slotProps={{ htmlInput: { maxLength: 100 } }} />
         <TextField label="Batch / lot no." value={s.batchLotNo} onChange={set('batchLotNo')} slotProps={{ htmlInput: { maxLength: 100 } }} />
@@ -105,7 +103,7 @@ export function InspectionCreatePage() {
           label="Visible to the customer"
         />
       )}
-      {creating.error != null && <Alert severity="error">{problemMessage(creating.error)}</Alert>}
+      {creating.error != null && <ProblemAlert error={creating.error} />}
       <Stack direction="row" spacing={1}>
         <Button onClick={() => void navigate('/quality')}>Cancel</Button>
         <Button type="submit" variant="contained" loading={creating.isLoading} disabled={!valid}>

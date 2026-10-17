@@ -1,14 +1,14 @@
 import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, TextField } from '@mui/material'
 import type { FormEvent } from 'react'
-import type { CompanyType } from '../../../auth/authSlice'
-import { problemMessage } from '../../../shared/problem'
+import type { CompanyType } from '@/features/auth/store/authSlice'
+import { problemMessage } from '@/utils/problem'
 import {
   TYPE_LABELS,
   useCreateCompanyMutation,
   useUpdateCompanyMutation,
   type Company,
   type CompanyProfile,
-} from '../companiesApi'
+} from '@/features/companies/services/companiesApi'
 
 // Optional profile fields of SRS 13.2.1, in form order, with the backend's length limits.
 const DETAILS: [Exclude<keyof CompanyProfile, 'name'>, string, number][] = [

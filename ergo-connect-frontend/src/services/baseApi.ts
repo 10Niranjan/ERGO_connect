@@ -7,6 +7,7 @@ import {
 } from '@reduxjs/toolkit/query/react'
 import { API_BASE_URL } from '@/constants/config'
 import { sessionEnded, sessionStarted, type AuthState, type Session } from '@/features/auth/store/authSlice'
+import { DEMO_STORAGE_KEY } from '@/features/auth/utils/demoAccounts'
 
 const rawBaseQuery = fetchBaseQuery({
   baseUrl: API_BASE_URL,
@@ -22,8 +23,6 @@ const NO_RETRY = ['/auth/login', '/auth/refresh', '/auth/logout']
 
 // Requests that hit an expired access token share one refresh call, then retry once.
 let refreshing: Promise<boolean> | null = null
-
-const DEMO_STORAGE_KEY = 'ergo_connect_demo_session'
 
 export const baseQuery: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError> = async (args, api, extra) => {
   const result = await rawBaseQuery(args, api, extra)

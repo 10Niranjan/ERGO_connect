@@ -2,11 +2,10 @@ import { Alert, Box, Button, Chip, LinearProgress, Link, Paper, Stack, Table, Ta
 import { useEffect, useState } from 'react'
 import { Link as RouterLink, useNavigate, useParams } from 'react-router'
 import { useAppSelector } from '../../../app/store'
-import { Facts } from '../../../shared/components/Facts'
-import { CommentDialog } from '../../../shared/components/CommentDialog'
-import { saveObjectUrl } from '../../../shared/download'
-import { problemMessage } from '../../../shared/problem'
-import { VISIBILITY, formatDate } from '../../rfq/labels'
+import { Facts } from '@/components/ui/Facts'
+import { CommentDialog } from '@/components/ui/CommentDialog'
+import { saveObjectUrl } from '@/utils/download'
+import { VISIBILITY, formatDate } from '@/features/rfq/utils/labels'
 import { EditDocumentDialog, ReplaceDocumentDialog } from '../components/DocumentDialogs'
 import {
   useApproveDocumentMutation,
@@ -17,8 +16,9 @@ import {
   useUnlockDocumentMutation,
   type DocumentAction,
   type DocumentDetail,
-} from '../documentsApi'
-import { APPROVAL_STATUS, LINKED_MODULE_LABEL, LOCK_STATUS, formatSize, linkedRecordLabel, linkedRecordPath } from '../labels'
+} from '@/features/documents/services/documentsApi'
+import { APPROVAL_STATUS, LINKED_MODULE_LABEL, LOCK_STATUS, formatSize, linkedRecordLabel, linkedRecordPath } from '@/features/documents/utils/labels'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 export function DocumentDetailPage() {
   const id = Number(useParams().id)
@@ -26,7 +26,7 @@ export function DocumentDetailPage() {
   // must never be live for the wrong id.
   const { currentData: document, isFetching, error } = useDocumentQuery(id)
   if (isFetching && !document) return <LinearProgress />
-  if (!document) return <Alert severity="error">{problemMessage(error)}</Alert>
+  if (!document) return <ProblemAlert error={error} />
   // key: moving between versions (same route) must reset the preview and any open dialog.
   return <DocumentDetailView key={document.id} document={document} />
 }
@@ -134,7 +134,7 @@ function DocumentDetailView({ document }: { document: DocumentDetail }) {
           A newer version of this document exists. This version is kept for the record and can no longer be changed.
         </Alert>
       )}
-      {actionError != null && <Alert severity="error">{problemMessage(actionError)}</Alert>}
+      {actionError != null && <ProblemAlert error={actionError} />}
 
       <Facts
         title="Preview"

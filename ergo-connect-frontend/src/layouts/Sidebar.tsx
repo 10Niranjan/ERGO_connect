@@ -199,7 +199,7 @@ export function Sidebar({ session, mobileOpen, onCloseMobile }: SidebarProps) {
                   <ListItemButton
                     component={NavLink}
                     to={item.to}
-                    end={item.to === '/'}
+                    end={item.to === '/' || item.to === '/quality'}
                     onClick={onCloseMobile}
                     sx={{
                       mx: 1.5,

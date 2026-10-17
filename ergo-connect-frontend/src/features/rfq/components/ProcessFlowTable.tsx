@@ -12,8 +12,8 @@ import {
   TextField,
   Tooltip,
 } from '@mui/material'
-import type { MasterOption } from '../../../shared/masterData'
-import { EMPTY_STEP, type StepRow } from '../processFlow'
+import type { MasterOption } from '@/utils/masterData'
+import { newStep, type StepRow } from '@/features/rfq/utils/processFlow'
 
 interface Props {
   steps: StepRow[]
@@ -44,7 +44,7 @@ export function ProcessFlowTable({ steps, processes, onChange }: Props) {
           </TableHead>
           <TableBody>
             {steps.map((step, index) => (
-              <TableRow key={index}>
+              <TableRow key={step.key}>
                 <TableCell>{index + 1}</TableCell>
                 <TableCell>
                   <TextField
@@ -129,7 +129,7 @@ export function ProcessFlowTable({ steps, processes, onChange }: Props) {
           </TableBody>
         </Table>
       </TableContainer>
-      <Button sx={{ alignSelf: 'flex-start' }} onClick={() => onChange([...steps, { ...EMPTY_STEP }])}>
+      <Button sx={{ alignSelf: 'flex-start' }} onClick={() => onChange([...steps, newStep()])}>
         + Add step
       </Button>
     </>

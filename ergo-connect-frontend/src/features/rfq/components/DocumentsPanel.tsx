@@ -1,5 +1,4 @@
 import {
-  Alert,
   Button,
   Chip,
   IconButton,
@@ -16,9 +15,8 @@ import {
   Typography,
 } from '@mui/material'
 import { useRef, useState } from 'react'
-import { saveObjectUrl } from '../../../shared/download'
-import { problemMessage } from '../../../shared/problem'
-import { VISIBILITY, formatDate } from '../labels'
+import { saveObjectUrl } from '@/utils/download'
+import { VISIBILITY, formatDate } from '@/features/rfq/utils/labels'
 import {
   useDeleteRfqDocumentMutation,
   useDownloadRfqDocumentMutation,
@@ -26,7 +24,9 @@ import {
   useSetRfqDocumentVisibilityMutation,
   useUploadRfqDocumentMutation,
   type Visibility,
-} from '../rfqApi'
+} from '@/features/rfq/services/rfqApi'
+import { useConfirm } from '@/components/ui/useConfirm'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 interface Props {
   rfqId: number
@@ -36,6 +36,7 @@ interface Props {
 }
 
 export function DocumentsPanel({ rfqId, canUpload, isErgo }: Props) {
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const { data: documents = [], error } = useRfqDocumentsQuery(rfqId)
   const [upload, uploading] = useUploadRfqDocumentMutation()
   const [download] = useDownloadRfqDocumentMutation()
@@ -84,7 +85,7 @@ export function DocumentsPanel({ rfqId, canUpload, isErgo }: Props) {
           </Typography>
         </Stack>
       )}
-      {(error ?? actionError) != null && <Alert severity="error">{problemMessage(error ?? actionError)}</Alert>}
+      {(error ?? actionError) != null && <ProblemAlert error={error ?? actionError} />}
       <TableContainer component={Paper} variant="outlined">
         <Table size="small">
           <TableHead>
@@ -130,7 +131,7 @@ export function DocumentsPanel({ rfqId, canUpload, isErgo }: Props) {
                   {d.canDelete && (
                     <IconButton
                       aria-label={`Remove ${d.fileName}`}
-                      onClick={() => window.confirm(`Remove ${d.fileName}?`) && void remove({ id: rfqId, documentId: d.id }).unwrap().catch(setActionError)}
+                      onClick={async () => (await confirm({ title: 'Remove file?', message: `Remove ${d.fileName}?`, confirmLabel: 'Remove' })) && void remove({ id: rfqId, documentId: d.id }).unwrap().catch(setActionError)}
                     >
                       ×
                     </IconButton>
@@ -148,6 +149,7 @@ export function DocumentsPanel({ rfqId, canUpload, isErgo }: Props) {
           </TableBody>
         </Table>
       </TableContainer>
+      {confirmDialog}
     </Stack>
   )
 }

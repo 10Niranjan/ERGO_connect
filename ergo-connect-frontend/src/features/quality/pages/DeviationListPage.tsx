@@ -1,12 +1,12 @@
-import { Alert, Button, Chip, LinearProgress, MenuItem, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Typography } from '@mui/material'
+import { Button, Chip, LinearProgress, MenuItem, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Typography } from '@mui/material'
 import { useState } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router'
 import { useAppSelector } from '../../../app/store'
-import { DEVIATION_EDITORS } from '../../../auth/access'
-import { problemMessage } from '../../../shared/problem'
-import { formatDate } from '../../rfq/labels'
-import { useDeviationsQuery, type DeviationRow, type DeviationStatus } from '../deviationApi'
-import { DEVIATION_STATUS, LINKED_MODULE } from '../labels'
+import { DEVIATION_EDITORS } from '@/features/auth/utils/access'
+import { formatDate } from '@/features/rfq/utils/labels'
+import { useDeviationsQuery, type DeviationRow, type DeviationStatus } from '@/features/quality/services/deviationApi'
+import { DEVIATION_STATUS, LINKED_MODULE } from '@/features/quality/utils/labels'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 // SRS §10.8/§12.10.4. DeviationService.list() returns one shape per caller's own scope - ERGO sees both companies,
 // a supplier only its own rows, a customer only its own customer-visible rows (same split as NcrListPage).
@@ -49,7 +49,7 @@ export function DeviationListPage() {
           ))}
         </TextField>
       </Stack>
-      {error && <Alert severity="error">{problemMessage(error)}</Alert>}
+      {error && <ProblemAlert error={error} />}
       <TableContainer component={Paper} variant="outlined">
         {isLoading && <LinearProgress />}
         <Table size="small">

@@ -1,9 +1,9 @@
-import { Alert, Box, Button, TextField } from '@mui/material'
+import { Box, Button, TextField } from '@mui/material'
 import type { FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router'
 import { CenteredCard } from '@/components/ui/CenteredCard'
-import { problemMessage } from '@/utils/problem'
 import { useVerifyOtpMutation } from '../services/authApi'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 // SRS 12.4.1: the second step of login once /login responds with { otpRequired: true } (Phase 8g).
 export function VerifyOtpPage() {
@@ -39,7 +39,7 @@ export function VerifyOtpPage() {
           autoFocus
           slotProps={{ htmlInput: { pattern: '\\d{6}', maxLength: 6, inputMode: 'numeric' } }}
         />
-        {error && <Alert severity="error">{problemMessage(error)}</Alert>}
+        {error && <ProblemAlert error={error} />}
         <Button type="submit" variant="contained" size="large" loading={isLoading}>
           Verify
         </Button>

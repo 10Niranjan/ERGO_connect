@@ -2,8 +2,8 @@ import { Alert, Box, Button, TextField } from '@mui/material'
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { CenteredCard } from '@/components/ui/CenteredCard'
-import { problemMessage } from '@/utils/problem'
 import { useResetPasswordMutation } from '../services/authApi'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 // SRS 12.4.1. The token travels in the URL fragment (#token=...), never the query string, so it's never sent
 // to any server in a request line or Referer header (Phase 8f security review).
@@ -65,7 +65,7 @@ export function ResetPasswordPage() {
           required
         />
         {mismatch && <Alert severity="error">The new passwords do not match.</Alert>}
-        {error && <Alert severity="error">{problemMessage(error)}</Alert>}
+        {error && <ProblemAlert error={error} />}
         <Button type="submit" variant="contained" size="large" loading={isLoading}>
           Reset password
         </Button>

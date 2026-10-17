@@ -1,5 +1,4 @@
 import {
-  Alert,
   Button,
   Chip,
   LinearProgress,
@@ -14,19 +13,22 @@ import {
   Typography,
 } from '@mui/material'
 import { useState } from 'react'
-import { problemMessage } from '../../../shared/problem'
 import {
   useResetUserPasswordMutation,
   useRolesQuery,
   useSetUserActiveMutation,
   useUsersQuery,
   type User,
-} from '../adminApi'
+} from '@/features/admin/services/adminApi'
 import { TemporaryPasswordDialog } from '../components/TemporaryPasswordDialog'
 import { UserDialog } from '../components/UserDialog'
+import { formatDateTime } from '@/utils/date'
+import { useConfirm } from '@/components/ui/useConfirm'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 // SRS 12.13.1 User Administration. ERGO Admin only (route guard here, enforced by the backend).
 export function UsersPage() {
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const { data: users = [], isLoading, error } = useUsersQuery()
   const { data: roles = [] } = useRolesQuery()
   const [setUserActive] = useSetUserActiveMutation()
@@ -37,15 +39,15 @@ export function UsersPage() {
 
   const roleName = (code: string) => roles.find((role) => role.code === code)?.name ?? code
 
-  // ponytail: native confirm(); switch to an MUI dialog if these need more than a yes/no
   async function toggleActive(user: User) {
-    if (!window.confirm(`${user.active ? 'Deactivate' : 'Activate'} ${user.firstName} ${user.lastName}?`)) return
+    const verb = user.active ? 'Deactivate' : 'Activate'
+    if (!(await confirm({ title: `${verb} user?`, message: `${verb} ${user.firstName} ${user.lastName}?`, confirmLabel: verb }))) return
     setActionError(null)
     await setUserActive({ id: user.id, active: !user.active }).unwrap().catch(setActionError)
   }
 
   async function resetPassword(user: User) {
-    if (!window.confirm(`Reset the password of ${user.email}? They will be signed out everywhere.`)) return
+    if (!(await confirm({ title: 'Reset password?', message: `Reset the password of ${user.email}? They will be signed out everywhere.`, confirmLabel: 'Reset' }))) return
     setActionError(null)
     try {
       const { temporaryPassword } = await resetUserPassword(user.id).unwrap()
@@ -65,7 +67,7 @@ export function UsersPage() {
           New user
         </Button>
       </Stack>
-      {(error ?? actionError) != null && <Alert severity="error">{problemMessage(error ?? actionError)}</Alert>}
+      {(error ?? actionError) != null && <ProblemAlert error={error ?? actionError} />}
       <TableContainer component={Paper} variant="outlined">
         {isLoading && <LinearProgress />}
         <Table size="small">
@@ -103,7 +105,7 @@ export function UsersPage() {
                 <TableCell>
                   <Chip size="small" color={user.active ? 'success' : 'default'} label={user.active ? 'Active' : 'Inactive'} />
                 </TableCell>
-                <TableCell>{user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : '—'}</TableCell>
+                <TableCell>{user.lastLoginAt ? formatDateTime(user.lastLoginAt) : '—'}</TableCell>
                 <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                   <Button size="small" onClick={() => setEditing(user)}>
                     Edit
@@ -131,6 +133,7 @@ export function UsersPage() {
         />
       )}
       {issued && <TemporaryPasswordDialog {...issued} onClose={() => setIssued(null)} />}
+      {confirmDialog}
     </Stack>
   )
 }

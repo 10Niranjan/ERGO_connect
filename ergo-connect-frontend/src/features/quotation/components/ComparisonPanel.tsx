@@ -1,5 +1,4 @@
 import {
-  Alert,
   Box,
   Button,
   Card,
@@ -24,10 +23,9 @@ import {
 } from '@mui/material'
 import { Fragment, useState, type ReactNode } from 'react'
 import { Link as RouterLink } from 'react-router'
-import { CommentDialog } from '../../../shared/components/CommentDialog'
-import { num, text } from '../../../shared/form'
-import { problemMessage } from '../../../shared/problem'
-import { formatDate, formatMoney, formatNumber } from '../../rfq/labels'
+import { CommentDialog } from '@/components/ui/CommentDialog'
+import { num, text } from '@/utils/form'
+import { formatDate, formatMoney, formatNumber } from '@/features/rfq/utils/labels'
 import {
   useComparisonQuery,
   useCustomerQuotesQuery,
@@ -38,10 +36,11 @@ import {
   type ComparisonView,
   type Decision,
   type Scores,
-} from '../comparisonApi'
-import { QUOTE_STATUS, RESPONSE_STATUS } from '../labels'
-import { useQuoteCommandMutation } from '../quoteApi'
+} from '@/features/quotation/services/comparisonApi'
+import { QUOTE_STATUS, RESPONSE_STATUS } from '@/features/quotation/utils/labels'
+import { useQuoteCommandMutation } from '@/features/quotation/services/quoteApi'
 import { SendQuoteDialog } from './SendQuoteDialog'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 const BEST = { bgcolor: 'rgba(46, 125, 50, 0.12)', fontWeight: 600 }
 
@@ -72,7 +71,7 @@ const SCORE_LABELS: Record<keyof Scores, string> = {
 export function ComparisonPanel({ rfqId }: { rfqId: number }) {
   const { data: view, isLoading, error } = useComparisonQuery(rfqId)
   if (isLoading) return <LinearProgress />
-  if (!view) return <Alert severity="error">{problemMessage(error)}</Alert>
+  if (!view) return <ProblemAlert error={error} />
   return <Comparison key={view.rfqId} view={view} />
 }
 
@@ -203,7 +202,7 @@ function Comparison({ view }: { view: ComparisonView }) {
       <Typography variant="body2" color="text.secondary">
         The last submitted version of each quote. Amounts in other currencies are converted to {cur} at the latest exchange rate in master data. The best value in each row is highlighted.
       </Typography>
-      {(deciding.error ?? commanding.error) != null && <Alert severity="error">{problemMessage(deciding.error ?? commanding.error)}</Alert>}
+      {(deciding.error ?? commanding.error) != null && <ProblemAlert error={deciding.error ?? commanding.error} />}
       <TableContainer component={Paper} variant="outlined">
         <Table size="small" aria-label="Quote comparison" sx={{ '& td, & th': { verticalAlign: 'top', whiteSpace: 'pre-wrap' } }}>
           <TableHead>
@@ -357,7 +356,7 @@ function Summary({ view }: { view: ComparisonView }) {
           {area('Internal summary', internalSummary, setInternalSummary)}
           {area('Recommendation', recommendation, setRecommendation)}
         </Box>
-        {saving.error != null && <Alert severity="error">{problemMessage(saving.error)}</Alert>}
+        {saving.error != null && <ProblemAlert error={saving.error} />}
         {view.canEdit && (
           <Button
             sx={{ justifySelf: 'start' }}
@@ -376,7 +375,7 @@ function Summary({ view }: { view: ComparisonView }) {
 /** Every quote sent to the customer on this RFQ, with its basis, ERGO's margin and the customer's answer. */
 function SentQuotes({ rfqId }: { rfqId: number }) {
   const { data, error } = useCustomerQuotesQuery(rfqId)
-  if (error) return <Alert severity="error">{problemMessage(error)}</Alert>
+  if (error) return <ProblemAlert error={error} />
   if (!data || data.audience !== 'ERGO' || data.quotes.length === 0) return null
   return (
     <Card variant="outlined">
@@ -477,7 +476,7 @@ function ScoreDialog({ line, onClose }: { line: ComparisonLine; onClose: () => v
           ))}
         </Box>
         <TextField label="Internal remarks" multiline minRows={3} value={remarks} onChange={(e) => setRemarks(e.target.value)} slotProps={{ htmlInput: { maxLength: 4000 } }} />
-        {evaluating.error != null && <Alert severity="error">{problemMessage(evaluating.error)}</Alert>}
+        {evaluating.error != null && <ProblemAlert error={evaluating.error} />}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>

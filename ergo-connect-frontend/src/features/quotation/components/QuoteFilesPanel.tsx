@@ -1,5 +1,4 @@
 import {
-  Alert,
   Button,
   IconButton,
   Paper,
@@ -13,16 +12,17 @@ import {
   Typography,
 } from '@mui/material'
 import { useRef, useState } from 'react'
-import { saveObjectUrl } from '../../../shared/download'
-import { problemMessage } from '../../../shared/problem'
-import { formatDate } from '../../rfq/labels'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { saveObjectUrl } from '@/utils/download'
+import { formatDate } from '@/features/rfq/utils/labels'
 import {
   useDeleteQuoteDocumentMutation,
   useDownloadQuoteDocumentMutation,
   useQuoteDocumentsQuery,
   useUploadQuoteDocumentMutation,
   type QuoteDocument,
-} from '../quoteApi'
+} from '@/features/quotation/services/quoteApi'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 interface Props {
   quoteId: number
@@ -37,6 +37,7 @@ export function QuoteFilesPanel({ quoteId, canUpload, isErgo }: Props) {
   const [download] = useDownloadQuoteDocumentMutation()
   const [remove] = useDeleteQuoteDocumentMutation()
   const [actionError, setActionError] = useState<unknown>(null)
+  const [removing, setRemoving] = useState<QuoteDocument | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
 
   async function onFile(file: File | undefined) {
@@ -72,7 +73,7 @@ export function QuoteFilesPanel({ quoteId, canUpload, isErgo }: Props) {
           </Typography>
         </Stack>
       )}
-      {(error ?? actionError) != null && <Alert severity="error">{problemMessage(error ?? actionError)}</Alert>}
+      {(error ?? actionError) != null && <ProblemAlert error={error ?? actionError} />}
       <TableContainer component={Paper} variant="outlined">
         <Table size="small">
           <TableHead>
@@ -99,7 +100,7 @@ export function QuoteFilesPanel({ quoteId, canUpload, isErgo }: Props) {
                   {d.canDelete && (
                     <IconButton
                       aria-label={`Remove ${d.fileName}`}
-                      onClick={() => window.confirm(`Remove ${d.fileName}?`) && void remove({ id: quoteId, documentId: d.id }).unwrap().catch(setActionError)}
+                      onClick={() => setRemoving(d)}
                     >
                       ×
                     </IconButton>
@@ -117,6 +118,17 @@ export function QuoteFilesPanel({ quoteId, canUpload, isErgo }: Props) {
           </TableBody>
         </Table>
       </TableContainer>
+      <ConfirmDialog
+        open={removing != null}
+        title="Remove file?"
+        message={`Remove ${removing?.fileName ?? 'this file'}?`}
+        confirmLabel="Remove"
+        onConfirm={() => {
+          if (removing) void remove({ id: quoteId, documentId: removing.id }).unwrap().catch(setActionError)
+          setRemoving(null)
+        }}
+        onCancel={() => setRemoving(null)}
+      />
     </Stack>
   )
 }

@@ -1,5 +1,4 @@
 import {
-  Alert,
   Autocomplete,
   Button,
   Chip,
@@ -21,11 +20,11 @@ import {
 } from '@mui/material'
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
-import { problemMessage } from '../../../shared/problem'
-import { useCompaniesQuery, type Company } from '../../companies/companiesApi'
-import { formatDate, formatMoney, formatNumber } from '../../rfq/labels'
-import { QUOTE_STATUS } from '../labels'
-import { useInviteSuppliersMutation, useRfqSuppliersQuery } from '../quoteApi'
+import { useCompaniesQuery, type Company } from '@/features/companies/services/companiesApi'
+import { formatDate, formatMoney, formatNumber } from '@/features/rfq/utils/labels'
+import { QUOTE_STATUS } from '@/features/quotation/utils/labels'
+import { useInviteSuppliersMutation, useRfqSuppliersQuery } from '@/features/quotation/services/quoteApi'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 /** ERGO's view of an RFQ's supplier float (SRS §5.3): who was invited, where each quote stands, the headline figures. */
 export function SuppliersPanel({ rfqId }: { rfqId: number }) {
@@ -33,7 +32,7 @@ export function SuppliersPanel({ rfqId }: { rfqId: number }) {
   const { data, isLoading, error } = useRfqSuppliersQuery(rfqId)
   const [inviting, setInviting] = useState(false)
   if (isLoading) return <LinearProgress />
-  if (!data) return <Alert severity="error">{problemMessage(error)}</Alert>
+  if (!data) return <ProblemAlert error={error} />
 
   return (
     <Stack spacing={2}>
@@ -132,7 +131,7 @@ function InviteDialog({ rfqId, invited, onClose }: { rfqId: number; invited: num
           onChange={(e) => setDue(e.target.value)}
           slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: new Date().toLocaleDateString('en-CA') } }}
         />
-        {inviting.error != null && <Alert severity="error">{problemMessage(inviting.error)}</Alert>}
+        {inviting.error != null && <ProblemAlert error={inviting.error} />}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>

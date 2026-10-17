@@ -1,5 +1,4 @@
 import {
-  Alert,
   Chip,
   LinearProgress,
   Paper,
@@ -13,8 +12,8 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material'
-import { problemMessage } from '../../../shared/problem'
-import { usePermissionMatrixQuery, useRolesQuery, type Grant } from '../adminApi'
+import { usePermissionMatrixQuery, useRolesQuery, type Grant } from '@/features/admin/services/adminApi'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 const GRANT_COLOR: Record<Grant, 'default' | 'success' | 'info' | 'warning'> = {
   V: 'info',
@@ -45,7 +44,7 @@ export function PermissionMatrixPage() {
           actually do - every check is enforced in the backend.
         </Typography>
       </Stack>
-      {error && <Alert severity="error">{problemMessage(error)}</Alert>}
+      {error && <ProblemAlert error={error} />}
       {isFetching && <LinearProgress />}
       {data && (
         <>
@@ -78,7 +77,7 @@ export function PermissionMatrixPage() {
                       <TableRow key={r.role} hover>
                         <TableCell>{roleName(r.role)}</TableCell>
                         {([r.view, r.create, r.edit, r.submit, r.approve] as const).map((cell, i) => (
-                          <TableCell key={i}>
+                          <TableCell key={['view', 'create', 'edit', 'submit', 'approve'][i]}>
                             <Tooltip title={cell.footnote ?? ''} disableHoverListener={!cell.footnote}>
                               <Chip
                                 size="small"
@@ -95,8 +94,8 @@ export function PermissionMatrixPage() {
               </TableContainer>
               {module.notes.length > 0 && (
                 <Stack spacing={0.5} sx={{ mt: 1.5 }}>
-                  {module.notes.map((note, i) => (
-                    <Typography key={i} variant="caption" color="text.secondary">
+                  {module.notes.map((note) => (
+                    <Typography key={note} variant="caption" color="text.secondary">
                       {note}
                     </Typography>
                   ))}

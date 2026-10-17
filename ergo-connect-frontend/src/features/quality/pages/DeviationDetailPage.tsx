@@ -1,12 +1,11 @@
-import { Alert, Box, Button, Chip, LinearProgress, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from '@mui/material'
+import { Box, Button, Chip, LinearProgress, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from '@mui/material'
 import { useState, type ReactNode } from 'react'
 import { useParams } from 'react-router'
 import { CommentsSection } from '../../communication/components/CommentsPanel'
-import type { Role } from '../../../auth/authSlice'
-import { CommentDialog } from '../../../shared/components/CommentDialog'
-import { Facts } from '../../../shared/components/Facts'
-import { problemMessage } from '../../../shared/problem'
-import { formatDate } from '../../rfq/labels'
+import type { Role } from '@/features/auth/store/authSlice'
+import { CommentDialog } from '@/components/ui/CommentDialog'
+import { Facts } from '@/components/ui/Facts'
+import { formatDate } from '@/features/rfq/utils/labels'
 import { DeviationUpdateDialog } from '../components/DeviationDialogs'
 import {
   useApproveDeviationMutation,
@@ -17,14 +16,17 @@ import {
   useStartReviewDeviationMutation,
   type DeviationAction,
   type DeviationDetail,
-} from '../deviationApi'
-import { DEVIATION_DECISION, DEVIATION_STATUS, LINKED_MODULE } from '../labels'
+} from '@/features/quality/services/deviationApi'
+import { DEVIATION_DECISION, DEVIATION_STATUS, LINKED_MODULE } from '@/features/quality/utils/labels'
+import { formatDateTime } from '@/utils/date'
+import { LinkedRecordLink } from '@/features/quality/components/LinkedRecordLink'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 export function DeviationDetailPage() {
   const id = Number(useParams().id)
   const { data: deviation, isLoading, error } = useDeviationQuery(id)
   if (isLoading) return <LinearProgress />
-  if (!deviation) return <Alert severity="error">{problemMessage(error)}</Alert>
+  if (!deviation) return <ProblemAlert error={error} />
   return <DeviationDetailView deviation={deviation} />
 }
 
@@ -83,8 +85,9 @@ function DeviationDetailView({ deviation }: { deviation: DeviationDetail }) {
     }
   }
 
+  const linkedRecord = <LinkedRecordLink module={deviation.linkedModule} id={deviation.linkedRecordId} />
   const details: [string, ReactNode][] = [
-    ['Linked module', `${LINKED_MODULE[deviation.linkedModule]} #${deviation.linkedRecordId}`],
+    ['Linked record', linkedRecord],
     ['Customer approval required', deviation.customerApprovalRequiredFlag ? 'Yes' : 'No'],
     ['Validity quantity', deviation.validityQuantity],
     ['Validity end date', formatDate(deviation.validityEndDate)],
@@ -124,7 +127,7 @@ function DeviationDetailView({ deviation }: { deviation: DeviationDetail }) {
           ))}
         </Stack>
       </Stack>
-      {startingReview.error != null && <Alert severity="error">{problemMessage(startingReview.error)}</Alert>}
+      {startingReview.error != null && <ProblemAlert error={startingReview.error} />}
 
       <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' } }}>
         <Facts title="Deviation details" facts={details} />
@@ -148,17 +151,17 @@ function DeviationDetailView({ deviation }: { deviation: DeviationDetail }) {
             </TableRow>
           </TableHead>
           <TableBody>
-            {deviation.approvals.map((row, i) => {
+            {deviation.approvals.map((row) => {
               const d = DEVIATION_DECISION[row.decision]
               return (
-                <TableRow key={i}>
+                <TableRow key={`${row.approverRole}-${row.decidedAt ?? 'open'}`}>
                   <TableCell>{APPROVAL_ROLE_LABEL[row.approverRole] ?? row.approverRole}</TableCell>
                   <TableCell>
                     <Chip size="small" label={d.label} color={d.color} />
                   </TableCell>
                   {ergo && <TableCell>{'approverName' in row ? (row.approverName ?? '—') : '—'}</TableCell>}
                   <TableCell sx={{ maxWidth: 320, wordBreak: 'break-word' }}>{row.comment ?? '—'}</TableCell>
-                  <TableCell>{row.decidedAt ? new Date(row.decidedAt).toLocaleString() : '—'}</TableCell>
+                  <TableCell>{row.decidedAt ? formatDateTime(row.decidedAt) : '—'}</TableCell>
                 </TableRow>
               )
             })}

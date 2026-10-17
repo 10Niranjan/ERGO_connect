@@ -2,16 +2,17 @@ import { Alert, Box, Button, Chip, LinearProgress, Link, Stack, Tab, Tabs, Typog
 import { useState } from 'react'
 import { Link as RouterLink, useParams } from 'react-router'
 import { CommentsPanel } from '../../communication/components/CommentsPanel'
-import { CommentDialog } from '../../../shared/components/CommentDialog'
-import { Facts } from '../../../shared/components/Facts'
-import { problemMessage } from '../../../shared/problem'
-import { formatDate, formatNumber } from '../../rfq/labels'
+import { CommentDialog } from '@/components/ui/CommentDialog'
+import { Facts } from '@/components/ui/Facts'
+import { formatDate, formatNumber } from '@/features/rfq/utils/labels'
 import { QuoteEditor } from '../components/QuoteEditor'
 import { QuoteFilesPanel } from '../components/QuoteFilesPanel'
 import { QuoteSummary } from '../components/QuoteSummary'
 import { VersionsPanel } from '../components/VersionsPanel'
-import { QUOTE_STATUS } from '../labels'
-import { useQuoteCommandMutation, useQuoteQuery, type QuoteCommand, type QuoteView, type SupplierRfq } from '../quoteApi'
+import { QUOTE_STATUS } from '@/features/quotation/utils/labels'
+import { useQuoteCommandMutation, useQuoteQuery, type QuoteCommand, type QuoteView, type SupplierRfq } from '@/features/quotation/services/quoteApi'
+import { formatDateTime } from '@/utils/date'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 type DialogCommand = Exclude<QuoteCommand, 'submit'>
 
@@ -33,7 +34,7 @@ export function QuotePage() {
   const id = Number(useParams().id)
   const { data: view, isLoading, error } = useQuoteQuery(id)
   if (isLoading) return <LinearProgress />
-  if (!view) return <Alert severity="error">{problemMessage(error)}</Alert>
+  if (!view) return <ProblemAlert error={error} />
   return <Quote key={view.id} view={view} />
 }
 
@@ -77,7 +78,7 @@ function Quote({ view }: { view: QuoteView }) {
           )}
           <Typography variant="body2" color="text.secondary">
             Quote due {formatDate(view.responseDueDate)}
-            {view.submittedAt && ` · last submitted ${new Date(view.submittedAt).toLocaleString()}`}
+            {view.submittedAt && ` · last submitted ${formatDateTime(view.submittedAt)}`}
             {!isSupplier && ` · invited by ${view.invitedBy ?? '—'} on ${formatDate(view.invitedAt)}`}
           </Typography>
         </Stack>

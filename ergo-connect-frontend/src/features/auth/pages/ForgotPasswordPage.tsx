@@ -1,9 +1,9 @@
-import { Alert, Box, Button, TextField, Typography } from '@mui/material'
+import { Box, Button, TextField, Typography } from '@mui/material'
 import type { FormEvent } from 'react'
 import { Link } from 'react-router'
 import { CenteredCard } from '@/components/ui/CenteredCard'
-import { problemMessage } from '@/utils/problem'
 import { useForgotPasswordMutation } from '../services/authApi'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 // SRS 12.4.1
 export function ForgotPasswordPage() {
@@ -32,7 +32,7 @@ export function ForgotPasswordPage() {
             Enter your email and we&apos;ll send you a link to reset your password.
           </Typography>
           <TextField name="email" type="email" label="Email" autoComplete="username" required autoFocus />
-          {error && <Alert severity="error">{problemMessage(error)}</Alert>}
+          {error && <ProblemAlert error={error} />}
           <Button type="submit" variant="contained" size="large" loading={isLoading}>
             Send reset link
           </Button>

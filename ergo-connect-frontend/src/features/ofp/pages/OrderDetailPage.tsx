@@ -1,14 +1,14 @@
-import { Alert, Button, Chip, LinearProgress, Paper, Stack, Tab, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Tabs, Typography, Box } from '@mui/material'
+import { Button, Chip, LinearProgress, Paper, Stack, Tab, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Tabs, Typography, Box } from '@mui/material'
 import { useState, type ReactNode } from 'react'
 import { useParams } from 'react-router'
 import { CommentsPanel } from '../../communication/components/CommentsPanel'
-import { AuditTrail } from '../../../shared/components/AuditTrail'
-import { CommentDialog } from '../../../shared/components/CommentDialog'
-import { Facts } from '../../../shared/components/Facts'
-import { useMasterOptionsQuery } from '../../../shared/masterData'
-import { problemMessage } from '../../../shared/problem'
-import { formatDate, formatNumber } from '../../rfq/labels'
-import { INSPECTION_STATUS, MATERIAL_STATUS, ORDER_STATUS, PACKAGING_STATUS, PRODUCTION_STATUS, isDelayed, statusProgress } from '../labels'
+import { AuditTrail } from '@/components/ui/AuditTrail'
+import { CommentDialog } from '@/components/ui/CommentDialog'
+import { Facts } from '@/components/ui/Facts'
+import { useMasterOptionsQuery } from '@/utils/masterData'
+import { problemMessage } from '@/utils/problem'
+import { formatDate, formatNumber } from '@/features/rfq/utils/labels'
+import { INSPECTION_STATUS, MATERIAL_STATUS, ORDER_STATUS, PACKAGING_STATUS, PRODUCTION_STATUS, isDelayed, statusProgress } from '@/features/ofp/utils/labels'
 import { MaterialDialog, OrderEditDialog, PackagingDialog, ProductionDialog, ShipmentDialog } from '../components/OrderDialogs'
 import {
   useAdvanceOrderMutation,
@@ -31,13 +31,14 @@ import {
   type ProductionProgressView,
   type ShipmentView,
   type SupplierMaterialStatusView,
-} from '../ofpApi'
+} from '@/features/ofp/services/ofpApi'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 export function OrderDetailPage() {
   const id = Number(useParams().id)
   const { data: order, isLoading, error } = useOfpOrderQuery(id)
   if (isLoading) return <LinearProgress />
-  if (!order) return <Alert severity="error">{problemMessage(error)}</Alert>
+  if (!order) return <ProblemAlert error={error} />
   return <OrderDetailView order={order} />
 }
 
@@ -310,7 +311,7 @@ function isFullProgress(p: ProductionProgressView | CustomerProductionProgressVi
 /** SRS §12.9.2/§15.5 audit trail tab, ERGO only (server-enforced; the tab itself is also hidden for other audiences). */
 function OrderHistoryTab({ orderId }: { orderId: number }) {
   const { data = [], error } = useOfpOrderHistoryQuery(orderId)
-  if (error) return <Alert severity="error">{problemMessage(error)}</Alert>
+  if (error) return <ProblemAlert error={error} />
   return <AuditTrail rows={data} />
 }
 
@@ -328,8 +329,8 @@ function Section(props: { canAdd: boolean; addLabel: string; onAdd: () => void; 
         <Table size="small">
           <TableHead>
             <TableRow>
-              {props.head.map((h, i) => (
-                <TableCell key={i}>{h}</TableCell>
+              {props.head.map((h) => (
+                <TableCell key={h}>{h}</TableCell>
               ))}
             </TableRow>
           </TableHead>
@@ -374,7 +375,7 @@ function ShipmentRow({ s, mode, canEdit, canPod, onEdit }: { s: ShipmentView | E
       <TableCell>{s.awbBlNo ?? '—'}</TableCell>
       <TableCell>{formatDate(s.eta)}</TableCell>
       <TableCell>{formatDate(s.actualDeliveryDate)}</TableCell>
-      <TableCell>{s.receiptConfirmedByCustomerFlag ? `Yes${s.receiptConfirmedAt ? ` (${new Date(s.receiptConfirmedAt).toLocaleDateString()})` : ''}` : 'No'}</TableCell>
+      <TableCell>{s.receiptConfirmedByCustomerFlag ? `Yes${s.receiptConfirmedAt ? ` (${formatDate(s.receiptConfirmedAt)})` : ''}` : 'No'}</TableCell>
       <TableCell>
         <Chip size="small" label={ORDER_STATUS[s.status].label} color={ORDER_STATUS[s.status].color} />
       </TableCell>

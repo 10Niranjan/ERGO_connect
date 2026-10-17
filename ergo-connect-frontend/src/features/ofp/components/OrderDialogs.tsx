@@ -1,10 +1,9 @@
-import { Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, LinearProgress, MenuItem, TextField } from '@mui/material'
+import { Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, LinearProgress, MenuItem, TextField } from '@mui/material'
 import { useState, type ReactNode } from 'react'
-import { useUsersQuery } from '../../admin/adminApi'
-import { num, str, text } from '../../../shared/form'
-import { useMasterOptionsQuery } from '../../../shared/masterData'
-import { problemMessage } from '../../../shared/problem'
-import { INSPECTION_STATUS, MATERIAL_STATUS, ORDER_STATUS, PACKAGING_STATUS, PRODUCTION_STATUS } from '../labels'
+import { useUsersQuery } from '@/features/admin/services/adminApi'
+import { num, str, text } from '@/utils/form'
+import { useMasterOptionsQuery } from '@/utils/masterData'
+import { INSPECTION_STATUS, MATERIAL_STATUS, ORDER_STATUS, PACKAGING_STATUS, PRODUCTION_STATUS } from '@/features/ofp/utils/labels'
 import {
   useAddMaterialStatusMutation,
   useAddPackagingDispatchMutation,
@@ -28,7 +27,8 @@ import {
   type ProductionStatus,
   type ShipmentView,
   type SupplierMaterialStatusView,
-} from '../ofpApi'
+} from '@/features/ofp/services/ofpApi'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 /** Shared modal shell: save button, ProblemDetail message, and busy state. */
 function FormDialog(props: { title: string; busy: boolean; error: unknown; canSave?: boolean; onSave: () => void; onClose: () => void; children: ReactNode }) {
@@ -37,7 +37,7 @@ function FormDialog(props: { title: string; busy: boolean; error: unknown; canSa
       <DialogTitle>{props.title}</DialogTitle>
       <DialogContent sx={{ display: 'grid', gap: 2, pt: '8px !important' }}>
         {props.children}
-        {props.error != null && <Alert severity="error">{problemMessage(props.error)}</Alert>}
+        {props.error != null && <ProblemAlert error={props.error} />}
       </DialogContent>
       <DialogActions>
         <Button onClick={props.onClose}>Cancel</Button>

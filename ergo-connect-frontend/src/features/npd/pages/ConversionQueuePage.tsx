@@ -1,10 +1,10 @@
-import { Alert, Button, LinearProgress, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from '@mui/material'
+import { Button, LinearProgress, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from '@mui/material'
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
-import { CommentDialog } from '../../../shared/components/CommentDialog'
-import { problemMessage } from '../../../shared/problem'
-import { formatDate } from '../../rfq/labels'
-import { useConversionQueueQuery, useConvertRfqMutation, type ConversionQueueRow } from '../npdApi'
+import { CommentDialog } from '@/components/ui/CommentDialog'
+import { formatDate } from '@/features/rfq/utils/labels'
+import { useConversionQueueQuery, useConvertRfqMutation, type ConversionQueueRow } from '@/features/npd/services/npdApi'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 // SRS §12.8.2. Customer-approved RFQs eligible for a one-way, manual conversion into an NPD project.
 export function ConversionQueuePage() {
@@ -35,7 +35,7 @@ export function ConversionQueuePage() {
       <Typography variant="body2" color="text.secondary">
         Customer-approved RFQs waiting to become NPD projects. Conversion is manual and one-way.
       </Typography>
-      {error && <Alert severity="error">{problemMessage(error)}</Alert>}
+      {error && <ProblemAlert error={error} />}
       <TableContainer component={Paper} variant="outlined">
         {isLoading && <LinearProgress />}
         <Table size="small">

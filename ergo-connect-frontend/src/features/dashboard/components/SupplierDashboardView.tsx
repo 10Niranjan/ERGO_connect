@@ -1,5 +1,5 @@
 import { Stack } from '@mui/material'
-import type { SupplierDashboard } from '../dashboardApi'
+import type { SupplierDashboard } from '@/features/dashboard/services/dashboardApi'
 import { NcrSection, NpdSection, OrderSection, QuoteSection } from './sections'
 
 /** SRS §12.5: every Supplier role's own-company view. Customer identity IS visible here (only the reverse

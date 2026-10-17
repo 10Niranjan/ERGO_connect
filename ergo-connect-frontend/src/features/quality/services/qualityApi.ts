@@ -1,5 +1,5 @@
 import { api } from '@/services/baseApi'
-import type { AuditEntry } from '@/features/rfq/rfqApi'
+import type { AuditEntry } from '@/features/rfq/services/rfqApi'
 
 /** SRS §13.6.1 {@code inspections.linked_module}: mirrors the backend enum exactly. */
 export type LinkedModule = 'NPD' | 'OFP' | 'INCOMING' | 'FINAL' | 'IN_PROCESS'

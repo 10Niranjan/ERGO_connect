@@ -1,7 +1,7 @@
 import { Box } from '@mui/material'
-import { Facts } from '../../../shared/components/Facts'
-import { quoteSections } from '../labels'
-import type { QuoteData } from '../quoteApi'
+import { Facts } from '@/components/ui/Facts'
+import { quoteSections } from '@/features/quotation/utils/labels'
+import type { QuoteData } from '@/features/quotation/services/quoteApi'
 
 /** A quote read-only: a submitted version, or the supplier's own quote once locked. */
 export function QuoteSummary({ quote }: { quote: QuoteData }) {

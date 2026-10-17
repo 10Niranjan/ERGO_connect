@@ -20,7 +20,9 @@ import { useNavigate } from 'react-router'
 import { DemoRoleModal } from '@/features/auth/components/DemoRoleModal'
 import { useLogoutMutation, useSwitchRoleMutation } from '@/features/auth/services/authApi'
 import type { Role, Session } from '@/features/auth/store/authSlice'
-import { DEMO_STORAGE_KEY } from '@/features/auth/utils/demoAccounts'
+import { DEMO_ACCOUNTS, DEMO_STORAGE_KEY } from '@/features/auth/utils/demoAccounts'
+import { startDemoSession } from '@/features/auth/utils/demoSession'
+import { useAppDispatch } from '@/hooks/useAppDispatch'
 import { NotificationsBell } from '@/features/notifications/components/NotificationsBell'
 
 interface NavbarProps {
@@ -34,10 +36,16 @@ export function Navbar({ session, onToggleMobile }: NavbarProps) {
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
   const [demoModalOpen, setDemoModalOpen] = useState(false)
   const navigate = useNavigate()
+  const dispatch = useAppDispatch()
 
   const changeRole = async (role: Role) => {
     try {
-      await switchRole(role).unwrap()
+      // A demo persona has no server session to switch: re-sign its token for the chosen role instead.
+      const demoAccount = sessionStorage.getItem(DEMO_STORAGE_KEY)
+        ? DEMO_ACCOUNTS.find((account) => account.email === session.user.email)
+        : undefined
+      if (demoAccount) await startDemoSession(dispatch, demoAccount, role)
+      else await switchRole(role).unwrap()
       navigate('/')
     } catch {
       // keeps the current role
@@ -55,7 +63,7 @@ export function Navbar({ session, onToggleMobile }: NavbarProps) {
   return (
     <>
       <AppBar position="sticky" elevation={0}>
-        <Toolbar sx={{ gap: 2 }}>
+        <Toolbar sx={{ gap: { xs: 1, sm: 2 } }}>
           <IconButton
             color="inherit"
             aria-label="open navigation menu"
@@ -74,12 +82,21 @@ export function Navbar({ session, onToggleMobile }: NavbarProps) {
           <Box sx={{ flexGrow: 1 }} />
 
           {/* Presenter's 1-Click Demo Role Switcher */}
+          <IconButton
+            color="inherit"
+            aria-label="Switch demo role"
+            onClick={() => setDemoModalOpen(true)}
+            sx={{ display: { xs: 'inline-flex', sm: 'none' } }}
+          >
+            <SwapHorizIcon />
+          </IconButton>
           <Button
             variant="outlined"
             size="small"
             startIcon={<SwapHorizIcon />}
             onClick={() => setDemoModalOpen(true)}
             sx={{
+              display: { xs: 'none', sm: 'inline-flex' },
               color: 'inherit',
               borderColor: 'rgba(255,255,255,0.6)',
               textTransform: 'none',
@@ -87,6 +104,7 @@ export function Navbar({ session, onToggleMobile }: NavbarProps) {
               fontSize: '0.8rem',
               borderRadius: 2,
               px: 1.5,
+              flexShrink: 0,
               '&:hover': {
                 borderColor: '#fff',
                 bgcolor: 'rgba(255,255,255,0.1)',
@@ -105,7 +123,8 @@ export function Navbar({ session, onToggleMobile }: NavbarProps) {
               inputProps={{ 'aria-label': 'Active role' }}
               sx={{
                 color: 'inherit',
-                minWidth: 180,
+                minWidth: { xs: 0, md: 180 },
+                maxWidth: { xs: 130, sm: 'none' },
                 '.MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.5)' },
                 '.MuiSvgIcon-root': { color: 'inherit' },
               }}
@@ -117,7 +136,11 @@ export function Navbar({ session, onToggleMobile }: NavbarProps) {
               ))}
             </Select>
           ) : (
-            <Chip label={roleName} sx={{ color: 'inherit', borderColor: 'rgba(255,255,255,0.5)' }} variant="outlined" />
+            <Chip
+              label={roleName}
+              sx={{ color: 'inherit', borderColor: 'rgba(255,255,255,0.5)', maxWidth: { xs: 130, sm: 'none' } }}
+              variant="outlined"
+            />
           )}
 
           <NotificationsBell />

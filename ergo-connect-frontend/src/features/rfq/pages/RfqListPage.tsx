@@ -1,5 +1,4 @@
 import {
-  Alert,
   Button,
   Chip,
   LinearProgress,
@@ -18,10 +17,10 @@ import {
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { useAppSelector } from '../../../app/store'
-import { RFQ_CREATORS } from '../../../auth/access'
-import { problemMessage } from '../../../shared/problem'
-import { PRIORITIES, STATUS, formatDate } from '../labels'
-import { useRfqsQuery } from '../rfqApi'
+import { RFQ_CREATORS } from '@/features/auth/utils/access'
+import { PRIORITIES, STATUS, formatDate } from '@/features/rfq/utils/labels'
+import { useRfqsQuery } from '@/features/rfq/services/rfqApi'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 // SRS §12.6.1. Rows are already limited to the caller's record scope by the backend.
 // ponytail: filtering and search in the browser; move to the server when lists reach thousands of RFQs.
@@ -65,7 +64,7 @@ export function RfqListPage() {
           ))}
         </TextField>
       </Stack>
-      {error && <Alert severity="error">{problemMessage(error)}</Alert>}
+      {error && <ProblemAlert error={error} />}
       <TableContainer component={Paper} variant="outlined">
         {isLoading && <LinearProgress />}
         <Table size="small">

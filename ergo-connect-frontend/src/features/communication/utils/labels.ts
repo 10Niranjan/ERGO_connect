@@ -1,5 +1,6 @@
 import type { ChipColor } from '@/types'
 import type { CommentLinkedModule, CommentType } from '../services/communicationApi'
+import { formatDateTime as formatInstant } from '@/utils/date'
 
 export const MODULE_LABEL: Record<CommentLinkedModule, string> = {
   rfq: 'RFQ',
@@ -59,7 +60,7 @@ export const MAX_MENTIONS = 20
 
 export function formatDateTime(value: string): string {
   try {
-    return new Date(value).toLocaleString()
+    return formatInstant(value)
   } catch {
     return value
   }

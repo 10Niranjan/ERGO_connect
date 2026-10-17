@@ -1,5 +1,6 @@
 import type { CustomerRfqStatus, Priority, RfqStatus, Visibility } from '../services/rfqApi'
 import type { ChipColor } from '@/types'
+import { formatDate as formatDay } from '@/utils/date'
 
 export { type ChipColor }
 
@@ -37,7 +38,7 @@ export const VISIBILITY: Record<Visibility, string> = {
 
 /** Date-only values (due dates, validity) are calendar days, not instants: they are read as local midnight. */
 export function formatDate(value: string | null): string {
-  return value ? new Date(value.length === 10 ? `${value}T00:00` : value).toLocaleDateString() : '—'
+  return value ? formatDay(value) : '—'
 }
 
 export function formatNumber(value: number | null, suffix = ''): string {

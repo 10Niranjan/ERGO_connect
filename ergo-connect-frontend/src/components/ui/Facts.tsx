@@ -16,7 +16,7 @@ export function Facts({ title, note, facts }: { title: string; note?: string; fa
         )}
         <Box sx={{ display: 'grid', gridTemplateColumns: facts.length === 1 && !facts[0][0] ? '1fr' : '170px 1fr', rowGap: 1, columnGap: 2, mt: 1 }}>
           {facts.map(([label, value], index) => (
-            <Box key={index} sx={{ display: 'contents' }}>
+            <Box key={label || index} sx={{ display: 'contents' }}>
               {label && <Typography color="text.secondary">{label}</Typography>}
               <Typography sx={{ whiteSpace: 'pre-wrap' }}>{value}</Typography>
             </Box>

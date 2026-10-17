@@ -1,7 +1,7 @@
-import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField } from '@mui/material'
+import { Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField } from '@mui/material'
 import type { FormEvent } from 'react'
-import { problemMessage } from '../../../shared/problem'
-import { useReviewCompanyMutation, type Company } from '../companiesApi'
+import { useReviewCompanyMutation, type Company } from '@/features/companies/services/companiesApi'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 /** Approve or reject a pending company. The comment is stored in the audit trail with the decision (SRS §11.4). */
 export function ReviewDialog({ company, decision, onClose }: { company: Company; decision: 'approve' | 'reject'; onClose: () => void }) {
@@ -34,7 +34,7 @@ export function ReviewDialog({ company, decision, onClose }: { company: Company;
             autoFocus
             slotProps={{ htmlInput: { maxLength: 1000 } }}
           />
-          {error && <Alert severity="error">{problemMessage(error)}</Alert>}
+          {error && <ProblemAlert error={error} />}
         </DialogContent>
         <DialogActions>
           <Button onClick={onClose}>Cancel</Button>

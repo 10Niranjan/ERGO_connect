@@ -1,4 +1,4 @@
-import { createBrowserRouter, Navigate } from 'react-router'
+import { createBrowserRouter } from 'react-router'
 import {
   COMMUNICATION_VIEWERS,
   COMPANY_MANAGERS,
@@ -22,6 +22,7 @@ import {
   RFQ_VIEWERS,
   SUPPLIER_QUOTERS,
   ChangePasswordPage,
+  NotFoundPage,
   ForgotPasswordPage,
   LoginPage,
   ResetPasswordPage,
@@ -30,36 +31,6 @@ import {
   RequireAuth,
   RequireRole,
 } from '@/features/auth'
-import { MasterDataPage } from '@/features/admin/pages/MasterDataPage'
-import { PermissionMatrixPage } from '@/features/admin/pages/PermissionMatrixPage'
-import { UsersPage } from '@/features/admin/pages/UsersPage'
-import { CompaniesPage } from '@/features/companies/pages/CompaniesPage'
-import { MyCompanyPage } from '@/features/companies/pages/MyCompanyPage'
-import { CommunicationCenterPage } from '@/features/communication/pages/CommunicationCenterPage'
-import { DashboardPage } from '@/features/dashboard/pages/DashboardPage'
-import { DocumentDetailPage } from '@/features/documents/pages/DocumentDetailPage'
-import { DocumentLibraryPage } from '@/features/documents/pages/DocumentLibraryPage'
-import { ConversionQueuePage } from '@/features/npd/pages/ConversionQueuePage'
-import { MyNpdProjectsPage } from '@/features/npd/pages/MyNpdProjectsPage'
-import { NpdDetailPage } from '@/features/npd/pages/NpdDetailPage'
-import { NpdListPage } from '@/features/npd/pages/NpdListPage'
-import { OrderCreatePage } from '@/features/ofp/pages/OrderCreatePage'
-import { OrderDetailPage } from '@/features/ofp/pages/OrderDetailPage'
-import { OrderListPage } from '@/features/ofp/pages/OrderListPage'
-import { DeviationCreatePage } from '@/features/quality/pages/DeviationCreatePage'
-import { DeviationDetailPage } from '@/features/quality/pages/DeviationDetailPage'
-import { DeviationListPage } from '@/features/quality/pages/DeviationListPage'
-import { InspectionCreatePage } from '@/features/quality/pages/InspectionCreatePage'
-import { InspectionDetailPage } from '@/features/quality/pages/InspectionDetailPage'
-import { InspectionListPage } from '@/features/quality/pages/InspectionListPage'
-import { NcrCreatePage } from '@/features/quality/pages/NcrCreatePage'
-import { NcrDetailPage } from '@/features/quality/pages/NcrDetailPage'
-import { NcrListPage } from '@/features/quality/pages/NcrListPage'
-import { AssignedRfqsPage } from '@/features/quotation/pages/AssignedRfqsPage'
-import { QuotePage } from '@/features/quotation/pages/QuotePage'
-import { RfqDetailPage } from '@/features/rfq/pages/RfqDetailPage'
-import { RfqEditPage } from '@/features/rfq/pages/RfqEditPage'
-import { RfqListPage } from '@/features/rfq/pages/RfqListPage'
 import { MainLayout as AppShell } from '@/layouts'
 
 // Route guards only hide screens; the backend enforces every permission and record scope itself.
@@ -76,110 +47,110 @@ export const router = createBrowserRouter([
       {
         element: <AppShell />,
         children: [
-          { index: true, element: <DashboardPage /> },
+          { index: true, lazy: async () => ({ Component: (await import('@/features/dashboard/pages/DashboardPage')).DashboardPage }) },
           {
             element: <RequireRole roles={RFQ_VIEWERS} />,
             children: [
-              { path: '/rfqs', element: <RfqListPage /> },
-              { path: '/rfqs/:id', element: <RfqDetailPage /> },
+              { path: '/rfqs', lazy: async () => ({ Component: (await import('@/features/rfq/pages/RfqListPage')).RfqListPage }) },
+              { path: '/rfqs/:id', lazy: async () => ({ Component: (await import('@/features/rfq/pages/RfqDetailPage')).RfqDetailPage }) },
             ],
           },
           {
             element: <RequireRole roles={RFQ_CREATORS} />,
             children: [
-              { path: '/rfqs/new', element: <RfqEditPage /> },
-              { path: '/rfqs/:id/edit', element: <RfqEditPage /> },
+              { path: '/rfqs/new', lazy: async () => ({ Component: (await import('@/features/rfq/pages/RfqEditPage')).RfqEditPage }) },
+              { path: '/rfqs/:id/edit', lazy: async () => ({ Component: (await import('@/features/rfq/pages/RfqEditPage')).RfqEditPage }) },
             ],
           },
-          { element: <RequireRole roles={SUPPLIER_QUOTERS} />, children: [{ path: '/quotes', element: <AssignedRfqsPage /> }] },
-          { element: <RequireRole roles={QUOTE_VIEWERS} />, children: [{ path: '/quotes/:id', element: <QuotePage /> }] },
+          { element: <RequireRole roles={SUPPLIER_QUOTERS} />, children: [{ path: '/quotes', lazy: async () => ({ Component: (await import('@/features/quotation/pages/AssignedRfqsPage')).AssignedRfqsPage }) }] },
+          { element: <RequireRole roles={QUOTE_VIEWERS} />, children: [{ path: '/quotes/:id', lazy: async () => ({ Component: (await import('@/features/quotation/pages/QuotePage')).QuotePage }) }] },
           {
             element: <RequireRole roles={NPD_VIEWERS} />,
             children: [
-              { path: '/npd', element: <NpdListPage /> },
-              { path: '/npd/conversion-queue', element: <ConversionQueuePage /> },
+              { path: '/npd', lazy: async () => ({ Component: (await import('@/features/npd/pages/NpdListPage')).NpdListPage }) },
+              { path: '/npd/conversion-queue', lazy: async () => ({ Component: (await import('@/features/npd/pages/ConversionQueuePage')).ConversionQueuePage }) },
             ],
           },
           {
             element: <RequireRole roles={[...NPD_CUSTOMER_ROLES, ...NPD_SUPPLIER_ROLES]} />,
-            children: [{ path: '/npd/mine', element: <MyNpdProjectsPage /> }],
+            children: [{ path: '/npd/mine', lazy: async () => ({ Component: (await import('@/features/npd/pages/MyNpdProjectsPage')).MyNpdProjectsPage }) }],
           },
           {
             element: <RequireRole roles={NPD_DETAIL_VIEWERS} />,
-            children: [{ path: '/npd/:id', element: <NpdDetailPage /> }],
+            children: [{ path: '/npd/:id', lazy: async () => ({ Component: (await import('@/features/npd/pages/NpdDetailPage')).NpdDetailPage }) }],
           },
           {
             // /ofp's own single list/detail endpoints already scope by caller, so one route set serves every
             // audience (ERGO, the four supplier roles and Customer OFP) rather than NPD's separate ERGO/"mine" split.
             element: <RequireRole roles={[...OFP_VIEWERS, ...OFP_SUPPLIER_ROLES, ...OFP_CUSTOMER_ROLES]} />,
-            children: [{ path: '/ofp', element: <OrderListPage /> }],
+            children: [{ path: '/ofp', lazy: async () => ({ Component: (await import('@/features/ofp/pages/OrderListPage')).OrderListPage }) }],
           },
           {
             element: <RequireRole roles={OFP_EDITORS} />,
-            children: [{ path: '/ofp/new', element: <OrderCreatePage /> }],
+            children: [{ path: '/ofp/new', lazy: async () => ({ Component: (await import('@/features/ofp/pages/OrderCreatePage')).OrderCreatePage }) }],
           },
           {
             element: <RequireRole roles={OFP_DETAIL_VIEWERS} />,
-            children: [{ path: '/ofp/:id', element: <OrderDetailPage /> }],
+            children: [{ path: '/ofp/:id', lazy: async () => ({ Component: (await import('@/features/ofp/pages/OrderDetailPage')).OrderDetailPage }) }],
           },
           {
             // /quality's own single list/detail endpoints already scope by caller (InspectionService.list()/get()),
             // same pattern as /ofp above.
             element: <RequireRole roles={QUALITY_VIEWERS} />,
-            children: [{ path: '/quality', element: <InspectionListPage /> }, { path: '/quality/:id', element: <InspectionDetailPage /> }],
+            children: [{ path: '/quality', lazy: async () => ({ Component: (await import('@/features/quality/pages/InspectionListPage')).InspectionListPage }) }, { path: '/quality/:id', lazy: async () => ({ Component: (await import('@/features/quality/pages/InspectionDetailPage')).InspectionDetailPage }) }],
           },
           {
             element: <RequireRole roles={QUALITY_EDITORS} />,
-            children: [{ path: '/quality/new', element: <InspectionCreatePage /> }],
+            children: [{ path: '/quality/new', lazy: async () => ({ Component: (await import('@/features/quality/pages/InspectionCreatePage')).InspectionCreatePage }) }],
           },
           {
             // NCR/CAPA: same per-caller-scoped list/detail endpoints and role sets as Inspection above (NcrController's
             // VIEWERS/EDITORS are identical to InspectionController's).
             element: <RequireRole roles={QUALITY_VIEWERS} />,
-            children: [{ path: '/quality/ncrs', element: <NcrListPage /> }, { path: '/quality/ncrs/:id', element: <NcrDetailPage /> }],
+            children: [{ path: '/quality/ncrs', lazy: async () => ({ Component: (await import('@/features/quality/pages/NcrListPage')).NcrListPage }) }, { path: '/quality/ncrs/:id', lazy: async () => ({ Component: (await import('@/features/quality/pages/NcrDetailPage')).NcrDetailPage }) }],
           },
           {
             element: <RequireRole roles={QUALITY_EDITORS} />,
-            children: [{ path: '/quality/ncrs/new', element: <NcrCreatePage /> }],
+            children: [{ path: '/quality/ncrs/new', lazy: async () => ({ Component: (await import('@/features/quality/pages/NcrCreatePage')).NcrCreatePage }) }],
           },
           {
             // Deviations: same per-caller-scoped list/detail endpoints and VIEWERS role set as Inspection/NCR above
             // (DeviationController's VIEWERS is identical); create is its own DEVIATION_EDITORS, which also admits
             // Customer Quality (SRS §10.8 - unlike Inspection/NCR, a customer may raise its own deviation).
             element: <RequireRole roles={QUALITY_VIEWERS} />,
-            children: [{ path: '/quality/deviations', element: <DeviationListPage /> }, { path: '/quality/deviations/:id', element: <DeviationDetailPage /> }],
+            children: [{ path: '/quality/deviations', lazy: async () => ({ Component: (await import('@/features/quality/pages/DeviationListPage')).DeviationListPage }) }, { path: '/quality/deviations/:id', lazy: async () => ({ Component: (await import('@/features/quality/pages/DeviationDetailPage')).DeviationDetailPage }) }],
           },
           {
             element: <RequireRole roles={DEVIATION_EDITORS} />,
-            children: [{ path: '/quality/deviations/new', element: <DeviationCreatePage /> }],
+            children: [{ path: '/quality/deviations/new', lazy: async () => ({ Component: (await import('@/features/quality/pages/DeviationCreatePage')).DeviationCreatePage }) }],
           },
           {
             // SRS §10.10: every role may open the Communication Center; the backend returns only the threads it may read.
             element: <RequireRole roles={COMMUNICATION_VIEWERS} />,
-            children: [{ path: '/communication', element: <CommunicationCenterPage /> }],
+            children: [{ path: '/communication', lazy: async () => ({ Component: (await import('@/features/communication/pages/CommunicationCenterPage')).CommunicationCenterPage }) }],
           },
           {
             // SRS §10.9: every role may open the Document Library; the backend scopes which documents it returns.
             element: <RequireRole roles={DOCUMENT_VIEWERS} />,
-            children: [{ path: '/documents', element: <DocumentLibraryPage /> }, { path: '/documents/:id', element: <DocumentDetailPage /> }],
+            children: [{ path: '/documents', lazy: async () => ({ Component: (await import('@/features/documents/pages/DocumentLibraryPage')).DocumentLibraryPage }) }, { path: '/documents/:id', lazy: async () => ({ Component: (await import('@/features/documents/pages/DocumentDetailPage')).DocumentDetailPage }) }],
           },
           {
             element: <RequireRole roles={COMPANY_MANAGERS} />,
-            children: [{ path: '/companies', element: <CompaniesPage /> }],
+            children: [{ path: '/companies', lazy: async () => ({ Component: (await import('@/features/companies/pages/CompaniesPage')).CompaniesPage }) }],
           },
-          { element: <RequireRole roles={EXTERNAL_ROLES} />, children: [{ path: '/company', element: <MyCompanyPage /> }] },
+          { element: <RequireRole roles={EXTERNAL_ROLES} />, children: [{ path: '/company', lazy: async () => ({ Component: (await import('@/features/companies/pages/MyCompanyPage')).MyCompanyPage }) }] },
           {
             element: <RequireRole roles={['ERGO_ADMIN']} />,
             children: [
-              { path: '/admin/users', element: <UsersPage /> },
-              { path: '/admin/permissions', element: <PermissionMatrixPage /> },
+              { path: '/admin/users', lazy: async () => ({ Component: (await import('@/features/admin/pages/UsersPage')).UsersPage }) },
+              { path: '/admin/permissions', lazy: async () => ({ Component: (await import('@/features/admin/pages/PermissionMatrixPage')).PermissionMatrixPage }) },
             ],
           },
           {
             element: <RequireRole roles={MASTER_DATA_VIEWERS} />,
-            children: [{ path: '/admin/master-data', element: <MasterDataPage /> }],
+            children: [{ path: '/admin/master-data', lazy: async () => ({ Component: (await import('@/features/admin/pages/MasterDataPage')).MasterDataPage }) }],
           },
-          { path: '*', element: <Navigate to="/" replace /> },
+          { path: '*', element: <NotFoundPage /> },
         ],
       },
     ],

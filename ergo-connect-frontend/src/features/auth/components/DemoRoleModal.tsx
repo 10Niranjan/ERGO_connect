@@ -8,13 +8,8 @@ import {
 } from '@mui/material'
 import { useNavigate } from 'react-router'
 import { useAppDispatch } from '@/hooks/useAppDispatch'
-import { sessionStarted } from '../store/authSlice'
-import {
-  buildDemoSession,
-  createSignedDemoJwt,
-  DEMO_STORAGE_KEY,
-  type DemoAccount,
-} from '../utils/demoAccounts'
+import type { DemoAccount } from '../utils/demoAccounts'
+import { startDemoSession } from '../utils/demoSession'
 import { RolePickerGrid } from './RolePickerGrid'
 
 interface DemoRoleModalProps {
@@ -27,10 +22,7 @@ export function DemoRoleModal({ open, onClose }: DemoRoleModalProps) {
   const navigate = useNavigate()
 
   const handleSelectAccount = async (account: DemoAccount) => {
-    const token = await createSignedDemoJwt(account)
-    const session = buildDemoSession(account, token)
-    sessionStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(session))
-    dispatch(sessionStarted(session))
+    await startDemoSession(dispatch, account)
     onClose()
     navigate(account.landingPath)
   }

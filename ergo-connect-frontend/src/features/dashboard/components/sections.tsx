@@ -1,9 +1,9 @@
 import { Chip, Stack, Typography } from '@mui/material'
 import type { ReactNode } from 'react'
-import { PRIORITIES, formatDate } from '../../rfq/labels'
-import type { Priority } from '../../rfq/rfqApi'
-import { RISK_LEVEL } from '../../npd/labels'
-import type { RiskLevel } from '../../npd/npdApi'
+import { PRIORITIES, formatDate } from '@/features/rfq/utils/labels'
+import type { Priority } from '@/features/rfq/services/rfqApi'
+import { RISK_LEVEL } from '@/features/npd/utils/labels'
+import type { RiskLevel } from '@/features/npd/services/npdApi'
 import {
   type Awaiting,
   type DeviationDashboardItem,
@@ -13,12 +13,12 @@ import {
   type RfqDashboardItem,
   type SupplierPerformanceRow,
   type SupplierQuoteItem,
-} from '../dashboardApi'
-import { AWAITING, humanize } from '../labels'
+} from '@/features/dashboard/services/dashboardApi'
+import { AWAITING, humanize } from '@/features/dashboard/utils/labels'
 import { ItemsTable, type Column } from './ItemsTable'
 
-function AwaitingChip({ value }: { value: Awaiting }) {
-  const a = AWAITING[value]
+function AwaitingChip({ value }: { value: Awaiting | null }) {
+  const a = AWAITING[value ?? 'NONE']
   return <Chip size="small" label={a.label} color={a.color} />
 }
 

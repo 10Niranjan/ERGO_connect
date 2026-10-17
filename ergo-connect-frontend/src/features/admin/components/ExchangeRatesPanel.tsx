@@ -1,5 +1,4 @@
 import {
-  Alert,
   Button,
   Dialog,
   DialogActions,
@@ -20,13 +19,15 @@ import {
   Typography,
 } from '@mui/material'
 import { useState, type FormEvent } from 'react'
-import { useMasterOptionsQuery } from '../../../shared/masterData'
-import { problemMessage } from '../../../shared/problem'
-import { formatDate } from '../../rfq/labels'
-import { useCreateExchangeRateMutation, useDeleteExchangeRateMutation, useExchangeRatesQuery } from '../adminApi'
+import { useMasterOptionsQuery } from '@/utils/masterData'
+import { formatDate } from '@/features/rfq/utils/labels'
+import { useCreateExchangeRateMutation, useDeleteExchangeRateMutation, useExchangeRatesQuery } from '@/features/admin/services/adminApi'
+import { useConfirm } from '@/components/ui/useConfirm'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 /** SRS §13.2.7. ERGO-internal only: rates convert quotes for comparison and never reach customers or suppliers. */
 export function ExchangeRatesPanel({ canEdit }: { canEdit: boolean }) {
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const { data: rates = [], isFetching, error } = useExchangeRatesQuery()
   const [remove] = useDeleteExchangeRateMutation()
   const [adding, setAdding] = useState(false)
@@ -44,7 +45,7 @@ export function ExchangeRatesPanel({ canEdit }: { canEdit: boolean }) {
           Used only inside ERGO to compare quotes in different currencies. The newest rate dated on or before a day applies; a pair entered one way round is also used the other way.
         </Typography>
       </Stack>
-      {(error ?? actionError) != null && <Alert severity="error">{problemMessage(error ?? actionError)}</Alert>}
+      {(error ?? actionError) != null && <ProblemAlert error={error ?? actionError} />}
       <TableContainer component={Paper} variant="outlined">
         {isFetching && <LinearProgress />}
         <Table size="small">
@@ -68,7 +69,7 @@ export function ExchangeRatesPanel({ canEdit }: { canEdit: boolean }) {
                   <TableCell align="right">
                     <IconButton
                       aria-label={`Delete the ${r.from.code}/${r.to.code} rate of ${r.rateDate}`}
-                      onClick={() => window.confirm('Delete this rate?') && void remove(r.id).unwrap().catch(setActionError)}
+                      onClick={async () => (await confirm({ title: 'Delete rate?', message: 'Delete this rate?', confirmLabel: 'Delete' })) && void remove(r.id).unwrap().catch(setActionError)}
                     >
                       ×
                     </IconButton>
@@ -87,6 +88,7 @@ export function ExchangeRatesPanel({ canEdit }: { canEdit: boolean }) {
         </Table>
       </TableContainer>
       {adding && <RateDialog onClose={() => setAdding(false)} />}
+      {confirmDialog}
     </Stack>
   )
 }
@@ -134,7 +136,7 @@ function RateDialog({ onClose }: { onClose: () => void }) {
           <TextField name="rate" label="Rate" type="number" required slotProps={{ htmlInput: { min: 0, step: 'any' } }} />
           <TextField name="rateDate" label="Valid from" type="date" required defaultValue={new Date().toLocaleDateString('en-CA')} slotProps={{ inputLabel: { shrink: true } }} />
           <TextField name="source" label="Source (optional)" slotProps={{ htmlInput: { maxLength: 200 } }} />
-          {creating.error != null && <Alert severity="error">{problemMessage(creating.error)}</Alert>}
+          {creating.error != null && <ProblemAlert error={creating.error} />}
         </DialogContent>
         <DialogActions>
           <Button onClick={onClose}>Cancel</Button>

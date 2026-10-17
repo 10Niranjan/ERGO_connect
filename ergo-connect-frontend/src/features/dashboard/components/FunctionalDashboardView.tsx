@@ -1,5 +1,5 @@
 import { Stack } from '@mui/material'
-import type { FunctionalDashboard } from '../dashboardApi'
+import type { FunctionalDashboard } from '@/features/dashboard/services/dashboardApi'
 import { KpiTile } from './KpiTile'
 import { DeviationSection, NcrSection, NpdSection, OrderSection, RfqSection } from './sections'
 

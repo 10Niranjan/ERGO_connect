@@ -1,10 +1,10 @@
-import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, TextField } from '@mui/material'
+import { Button, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, TextField } from '@mui/material'
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router'
-import { num, str } from '../../../shared/form'
-import { problemMessage } from '../../../shared/problem'
-import { useUsersQuery } from '../../admin/adminApi'
-import { useHandoverOrderMutation } from '../ofpApi'
+import { num, str } from '@/utils/form'
+import { useUsersQuery } from '@/features/admin/services/adminApi'
+import { useHandoverOrderMutation } from '@/features/ofp/services/ofpApi'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 /** NPD → OFP handover (SRS §14.5): explicit action that creates the order. Customer, supplier, part and revision
  * come from the NPD project on the server; the server also rejects a project not yet approved for handover. */
@@ -45,7 +45,7 @@ export function HandoverDialog({ npdProjectId, onClose }: { npdProjectId: number
               </MenuItem>
             ))}
           </TextField>
-          {state.error != null && <Alert severity="error">{problemMessage(state.error)}</Alert>}
+          {state.error != null && <ProblemAlert error={state.error} />}
         </DialogContent>
         <DialogActions>
           <Button onClick={onClose}>Cancel</Button>

@@ -1,4 +1,6 @@
 import { Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow } from '@mui/material'
+import { formatDateTime } from '@/utils/date'
+import { roleTitle } from '@/features/auth/utils/demoAccounts'
 
 export interface AuditRow {
   at: string
@@ -29,12 +31,12 @@ export function AuditTrail({ rows }: { rows: AuditRow[] }) {
           </TableRow>
         </TableHead>
         <TableBody>
-          {rows.map((row, index) => (
-            <TableRow key={index}>
-              <TableCell sx={{ whiteSpace: 'nowrap' }}>{new Date(row.at).toLocaleString()}</TableCell>
+          {rows.map((row) => (
+            <TableRow key={`${row.at}-${row.event}`}>
+              <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDateTime(row.at)}</TableCell>
               <TableCell>
                 {row.user ?? 'System'}
-                {row.role && <div style={{ fontSize: 12, opacity: 0.7 }}>{row.role}</div>}
+                {row.role && <div style={{ fontSize: 12, opacity: 0.7 }}>{roleTitle(row.role)}</div>}
               </TableCell>
               <TableCell>{row.event}</TableCell>
               <TableCell sx={{ maxWidth: 420, wordBreak: 'break-word' }}>{describe(row)}</TableCell>

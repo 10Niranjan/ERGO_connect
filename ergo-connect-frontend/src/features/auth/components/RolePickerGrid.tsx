@@ -15,7 +15,7 @@ import {
 } from '@mui/material'
 import { useState } from 'react'
 import type { CompanyType } from '../store/authSlice'
-import { DEMO_ACCOUNTS, type DemoAccount } from '../utils/demoAccounts'
+import { DEMO_ACCOUNTS, ROLE_LABELS, type DemoAccount } from '../utils/demoAccounts'
 
 interface RolePickerGridProps {
   onSelectAccount: (account: DemoAccount) => void | Promise<void>
@@ -48,19 +48,19 @@ export function RolePickerGrid({ onSelectAccount, disabled }: RolePickerGridProp
             value="ERGO"
             icon={<CorporateFareIcon />}
             iconPosition="start"
-            label="ERGO Internal (7 Roles)"
+            label="ERGO — Internal Teams (7 roles)"
           />
           <Tab
             value="CUSTOMER"
             icon={<BusinessIcon />}
             iconPosition="start"
-            label="Customer Accounts (6 Roles)"
+            label="Customer — Roles (6 roles)"
           />
           <Tab
             value="SUPPLIER"
             icon={<FactoryIcon />}
             iconPosition="start"
-            label="Supplier Partners (5 Roles)"
+            label="Supplier — Roles (5 roles)"
           />
         </Tabs>
       </Box>
@@ -160,7 +160,7 @@ export function RolePickerGrid({ onSelectAccount, disabled }: RolePickerGridProp
                   <Box sx={{ mb: 1.5 }}>
                     <Chip
                       size="small"
-                      label={acc.roleName}
+                      label={ROLE_LABELS[acc.role]}
                       color={
                         acc.companyType === 'ERGO'
                           ? 'primary'

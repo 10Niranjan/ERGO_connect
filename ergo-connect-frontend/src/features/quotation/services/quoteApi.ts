@@ -1,5 +1,5 @@
 import { api } from '@/services/baseApi'
-import type { Named, ProcessStep, StepView, Visibility } from '@/features/rfq/rfqApi'
+import type { Named, ProcessStep, StepView, Visibility } from '@/features/rfq/services/rfqApi'
 
 /** SRS §14.3, plus REGRETTED (the supplier declined to quote, with a reason). */
 export type QuoteStatus =

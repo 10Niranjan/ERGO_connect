@@ -1,17 +1,17 @@
-import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, TextField, Typography } from '@mui/material'
+import { Button, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, TextField, Typography } from '@mui/material'
 import { useState, type FormEvent } from 'react'
 import { useAppSelector } from '../../../app/store'
-import type { CompanyType } from '../../../auth/authSlice'
-import { problemMessage } from '../../../shared/problem'
-import { VISIBILITY } from '../../rfq/labels'
-import type { Visibility } from '../../rfq/rfqApi'
+import type { CompanyType } from '@/features/auth/store/authSlice'
+import { VISIBILITY } from '@/features/rfq/utils/labels'
+import type { Visibility } from '@/features/rfq/services/rfqApi'
 import {
   useDocumentCategoriesQuery,
   useEditDocumentMutation,
   useReplaceDocumentMutation,
   type DocumentDetail,
   type DocumentEditForm,
-} from '../documentsApi'
+} from '@/features/documents/services/documentsApi'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 /** Mirrors DocumentService.edit (security review H1): ERGO may choose any visibility; a customer or supplier may
  * only set its own party's value. Convenience only, the backend enforces it. */
@@ -70,7 +70,7 @@ export function EditDocumentDialog({ document, onClose }: { document: DocumentDe
               Only ERGO can share a document with anyone beyond your own side.
             </Typography>
           )}
-          {editing.error != null && <Alert severity="error">{problemMessage(editing.error)}</Alert>}
+          {editing.error != null && <ProblemAlert error={editing.error} />}
         </DialogContent>
         <DialogActions>
           <Button onClick={onClose}>Cancel</Button>
@@ -112,7 +112,7 @@ export function ReplaceDocumentDialog({ document, isErgo, onClose }: { document:
             <input type="file" hidden required aria-label="New version file" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
           </Button>
           <CategoryField value={categoryId} onChange={setCategoryId} allowNone />
-          {replacing.error != null && <Alert severity="error">{problemMessage(replacing.error)}</Alert>}
+          {replacing.error != null && <ProblemAlert error={replacing.error} />}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => onClose()}>Cancel</Button>

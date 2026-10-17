@@ -1,5 +1,4 @@
 import {
-  Alert,
   Button,
   Chip,
   LinearProgress,
@@ -15,8 +14,7 @@ import {
 } from '@mui/material'
 import { useState } from 'react'
 import { useAppSelector } from '../../../app/store'
-import { COMPANY_CREATORS } from '../../../auth/access'
-import { problemMessage } from '../../../shared/problem'
+import { COMPANY_CREATORS } from '@/features/auth/utils/access'
 import {
   STATUS_LABELS,
   TYPE_LABELS,
@@ -25,9 +23,11 @@ import {
   useSetCompanyActiveMutation,
   type Company,
   type CompanyStatus,
-} from '../companiesApi'
+} from '@/features/companies/services/companiesApi'
 import { CompanyDialog } from '../components/CompanyDialog'
 import { ReviewDialog } from '../components/ReviewDialog'
+import { useConfirm } from '@/components/ui/useConfirm'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 const STATUS_COLORS: Record<CompanyStatus, 'default' | 'success' | 'warning' | 'error'> = {
   PENDING_APPROVAL: 'warning',
@@ -38,6 +38,7 @@ const STATUS_COLORS: Record<CompanyStatus, 'default' | 'success' | 'warning' | '
 
 // SRS §10.2 / §10.3 for ERGO roles. Which rows appear and which buttons show are decided by the backend.
 export function CompaniesPage() {
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const role = useAppSelector((state) => state.auth.session?.activeRole)
   const { data: companies = [], isLoading, error } = useCompaniesQuery()
   const [resubmit] = useResubmitCompanyMutation()
@@ -50,8 +51,7 @@ export function CompaniesPage() {
   const canAdd = role !== undefined && COMPANY_CREATORS.includes(role)
 
   async function run(action: () => Promise<unknown>, question?: string) {
-    // ponytail: native confirm(); switch to an MUI dialog if these need more than a yes/no
-    if (question && !window.confirm(question)) return
+    if (question && !(await confirm({ title: 'Please confirm', message: question }))) return
     setActionError(null)
     await action().catch(setActionError)
   }
@@ -71,7 +71,7 @@ export function CompaniesPage() {
           </Button>
         )}
       </Stack>
-      {(error ?? actionError) != null && <Alert severity="error">{problemMessage(error ?? actionError)}</Alert>}
+      {(error ?? actionError) != null && <ProblemAlert error={error ?? actionError} />}
       <TableContainer component={Paper} variant="outlined">
         {isLoading && <LinearProgress />}
         <Table size="small">
@@ -158,6 +158,7 @@ export function CompaniesPage() {
         />
       )}
       {reviewing && <ReviewDialog {...reviewing} onClose={() => setReviewing(null)} />}
+      {confirmDialog}
     </Stack>
   )
 }

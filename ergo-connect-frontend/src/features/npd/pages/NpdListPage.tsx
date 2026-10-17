@@ -1,5 +1,4 @@
 import {
-  Alert,
   Button,
   Chip,
   LinearProgress,
@@ -17,10 +16,10 @@ import {
 } from '@mui/material'
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
-import { problemMessage } from '../../../shared/problem'
-import { formatDate } from '../../rfq/labels'
-import { NPD_STAGE, RISK_LEVEL, stageProgress } from '../labels'
-import { useNpdListQuery, type RiskLevel } from '../npdApi'
+import { formatDate } from '@/features/rfq/utils/labels'
+import { NPD_STAGE, RISK_LEVEL, stageProgress } from '@/features/npd/utils/labels'
+import { useNpdListQuery, type RiskLevel } from '@/features/npd/services/npdApi'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 // SRS §12.8.1. Table view only in 3a (no Kanban/Gantt): this list is small, so filtering stays client-side.
 export function NpdListPage() {
@@ -68,7 +67,7 @@ export function NpdListPage() {
           ))}
         </TextField>
       </Stack>
-      {error && <Alert severity="error">{problemMessage(error)}</Alert>}
+      {error && <ProblemAlert error={error} />}
       <TableContainer component={Paper} variant="outlined">
         {isLoading && <LinearProgress />}
         <Table size="small">

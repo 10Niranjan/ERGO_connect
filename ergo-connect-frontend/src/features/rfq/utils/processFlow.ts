@@ -3,6 +3,8 @@ import type { ProcessStep, SourcingType } from '../services/rfqApi'
 
 /** A process flow row as typed in the form (numbers still text). */
 export interface StepRow {
+  /** Stable React key: rows are added and removed mid-list, so an index would hand one row's inputs to another. */
+  key: string
   processId: string
   stepName: string
   cycleTimeSeconds: string
@@ -11,17 +13,19 @@ export interface StepRow {
   remarks: string
 }
 
-export const EMPTY_STEP: StepRow = {
+export const newStep = (): StepRow => ({
+  key: crypto.randomUUID(),
   processId: '',
   stepName: '',
   cycleTimeSeconds: '',
   sourcingType: '',
   outsourcedSupplierName: '',
   remarks: '',
-}
+})
 
 export function toStepRows(steps: ProcessStep[]): StepRow[] {
   return steps.map((s) => ({
+    key: crypto.randomUUID(),
     processId: text(s.processId),
     stepName: s.stepName,
     cycleTimeSeconds: text(s.cycleTimeSeconds),

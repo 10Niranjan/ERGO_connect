@@ -1,7 +1,6 @@
 import { Alert, Button, Checkbox, Chip, FormControlLabel, MenuItem, Stack, TextField, Typography } from '@mui/material'
 import { useRef, useState, type FormEvent } from 'react'
 import { useAppSelector } from '../../../app/store'
-import { problemMessage } from '../../../shared/problem'
 import {
   useAttachToCommentMutation,
   useCreateCommentMutation,
@@ -9,9 +8,10 @@ import {
   type CommentType,
   type CommentView,
   type MentionOption,
-} from '../communicationApi'
-import { MAX_ATTACHMENTS, MAX_COMMENT_LENGTH, SUPPORTED_TYPES, TYPE_LABEL } from '../labels'
+} from '@/features/communication/services/communicationApi'
+import { MAX_ATTACHMENTS, MAX_COMMENT_LENGTH, SUPPORTED_TYPES, TYPE_LABEL } from '@/features/communication/utils/labels'
 import { MentionPicker } from './MentionPicker'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 interface Props {
   linkedModule: CommentLinkedModule
@@ -145,7 +145,7 @@ export function CommentComposer({ linkedModule, recordId, parent, onDone, onCanc
           </Typography>
         </Stack>
         {fileNote && <Alert severity="info">{fileNote}</Alert>}
-        {creating.error != null && <Alert severity="error">{problemMessage(creating.error)}</Alert>}
+        {creating.error != null && <ProblemAlert error={creating.error} />}
         {warning && (
           <Alert severity="warning" action={<Button color="inherit" size="small" onClick={() => { setWarning(null); onDone() }}>Close</Button>}>
             {warning}

@@ -1,8 +1,8 @@
-import { Alert, Button, Card, CardContent, LinearProgress, Stack, Typography } from '@mui/material'
+import { Button, Card, CardContent, LinearProgress, Stack, Typography } from '@mui/material'
 import { useState } from 'react'
-import { problemMessage } from '../../../shared/problem'
-import { useCompaniesQuery, type CompanyProfile } from '../companiesApi'
+import { useCompaniesQuery, type CompanyProfile } from '@/features/companies/services/companiesApi'
 import { CompanyDialog } from '../components/CompanyDialog'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 const FIELDS: [keyof CompanyProfile, string][] = [
   ['addressLine1', 'Address'],
@@ -25,7 +25,7 @@ export function MyCompanyPage() {
   const company = companies[0]
 
   return (
-    <Stack spacing={2} sx={{ maxWidth: 720 }}>
+    <Stack spacing={2} sx={{ maxWidth: 960 }}>
       <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
         <Typography variant="h5" component="h1">
           Company profile
@@ -37,7 +37,7 @@ export function MyCompanyPage() {
         )}
       </Stack>
       {isLoading && <LinearProgress />}
-      {error && <Alert severity="error">{problemMessage(error)}</Alert>}
+      {error && <ProblemAlert error={error} />}
       {company && (
         <Card variant="outlined">
           <CardContent sx={{ display: 'grid', gridTemplateColumns: '180px 1fr', rowGap: 1.5, columnGap: 2 }}>

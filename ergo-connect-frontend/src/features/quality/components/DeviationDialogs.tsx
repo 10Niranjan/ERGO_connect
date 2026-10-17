@@ -1,8 +1,8 @@
-import { Alert, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, Stack, TextField } from '@mui/material'
+import { Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, Stack, TextField } from '@mui/material'
 import { useState } from 'react'
-import { str } from '../../../shared/form'
-import { problemMessage } from '../../../shared/problem'
-import { useEditDeviationMutation, type DeviationDetail, type DeviationUpdateForm } from '../deviationApi'
+import { str } from '@/utils/form'
+import { useEditDeviationMutation, type DeviationDetail, type DeviationUpdateForm } from '@/features/quality/services/deviationApi'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 /** SRS §12.10.4 edit: the only non-workflow form (REQUESTED/UNDER_REVIEW only, DeviationService.allowed(EDIT, ...)).
  * customerApprovalRequiredFlag/linkedModule/linkedRecordId are locked after creation (DeviationUpdateForm carries no
@@ -61,7 +61,7 @@ export function DeviationUpdateDialog({ deviation, onClose }: { deviation: Devia
             <FormControlLabel control={<Checkbox checked={s.supplierVisible} onChange={(e) => setS((p) => ({ ...p, supplierVisible: e.target.checked }))} />} label="Visible to the supplier" />
           </Stack>
         )}
-        {editing.error != null && <Alert severity="error">{problemMessage(editing.error)}</Alert>}
+        {editing.error != null && <ProblemAlert error={editing.error} />}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>

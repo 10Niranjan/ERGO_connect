@@ -1,6 +1,7 @@
 import type { UnknownAction } from '@reduxjs/toolkit'
 import { api } from '@/services/baseApi'
 import { sessionEnded, sessionStarted, type Role, type Session } from '../store/authSlice'
+import { DEMO_STORAGE_KEY } from '../utils/demoAccounts'
 
 /** What {@code /login} returns when the account has 2FA enabled, instead of a session (Phase 8g). */
 export interface OtpChallenge {
@@ -26,6 +27,7 @@ const startsSession = {
     try {
       const { data } = await queryFulfilled
       if (isOtpChallenge(data)) return // login isn't complete until verifyOtp() succeeds
+      sessionStorage.removeItem(DEMO_STORAGE_KEY) // a leftover demo persona must not outrank a real sign-in
       dispatch(api.util.resetApiState())
       dispatch(sessionStarted(data))
     } catch {

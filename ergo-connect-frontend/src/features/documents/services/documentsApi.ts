@@ -1,5 +1,5 @@
 import { api } from '@/services/baseApi'
-import type { Visibility } from '@/features/rfq/rfqApi'
+import type { Visibility } from '@/features/rfq/services/rfqApi'
 
 // SRS §10.9/§12.11/§14 docs states, Phase 6a/6b. Upload (create) stays on each owning module's own endpoint; this
 // file is the cross-module Document Library, detail, edit, replace and lock/approval surface.

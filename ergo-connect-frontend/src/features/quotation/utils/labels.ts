@@ -1,12 +1,12 @@
 import { formatDate, formatMoney, formatNumber } from '@/features/rfq/utils/labels'
 import type { ChipColor } from '@/types'
-import type { SourcingType } from '@/features/rfq/rfqApi'
+import type { SourcingType } from '@/features/rfq/services/rfqApi'
 import type { CustomerSupplierQuote, ErgoQuoteTerms, ResponseStatus } from '../services/comparisonApi'
 import type { QuoteData, QuoteStatus } from '../services/quoteApi'
 
 export const QUOTE_STATUS: Record<QuoteStatus, { label: string; color: ChipColor }> = {
   NOT_STARTED: { label: 'Not started', color: 'default' },
-  DRAFT_SAVED: { label: 'Draft saved', color: 'info' },
+  DRAFT_SAVED: { label: 'Draft (not sent)', color: 'info' },
   CLARIFICATION_REQUESTED: { label: 'Clarification requested', color: 'warning' },
   SUBMITTED: { label: 'Submitted', color: 'success' },
   REOPENED: { label: 'Re-opened for revision', color: 'warning' },

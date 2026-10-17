@@ -1,9 +1,9 @@
-import { Alert, LinearProgress, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from '@mui/material'
+import { LinearProgress, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from '@mui/material'
 import { useNavigate } from 'react-router'
-import { problemMessage } from '../../../shared/problem'
-import { formatDate } from '../../rfq/labels'
-import { NPD_STAGE } from '../labels'
-import { useMyNpdProjectsQuery } from '../npdApi'
+import { formatDate } from '@/features/rfq/utils/labels'
+import { NPD_STAGE } from '@/features/npd/utils/labels'
+import { useMyNpdProjectsQuery } from '@/features/npd/services/npdApi'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 // SRS §12.15's customer "NPD" / supplier "NPD Tasks" nav entry: the caller's own company's projects only (no
 // customer/supplier column — it is always "mine").
@@ -16,7 +16,7 @@ export function MyNpdProjectsPage() {
       <Typography variant="h5" component="h1">
         NPD projects
       </Typography>
-      {error && <Alert severity="error">{problemMessage(error)}</Alert>}
+      {error && <ProblemAlert error={error} />}
       <TableContainer component={Paper} variant="outlined">
         {isLoading && <LinearProgress />}
         <Table size="small">

@@ -1,5 +1,4 @@
 import {
-  Alert,
   Chip,
   LinearProgress,
   Link,
@@ -21,17 +20,17 @@ import {
 import { Fragment, useState } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router'
 import { useAppSelector } from '../../../app/store'
-import { problemMessage } from '../../../shared/problem'
-import { useCompaniesQuery } from '../../companies/companiesApi'
-import { VISIBILITY, formatDate } from '../../rfq/labels'
+import { useCompaniesQuery } from '@/features/companies/services/companiesApi'
+import { VISIBILITY, formatDate } from '@/features/rfq/utils/labels'
 import {
   useDocumentCategoriesQuery,
   useDocumentLibraryQuery,
   type ApprovalStatus,
   type DocumentLinkedModule,
   type LibraryRow,
-} from '../documentsApi'
-import { APPROVAL_STATUS, LINKED_MODULE_LABEL, LOCK_STATUS, linkedRecordLabel, linkedRecordPath } from '../labels'
+} from '@/features/documents/services/documentsApi'
+import { APPROVAL_STATUS, LINKED_MODULE_LABEL, LOCK_STATUS, linkedRecordLabel, linkedRecordPath } from '@/features/documents/utils/labels'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 type View = 'table' | 'module' | 'record'
 
@@ -147,7 +146,7 @@ export function DocumentLibraryPage() {
         <TextField size="small" type="date" label="Uploaded from" value={from} onChange={(e) => filter(setFrom)(e.target.value)} slotProps={{ inputLabel: { shrink: true } }} />
         <TextField size="small" type="date" label="Uploaded to" value={to} onChange={(e) => filter(setTo)(e.target.value)} slotProps={{ inputLabel: { shrink: true } }} />
       </Stack>
-      {error && <Alert severity="error">{problemMessage(error)}</Alert>}
+      {error && <ProblemAlert error={error} />}
       <TableContainer component={Paper} variant="outlined">
         {(isLoading || isFetching) && <LinearProgress />}
         <Table size="small">

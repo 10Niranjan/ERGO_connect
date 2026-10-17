@@ -1,9 +1,8 @@
-import { Alert, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, MenuItem, Stack, TextField, Typography } from '@mui/material'
+import { Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, MenuItem, Stack, TextField, Typography } from '@mui/material'
 import { useState } from 'react'
-import { str } from '../../../shared/form'
-import { problemMessage } from '../../../shared/problem'
-import { useUsersQuery } from '../../admin/adminApi'
-import { useCompaniesQuery } from '../../companies/companiesApi'
+import { str } from '@/utils/form'
+import { useUsersQuery } from '@/features/admin/services/adminApi'
+import { useCompaniesQuery } from '@/features/companies/services/companiesApi'
 import {
   useCreateCapaActionMutation,
   useEditCapaActionMutation,
@@ -16,7 +15,8 @@ import {
   type CapaActionType,
   type NcrDetail,
   type NcrUpdateForm,
-} from '../qualityApi'
+} from '@/features/quality/services/qualityApi'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 const MODE_LABEL: Record<UpdateMode, string> = {
   EDIT: 'Edit NCR',
@@ -160,7 +160,7 @@ export function NcrUpdateDialog({ mode, ncr, onClose }: { mode: UpdateMode; ncr:
           </Stack>
         )}
 
-        {running.error != null && <Alert severity="error">{problemMessage(running.error)}</Alert>}
+        {running.error != null && <ProblemAlert error={running.error} />}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>
@@ -230,7 +230,7 @@ export function CapaActionDialog({ ncr, row, onClose }: { ncr: NcrDetail; row: N
             </MenuItem>
           ))}
         </TextField>
-        {running.error != null && <Alert severity="error">{problemMessage(running.error)}</Alert>}
+        {running.error != null && <ProblemAlert error={running.error} />}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>

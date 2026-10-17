@@ -1,13 +1,12 @@
-import { Alert, Box, Button, Chip, LinearProgress, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from '@mui/material'
+import { Box, Button, Chip, LinearProgress, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from '@mui/material'
 import { useState, type ReactNode } from 'react'
 import { useParams } from 'react-router'
 import { CommentsSection } from '../../communication/components/CommentsPanel'
-import { CommentDialog } from '../../../shared/components/CommentDialog'
-import { Facts } from '../../../shared/components/Facts'
-import { problemMessage } from '../../../shared/problem'
-import { formatDate } from '../../rfq/labels'
+import { CommentDialog } from '@/components/ui/CommentDialog'
+import { Facts } from '@/components/ui/Facts'
+import { formatDate } from '@/features/rfq/utils/labels'
 import { InspectionUpdateDialog } from '../components/InspectionDialogs'
-import { DEFECT_SEVERITY, LINKED_MODULE, RESULT_STATUS } from '../labels'
+import { DEFECT_SEVERITY, LINKED_MODULE, RESULT_STATUS } from '@/features/quality/utils/labels'
 import {
   useCloseInspectionMutation,
   useInspectionQuery,
@@ -17,13 +16,15 @@ import {
   useReopenInspectionMutation,
   type InspectionAction,
   type InspectionDetail,
-} from '../qualityApi'
+} from '@/features/quality/services/qualityApi'
+import { LinkedRecordLink } from '@/features/quality/components/LinkedRecordLink'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 export function InspectionDetailPage() {
   const id = Number(useParams().id)
   const { data: inspection, isLoading, error } = useInspectionQuery(id)
   if (isLoading) return <LinearProgress />
-  if (!inspection) return <Alert severity="error">{problemMessage(error)}</Alert>
+  if (!inspection) return <ProblemAlert error={error} />
   return <InspectionDetailView inspection={inspection} />
 }
 
@@ -76,10 +77,11 @@ function InspectionDetailView({ inspection }: { inspection: InspectionDetail }) 
     }
   }
 
+  const linkedRecord = <LinkedRecordLink module={inspection.linkedModule} id={inspection.linkedRecordId} />
   const facts: [string, ReactNode][] = [
     ['Part number', inspection.partNumber],
     ['Batch / lot no.', inspection.batchLotNo ?? '—'],
-    ['Linked module', `${LINKED_MODULE[inspection.linkedModule]} #${inspection.linkedRecordId}`],
+    ['Linked record', linkedRecord],
   ]
   if (ergo) facts.push(['Customer', ergo.customer ?? '—'], ['Supplier', ergo.supplier ?? '—'], ['Visible to customer', ergo.customerVisible ? 'Yes' : 'No'])
   const results: [string, ReactNode][] = [

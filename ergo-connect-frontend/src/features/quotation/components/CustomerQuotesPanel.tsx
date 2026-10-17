@@ -1,11 +1,11 @@
 import { Alert, Box, Button, Card, CardContent, Chip, LinearProgress, Stack, Typography } from '@mui/material'
 import { useState } from 'react'
-import { CommentDialog } from '../../../shared/components/CommentDialog'
-import { Facts } from '../../../shared/components/Facts'
-import { problemMessage } from '../../../shared/problem'
-import { formatDate } from '../../rfq/labels'
-import { useCustomerQuotesQuery, useRespondCustomerQuoteMutation, type CustomerQuoteView, type CustomerResponse } from '../comparisonApi'
-import { customerSupplierQuoteSections, ergoQuoteSections, RESPONSE_STATUS } from '../labels'
+import { CommentDialog } from '@/components/ui/CommentDialog'
+import { Facts } from '@/components/ui/Facts'
+import { formatDate } from '@/features/rfq/utils/labels'
+import { useCustomerQuotesQuery, useRespondCustomerQuoteMutation, type CustomerQuoteView, type CustomerResponse } from '@/features/quotation/services/comparisonApi'
+import { customerSupplierQuoteSections, ergoQuoteSections, RESPONSE_STATUS } from '@/features/quotation/utils/labels'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 /** How each answer asks for its comment (SRS §14.4: required to request a revision or decline). */
 const ANSWERS: Record<CustomerResponse, { title: string; label: string; confirm: string; required: boolean; danger?: boolean }> = {
@@ -18,7 +18,7 @@ const ANSWERS: Record<CustomerResponse, { title: string; label: string; confirm:
 export function CustomerQuotesPanel({ rfqId }: { rfqId: number }) {
   const { data, isLoading, error } = useCustomerQuotesQuery(rfqId)
   if (isLoading) return <LinearProgress />
-  if (!data || data.audience !== 'CUSTOMER') return <Alert severity="error">{problemMessage(error)}</Alert>
+  if (!data || data.audience !== 'CUSTOMER') return <ProblemAlert error={error} />
   if (data.quotes.length === 0) return <Typography color="text.secondary">ERGO has not sent you a quote for this RFQ yet.</Typography>
   return (
     <Stack spacing={2}>

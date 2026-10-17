@@ -1,5 +1,4 @@
 import {
-  Alert,
   Chip,
   LinearProgress,
   Paper,
@@ -15,10 +14,10 @@ import {
 } from '@mui/material'
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
-import { problemMessage } from '../../../shared/problem'
-import { formatDate } from '../../rfq/labels'
-import { QUOTE_STATUS } from '../labels'
-import { useMyQuotesQuery, type QuoteStatus } from '../quoteApi'
+import { formatDate } from '@/features/rfq/utils/labels'
+import { QUOTE_STATUS } from '@/features/quotation/utils/labels'
+import { useMyQuotesQuery, type QuoteStatus } from '@/features/quotation/services/quoteApi'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 const OPEN: QuoteStatus[] = ['NOT_STARTED', 'DRAFT_SAVED', 'CLARIFICATION_REQUESTED', 'REOPENED']
 
@@ -38,7 +37,7 @@ export function AssignedRfqsPage() {
         Assigned RFQs
       </Typography>
       <TextField size="small" label="Search" value={search} onChange={(e) => setSearch(e.target.value)} sx={{ maxWidth: 260 }} />
-      {error && <Alert severity="error">{problemMessage(error)}</Alert>}
+      {error && <ProblemAlert error={error} />}
       <TableContainer component={Paper} variant="outlined">
         {isLoading && <LinearProgress />}
         <Table size="small">

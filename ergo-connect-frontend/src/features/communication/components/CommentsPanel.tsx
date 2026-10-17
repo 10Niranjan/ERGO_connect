@@ -1,8 +1,8 @@
 import { Alert, LinearProgress, Stack, Typography } from '@mui/material'
-import { problemMessage } from '../../../shared/problem'
-import { useCommentThreadQuery, type CommentLinkedModule } from '../communicationApi'
+import { useCommentThreadQuery, type CommentLinkedModule } from '@/features/communication/services/communicationApi'
 import { CommentCard } from './CommentCard'
 import { CommentComposer } from './CommentComposer'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 interface Props {
   linkedModule: CommentLinkedModule
@@ -24,7 +24,7 @@ export function CommentsPanel({ linkedModule, recordId }: Props) {
   return (
     <Stack spacing={2}>
       {isLoading && <LinearProgress />}
-      {error != null && <Alert severity="error">{problemMessage(error)}</Alert>}
+      {error != null && <ProblemAlert error={error} />}
       {openQueries > 0 && <Alert severity="warning">{openQueries === 1 ? '1 open query' : `${openQueries} open queries`} on this record.</Alert>}
       {!isLoading && error == null && threads.length === 0 && <Typography color="text.secondary">No comments yet.</Typography>}
       {threads.map((thread) => (

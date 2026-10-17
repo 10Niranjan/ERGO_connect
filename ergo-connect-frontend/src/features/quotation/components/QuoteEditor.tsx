@@ -17,19 +17,21 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useState } from 'react'
-import { FormSection } from '../../../shared/components/FormSection'
-import { num, str, text } from '../../../shared/form'
-import { useMasterOptionsQuery, type MasterOption } from '../../../shared/masterData'
-import { problemMessage } from '../../../shared/problem'
+import { FormSection } from '@/components/ui/FormSection'
+import { num, str, text } from '@/utils/form'
+import { useMasterOptionsQuery, type MasterOption } from '@/utils/masterData'
 import { ProcessFlowTable } from '../../rfq/components/ProcessFlowTable'
-import { formatMoney } from '../../rfq/labels'
-import { toProcessSteps, toStepRows, type StepRow } from '../../rfq/processFlow'
-import { useQuoteCommandMutation, useSaveQuoteMutation, type QuoteForm, type SupplierQuoteView } from '../quoteApi'
+import { formatMoney } from '@/features/rfq/utils/labels'
+import { toProcessSteps, toStepRows, type StepRow } from '@/features/rfq/utils/processFlow'
+import { useQuoteCommandMutation, useSaveQuoteMutation, type QuoteForm, type SupplierQuoteView } from '@/features/quotation/services/quoteApi'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 type Field = Exclude<keyof QuoteForm, 'tooling' | 'processSteps'>
 
 interface ToolRow {
+  key: string // stable React key, see StepRow
   toolName: string
   toolingCost: string
   remarks: string
@@ -62,7 +64,7 @@ function fromView(view: SupplierQuoteView): FormState {
     productionLeadTimeDays: text(q?.productionLeadTimeDays),
     assumptionsDeviations: text(q?.assumptionsDeviations),
     remarks: text(q?.remarks),
-    tooling: q?.tooling.map((t) => ({ toolName: t.toolName, toolingCost: text(t.toolingCost), remarks: text(t.remarks) })) ?? [],
+    tooling: q?.tooling.map((t) => ({ key: crypto.randomUUID(), toolName: t.toolName, toolingCost: text(t.toolingCost), remarks: text(t.remarks) })) ?? [],
     // Client decision: each supplier's route starts as a copy of ERGO's planned route.
     steps: toStepRows(
       q?.processSteps.length
@@ -105,6 +107,7 @@ function toForm(s: FormState): QuoteForm {
 export function QuoteEditor({ view }: { view: SupplierQuoteView }) {
   const [state, setState] = useState(() => fromView(view))
   const [saved, setSaved] = useState(false)
+  const [confirmingSubmit, setConfirmingSubmit] = useState(false)
   const [error, setError] = useState<unknown>(null)
   const [pending, setPending] = useState<'save' | 'submit' | null>(null)
   const [save] = useSaveQuoteMutation()
@@ -148,6 +151,7 @@ export function QuoteEditor({ view }: { view: SupplierQuoteView }) {
 
   async function saveDraft() {
     setError(null)
+    setSaved(false)
     setPending('save')
     try {
       await save({ id: view.id, form: toForm(state) }).unwrap()
@@ -159,8 +163,9 @@ export function QuoteEditor({ view }: { view: SupplierQuoteView }) {
   }
 
   async function submit() {
-    if (!window.confirm('Submit this quote to ERGO? It is locked once submitted; ERGO can re-open it if a revision is needed.')) return
+    setConfirmingSubmit(false)
     setError(null)
+    setSaved(false)
     setPending('submit')
     try {
       await save({ id: view.id, form: toForm(state) }).unwrap() // what is on screen is what gets submitted
@@ -208,7 +213,7 @@ export function QuoteEditor({ view }: { view: SupplierQuoteView }) {
                 </TableHead>
                 <TableBody>
                   {state.tooling.map((t, index) => (
-                    <TableRow key={index}>
+                    <TableRow key={t.key}>
                       <TableCell>
                         <TextField size="small" fullWidth value={t.toolName} onChange={(e) => setTool(index, { toolName: e.target.value })} slotProps={{ htmlInput: { maxLength: 200, 'aria-label': `Tool ${index + 1} name` } }} />
                       </TableCell>
@@ -230,7 +235,7 @@ export function QuoteEditor({ view }: { view: SupplierQuoteView }) {
             </TableContainer>
           )}
           <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
-            <Button onClick={() => change({ tooling: [...state.tooling, { toolName: '', toolingCost: '', remarks: '' }] })}>+ Add tool</Button>
+            <Button onClick={() => change({ tooling: [...state.tooling, { key: crypto.randomUUID(), toolName: '', toolingCost: '', remarks: '' }] })}>+ Add tool</Button>
             {state.tooling.length > 0 ? (
               <Typography>Total tooling cost: {formatMoney(toolingSum, currency)}</Typography>
             ) : (
@@ -275,18 +280,26 @@ export function QuoteEditor({ view }: { view: SupplierQuoteView }) {
         {field('remarks', 'Remarks', { multiline: true, minRows: 2, sx: { gridColumn: '1 / -1' }, slotProps: { htmlInput: { maxLength: 4000 } } })}
       </FormSection>
 
-      {error != null && <Alert severity="error">{problemMessage(error)}</Alert>}
+      {error != null && <ProblemAlert error={error} />}
       {saved && <Alert severity="success">Draft saved. ERGO sees your quote only once you submit it.</Alert>}
       <Stack direction="row" spacing={1}>
         <Button onClick={() => void saveDraft()} loading={pending === 'save'} disabled={pending !== null}>
           Save draft
         </Button>
         {view.actions.includes('SUBMIT') && (
-          <Button variant="contained" onClick={() => void submit()} loading={pending === 'submit'} disabled={pending !== null}>
+          <Button variant="contained" onClick={() => setConfirmingSubmit(true)} loading={pending === 'submit'} disabled={pending !== null}>
             {view.version > 0 ? `Resubmit as version ${view.version + 1}` : 'Submit quote'}
           </Button>
         )}
       </Stack>
+      <ConfirmDialog
+        open={confirmingSubmit}
+        title="Submit this quote to ERGO?"
+        message="It is locked once submitted; ERGO can re-open it if a revision is needed."
+        confirmLabel="Submit quote"
+        onConfirm={() => void submit()}
+        onCancel={() => setConfirmingSubmit(false)}
+      />
     </Stack>
   )
 }

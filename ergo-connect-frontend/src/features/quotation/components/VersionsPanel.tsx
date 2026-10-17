@@ -14,19 +14,20 @@ import {
   TableRow,
   Typography,
 } from '@mui/material'
-import { problemMessage } from '../../../shared/problem'
-import { quoteChanges } from '../labels'
-import { useQuoteVersionsQuery } from '../quoteApi'
+import { quoteChanges } from '@/features/quotation/utils/labels'
+import { useQuoteVersionsQuery } from '@/features/quotation/services/quoteApi'
 import { QuoteSummary } from './QuoteSummary'
+import { formatDateTime } from '@/utils/date'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
-const when = (value: string | null) => (value ? new Date(value).toLocaleString() : '—')
+const when = (value: string | null) => (value ? formatDateTime(value) : '—')
 const fileList = (files: string[]) => files.join('\n') || '—'
 
 /** SRS §12.7.3: every submitted version as it was sent, who re-opened it and why, and what changed. */
 export function VersionsPanel({ quoteId }: { quoteId: number }) {
   const { data: versions = [], isLoading, error } = useQuoteVersionsQuery(quoteId)
   if (isLoading) return <LinearProgress />
-  if (error) return <Alert severity="error">{problemMessage(error)}</Alert>
+  if (error) return <ProblemAlert error={error} />
   if (versions.length === 0) return <Typography color="text.secondary">Nothing has been submitted yet.</Typography>
 
   return (

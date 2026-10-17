@@ -8,7 +8,7 @@ export interface RfqDashboardItem {
   number: string
   customerName: string
   status: string
-  awaiting: Awaiting
+  awaiting: Awaiting | null // null where the caller is not told who holds the record
   targetQuoteDate: string
   overdue: boolean
   priority: string
@@ -20,7 +20,7 @@ export interface NpdDashboardItem {
   customerName: string
   supplierName: string | null
   stage: string
-  awaiting: Awaiting
+  awaiting: Awaiting | null // null where the caller is not told who holds the record
   targetSampleDate: string
   delayDays: number | null
   riskLevel: string | null
@@ -32,7 +32,7 @@ export interface OrderDashboardItem {
   customerName: string
   supplierName: string | null
   status: string
-  awaiting: Awaiting
+  awaiting: Awaiting | null // null where the caller is not told who holds the record
   committedDispatchDate: string
   atRisk: boolean
 }
@@ -43,7 +43,7 @@ export interface NcrDashboardItem {
   customerName: string
   supplierName: string | null
   status: string
-  awaiting: Awaiting
+  awaiting: Awaiting | null // null where the caller is not told who holds the record
   targetClosureDate: string
   overdue: boolean
 }
@@ -55,7 +55,7 @@ export interface DeviationDashboardItem {
   supplierName: string | null
   status: string
   validityEndDate: string
-  awaiting: Awaiting
+  awaiting: Awaiting | null // null where the caller is not told who holds the record
 }
 
 export interface SupplierQuoteItem {

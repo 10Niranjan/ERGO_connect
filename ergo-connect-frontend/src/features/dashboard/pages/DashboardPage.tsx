@@ -1,11 +1,11 @@
-import { Alert, LinearProgress, Stack, Typography } from '@mui/material'
+import { LinearProgress, Stack, Typography } from '@mui/material'
 import { useAppSelector } from '../../../app/store'
-import { problemMessage } from '../../../shared/problem'
 import { CustomerDashboardView } from '../components/CustomerDashboardView'
 import { FunctionalDashboardView } from '../components/FunctionalDashboardView'
 import { ManagementDashboardView } from '../components/ManagementDashboardView'
 import { SupplierDashboardView } from '../components/SupplierDashboardView'
-import { useDashboardQuery } from '../dashboardApi'
+import { useDashboardQuery } from '@/features/dashboard/services/dashboardApi'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 // SRS §12.5/§10.11: one endpoint, four shapes - the backend picks the shape from the caller's active role, this
 // page just renders whichever one comes back. Every role has View only here, so there are no actions to gate.
@@ -26,7 +26,7 @@ export function DashboardPage() {
         </Typography>
       </Stack>
       {isLoading && <LinearProgress />}
-      {error && <Alert severity="error">{problemMessage(error)}</Alert>}
+      {error && <ProblemAlert error={error} />}
       {view?.audience === 'MANAGEMENT' && <ManagementDashboardView view={view} />}
       {view?.audience === 'FUNCTIONAL' && <FunctionalDashboardView view={view} />}
       {view?.audience === 'CUSTOMER' && <CustomerDashboardView view={view} />}

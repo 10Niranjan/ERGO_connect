@@ -21,16 +21,15 @@ import {
 } from '@mui/material'
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
-import { AuditTrail } from '../../../shared/components/AuditTrail'
+import { AuditTrail } from '@/components/ui/AuditTrail'
 import { CommentsPanel } from '../../communication/components/CommentsPanel'
-import { CommentDialog } from '../../../shared/components/CommentDialog'
-import { Facts } from '../../../shared/components/Facts'
-import { problemMessage } from '../../../shared/problem'
+import { CommentDialog } from '@/components/ui/CommentDialog'
+import { Facts } from '@/components/ui/Facts'
 import { ComparisonPanel } from '../../quotation/components/ComparisonPanel'
 import { CustomerQuotesPanel } from '../../quotation/components/CustomerQuotesPanel'
 import { SuppliersPanel } from '../../quotation/components/SuppliersPanel'
 import { DocumentsPanel } from '../components/DocumentsPanel'
-import { PRIORITIES, STATUS, formatDate, formatMoney, formatNumber } from '../labels'
+import { PRIORITIES, STATUS, formatDate, formatMoney, formatNumber } from '@/features/rfq/utils/labels'
 import {
   useCloneRfqMutation,
   useRfqCommandMutation,
@@ -39,7 +38,9 @@ import {
   useUpdateRfqNotesMutation,
   type RfqCommand,
   type RfqView,
-} from '../rfqApi'
+} from '@/features/rfq/services/rfqApi'
+import { useConfirm } from '@/components/ui/useConfirm'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 /** How each workflow action asks for its comment (reasons are required for clarification, re-open, cancel). */
 const COMMANDS: Record<Exclude<RfqCommand, 'start-review'>, { title: string; label: string; confirm: string; required: boolean; danger?: boolean }> = {
@@ -55,11 +56,12 @@ export function RfqDetailPage() {
   const id = Number(useParams().id)
   const { data: rfq, isLoading, error } = useRfqQuery(id)
   if (isLoading) return <LinearProgress />
-  if (!rfq) return <Alert severity="error">{problemMessage(error)}</Alert>
+  if (!rfq) return <ProblemAlert error={error} />
   return <RfqDetail rfq={rfq} />
 }
 
 function RfqDetail({ rfq }: { rfq: RfqView }) {
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const navigate = useNavigate()
   const [tab, setTab] = useState('overview')
   const [dialog, setDialog] = useState<Exclude<RfqCommand, 'start-review'> | null>(null)
@@ -81,7 +83,7 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
   }
 
   async function clone() {
-    if (!window.confirm(`Create a new draft RFQ from ${rfq.number}?`)) return
+    if (!(await confirm({ title: 'Clone RFQ?', message: `Create a new draft RFQ from ${rfq.number}?`, confirmLabel: 'Clone' }))) return
     try {
       const copy = await cloneRfq(rfq.id).unwrap()
       navigate(`/rfqs/${copy.id}`)
@@ -141,7 +143,7 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
         </Stack>
       </Stack>
 
-      {actionError != null && <Alert severity="error">{problemMessage(actionError)}</Alert>}
+      {actionError != null && <ProblemAlert error={actionError} />}
       {rfq.status === 'QUOTE_RECEIVED' && (
         <Alert severity="info" action={<Button color="inherit" size="small" onClick={() => setTab('quotes')}>Open quote</Button>}>
           ERGO has sent you a quote. Approve it, ask for a revision or decline it.
@@ -260,6 +262,7 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
           onClose={() => setDialog(null)}
         />
       )}
+      {confirmDialog}
     </Stack>
   )
 }
@@ -278,7 +281,7 @@ function InternalNotes({ rfq }: { rfq: RfqView & { audience: 'ERGO' } }) {
           ERGO only. Never visible to customers or suppliers.
         </Typography>
         <TextField multiline minRows={3} value={notes} disabled={!editable} onChange={(e) => setNotes(e.target.value)} slotProps={{ htmlInput: { maxLength: 4000, 'aria-label': 'Internal notes' } }} />
-        {saving.error != null && <Alert severity="error">{problemMessage(saving.error)}</Alert>}
+        {saving.error != null && <ProblemAlert error={saving.error} />}
         {editable && (
           <Button sx={{ justifySelf: 'start' }} disabled={notes === (rfq.internalNotes ?? '')} loading={saving.isLoading} onClick={() => void save({ id: rfq.id, internalNotes: notes || null })}>
             Save notes
@@ -291,6 +294,6 @@ function InternalNotes({ rfq }: { rfq: RfqView & { audience: 'ERGO' } }) {
 
 function History({ rfqId }: { rfqId: number }) {
   const { data = [], error } = useRfqHistoryQuery(rfqId)
-  if (error) return <Alert severity="error">{problemMessage(error)}</Alert>
+  if (error) return <ProblemAlert error={error} />
   return <AuditTrail rows={data} />
 }

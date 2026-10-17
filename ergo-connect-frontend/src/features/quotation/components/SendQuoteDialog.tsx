@@ -15,11 +15,12 @@ import {
   Typography,
 } from '@mui/material'
 import { useState } from 'react'
-import { num, text } from '../../../shared/form'
-import { useMasterOptionsQuery, type MasterOption } from '../../../shared/masterData'
-import { problemMessage } from '../../../shared/problem'
-import { formatMoney } from '../../rfq/labels'
-import { useSendCustomerQuoteMutation, type ComparisonLine, type ComparisonView, type ErgoQuoteForm, type QuoteType } from '../comparisonApi'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { num, text } from '@/utils/form'
+import { useMasterOptionsQuery, type MasterOption } from '@/utils/masterData'
+import { formatMoney } from '@/features/rfq/utils/labels'
+import { useSendCustomerQuoteMutation, type ComparisonLine, type ComparisonView, type ErgoQuoteForm, type QuoteType } from '@/features/quotation/services/comparisonApi'
+import { ProblemAlert } from '@/components/ui/ProblemAlert'
 
 type Field = keyof ErgoQuoteForm
 
@@ -28,6 +29,7 @@ type Field = keyof ErgoQuoteForm
  * margin hidden). ERGO's quote starts from the supplier's terms, in the RFQ currency where a rate converts them.
  */
 export function SendQuoteDialog({ view, line, onClose }: { view: ComparisonView; line: ComparisonLine; onClose: () => void }) {
+  const [lowMargin, setLowMargin] = useState(false)
   const q = line.quote
   const inRfqCurrency = q.currency?.id === view.currency.id
   const price = (amount: number | null, converted: number | null) => text(inRfqCurrency ? amount : converted)
@@ -78,11 +80,13 @@ export function SendQuoteDialog({ view, line, onClose }: { view: ComparisonView;
       ...extra,
     })
 
+  function trySubmit() {
+    if (type === 'ERGO_QUOTE' && margin != null && margin <= 0) setLowMargin(true)
+    else void submit()
+  }
+
   async function submit() {
-    if (type === 'ERGO_QUOTE' && margin != null && margin <= 0) {
-      const zero = margin === 0
-      if (!window.confirm(`This ERGO quote has ${zero ? 'no margin over' : 'a lower price than'} the supplier's cost. Send anyway?`)) return
-    }
+    setLowMargin(false)
     try {
       await send({
         rfqId: view.rfqId,
@@ -154,14 +158,22 @@ export function SendQuoteDialog({ view, line, onClose }: { view: ComparisonView;
           ))}
 
         <TextField label="Remarks for the customer (optional)" multiline minRows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)} slotProps={{ htmlInput: { maxLength: 4000 } }} />
-        {sending.error != null && <Alert severity="error">{problemMessage(sending.error)}</Alert>}
+        {sending.error != null && <ProblemAlert error={sending.error} />}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>
-        <Button variant="contained" loading={sending.isLoading} onClick={() => void submit()}>
+        <Button variant="contained" loading={sending.isLoading} onClick={trySubmit}>
           Send to customer
         </Button>
       </DialogActions>
+      <ConfirmDialog
+        open={lowMargin}
+        title="Send at a loss?"
+        message={`This ERGO quote has ${margin === 0 ? 'no margin over' : 'a lower price than'} the supplier's cost. Send anyway?`}
+        confirmLabel="Send anyway"
+        onConfirm={() => void submit()}
+        onCancel={() => setLowMargin(false)}
+      />
     </Dialog>
   )
 }
