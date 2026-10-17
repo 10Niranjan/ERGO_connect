@@ -8,3 +8,7 @@ spring:
 ergo:
   security:
     jwt-secret: dev-only-jwt-secret-never-use-outside-local-dev
+  communication:
+    # Prod runs this once a day at 06:00. In dev it runs every 5 minutes (reminders are deduplicated per day), so a
+    # freshly seeded demo database shows overdue reminders without waiting for the morning.
+    overdue-cron: "0 */5 * * * *"

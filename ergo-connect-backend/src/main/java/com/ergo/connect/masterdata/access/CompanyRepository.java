@@ -25,6 +25,9 @@ interface CompanyRepository extends Repository<Company, Long> {
 
 	boolean existsByCodeIgnoreCase(String code);
 
+	/** Dev seeding only: re-resolve the demo companies when the database already has them. */
+	Optional<Company> findByCodeIgnoreCase(String code);
+
 	long count();
 
 	/** Dashboard "Pending approvals" widget (ERGO Admin/Management only). */

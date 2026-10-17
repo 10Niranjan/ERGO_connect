@@ -50,15 +50,18 @@ class DevDataSeeder implements ApplicationRunner {
 	@Override
 	@Transactional
 	public void run(ApplicationArguments args) {
-		if (companies.count() > 0) {
-			return;
-		}
 		String hash = passwordEncoder.encode(PASSWORD);
-		Company ergo = company("ERGO", "ERGO", ERGO);
-		Company acme = company("ACME-AUTO", "Acme Automotive", CUSTOMER);
-		Company bharat = company("BHARAT-MOTORS", "Bharat Motors", CUSTOMER);
-		Company precision = company("PRECISION-CAST", "Precision Castings", SUPPLIER);
-		Company shakti = company("SHAKTI-FORGE", "Shakti Forgings", SUPPLIER);
+		boolean fresh = companies.count() == 0;
+		Company ergo = fresh ? company("ERGO", "ERGO", ERGO) : companies.findByCodeIgnoreCase("ERGO").orElseThrow();
+		Company acme = fresh ? company("ACME-AUTO", "Acme Automotive", CUSTOMER) : companies.findByCodeIgnoreCase("ACME-AUTO").orElseThrow();
+		Company bharat = fresh ? company("BHARAT-MOTORS", "Bharat Motors", CUSTOMER)
+				: companies.findByCodeIgnoreCase("BHARAT-MOTORS").orElseThrow();
+		Company precision = fresh ? company("PRECISION-CAST", "Precision Castings", SUPPLIER)
+				: companies.findByCodeIgnoreCase("PRECISION-CAST").orElseThrow();
+		Company shakti = fresh ? company("SHAKTI-FORGE", "Shakti Forgings", SUPPLIER)
+				: companies.findByCodeIgnoreCase("SHAKTI-FORGE").orElseThrow();
+		// Order matters on a fresh database: the frontend demo personas (demoAccounts.ts) sign tokens with these
+		// identity ids, so the first 20 users must come out as 1..20 in exactly this sequence.
 		user(ergo, "Asha", "Admin", "admin@ergo.dev", hash, Role.ERGO_ADMIN);
 		user(ergo, "Mohan", "Management", "management@ergo.dev", hash, Role.ERGO_MANAGEMENT);
 		user(ergo, "Ravi", "Rao", "rfq@ergo.dev", hash, Role.ERGO_RFQ, Role.ERGO_NPD); // two roles: role selection
@@ -68,6 +71,20 @@ class DevDataSeeder implements ApplicationRunner {
 		user(bharat, "Bala", "Nair", "buyer@bharat.dev", hash, Role.CUSTOMER_RFQ);
 		user(precision, "Prakash", "Shah", "sales@precision.dev", hash, Role.SUPPLIER_RFQ);
 		user(shakti, "Sunil", "Patel", "sales@shakti.dev", hash, Role.SUPPLIER_RFQ);
+		user(ergo, "Vikram", "Singh", "ofp@ergo.dev", hash, Role.ERGO_OFP);
+		user(ergo, "Kavya", "Reddy", "npd@ergo.dev", hash, Role.ERGO_NPD, Role.ERGO_OFP);
+		user(acme, "Rohit", "Desai", "npd@acme.dev", hash, Role.CUSTOMER_NPD);
+		user(acme, "Neha", "Kulkarni", "logistics@acme.dev", hash, Role.CUSTOMER_OFP);
+		user(acme, "Amit", "Verma", "quality@acme.dev", hash, Role.CUSTOMER_QUALITY);
+		user(acme, "Sunita", "Deshpande", "account@acme.dev", hash, Role.CUSTOMER_KAM, Role.CUSTOMER_RFQ);
+		user(precision, "Harish", "Gupta", "tooling@precision.dev", hash, Role.SUPPLIER_NPD);
+		user(precision, "Prakash", "Jadhav", "planner@precision.dev", hash, Role.SUPPLIER_OFP);
+		user(precision, "Lakshmi", "Menon", "qa@precision.dev", hash, Role.SUPPLIER_QUALITY);
+		user(precision, "Farhan", "Sheikh", "lead@precision.dev", hash, Role.SUPPLIER_KAM, Role.SUPPLIER_RFQ);
+		user(acme, "Raman", "Athreya", "management@acme.dev", hash, Role.CUSTOMER_MANAGEMENT);
+		if (!fresh) {
+			return;
+		}
 
 		entry(MasterList.MATERIALS, "EN8", "EN8 carbon steel", Map.of("specification", "BS 970 080M40", "grade", "EN8"));
 		entry(MasterList.MATERIALS, "SS304", "Stainless steel 304", Map.of("specification", "ASTM A240", "grade", "304"));
@@ -93,6 +110,10 @@ class DevDataSeeder implements ApplicationRunner {
 	}
 
 	private User user(Company company, String firstName, String lastName, String email, String hash, Role... roles) {
+		var existing = users.findByEmail(email);
+		if (existing.isPresent()) {
+			return existing.get();
+		}
 		User user = new User();
 		user.companyId = company.id;
 		user.firstName = firstName;
