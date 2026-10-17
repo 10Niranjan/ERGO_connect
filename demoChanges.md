@@ -20,7 +20,7 @@ To facilitate seamless demonstration:
 
 Per the **Software Requirements Document (SRS §2)** and `Role.java`:
 
-### A. ERGO Internal Team (7 Roles — Company: ERGO Connect Internal)
+### A. ERGO Internal Team (7 Roles — Company: ERGO)
 | Employee | Email | Role Code | Functional Responsibility | Landing Route |
 | :--- | :--- | :--- | :--- | :--- |
 | **Asha Admin** | `admin@ergo.dev` | `ERGO_ADMIN` | System administrator: User admin, master data, audit logs | `/` |
@@ -28,26 +28,26 @@ Per the **Software Requirements Document (SRS §2)** and `Role.java`:
 | **Kavya Menon** | `kam@ergo.dev` | `ERGO_KAM` | Key Account Manager for customer accounts (Acme, Bharat) | `/` |
 | **Ravi Rao** | `rfq@ergo.dev` | `ERGO_RFQ` | RFQ review, BOM flow, quote floating, price comparison | `/rfqs` |
 | **Kavya Reddy** | `npd@ergo.dev` | `ERGO_NPD` | 9-stage NPD development, activity gating, sample readiness | `/npd` |
-| **Vikram Singh** | `ofp@ergo.dev` | `ERGO_OFP` | Purchase orders, production milestones, dispatch readiness | `/orders` |
-| **Kiran Kumar** | `quality@ergo.dev` | `ERGO_QUALITY` | Incoming/final inspection, NCRs, deviations/concessions, CAPA | `/quality/inspections` |
+| **Vikram Singh** | `ofp@ergo.dev` | `ERGO_OFP` | Purchase orders, production milestones, dispatch readiness | `/ofp` |
+| **Kiran Kumar** | `quality@ergo.dev` | `ERGO_QUALITY` | Incoming/final inspection, NCRs, deviations/concessions, CAPA | `/quality` |
 
-### B. Customer Accounts (6 Roles — Company: Acme Automotive Ltd)
+### B. Customer Accounts (6 Roles — Company: Acme Automotive)
 | Employee | Email | Role Code | Functional Responsibility | Landing Route |
 | :--- | :--- | :--- | :--- | :--- |
 | **Alice Iyer** | `buyer@acme.dev` | `CUSTOMER_RFQ` | Sourcing Buyer: Part RFQ submission, quotation review & approval | `/rfqs` |
-| **Rohit Desai** | `npd@acme.dev` | `CUSTOMER_NPD` | Development milestones, tooling dates, sample approval gates | `/npd` |
-| **Neha Kulkarni** | `logistics@acme.dev` | `CUSTOMER_OFP` | Delivery progress, shipment tracking, dispatch notes | `/orders` |
-| **Amit Verma** | `quality@acme.dev` | `CUSTOMER_QUALITY` | Inspection certificates review, quality complaints, deviations | `/quality/inspections` |
+| **Rohit Desai** | `npd@acme.dev` | `CUSTOMER_NPD` | Development milestones, tooling dates, sample approval gates | `/npd/mine` |
+| **Neha Kulkarni** | `logistics@acme.dev` | `CUSTOMER_OFP` | Delivery progress, shipment tracking, dispatch notes | `/ofp` |
+| **Amit Verma** | `quality@acme.dev` | `CUSTOMER_QUALITY` | Inspection certificates review, quality complaints, deviations | `/quality` |
 | **Sunita Deshpande** | `account@acme.dev` | `CUSTOMER_KAM` | Account-wide oversight across Acme Automotive contracts | `/` |
 | **Raman Athreya** | `management@acme.dev` | `CUSTOMER_MANAGEMENT` | Plant Head: Volume, spend, project statuses, supplier ratings | `/` |
 
-### C. Supplier Partners (5 Roles — Company: Precision Castings Ltd)
+### C. Supplier Partners (5 Roles — Company: Precision Castings)
 | Employee | Email | Role Code | Functional Responsibility | Landing Route |
 | :--- | :--- | :--- | :--- | :--- |
-| **Prakash Shah** | `sales@precision.dev` | `SUPPLIER_RFQ` | Review invited RFQs, cost breakdown & tooling pricing | `/rfqs` |
-| **Harish Gupta** | `tooling@precision.dev` | `SUPPLIER_NPD` | Tooling progress, sample manufacturing, DFM attachments | `/npd` |
-| **Prakash Jadhav** | `planner@precision.dev` | `SUPPLIER_OFP` | Production batch tracking, committed dispatch dates, packing | `/orders` |
-| **Lakshmi Menon** | `qa@precision.dev` | `SUPPLIER_QUALITY` | Self-inspection submission, 8D/CAPA responses, concessions | `/quality/inspections` |
+| **Prakash Shah** | `sales@precision.dev` | `SUPPLIER_RFQ` | Review invited RFQs, cost breakdown & tooling pricing | `/quotes` |
+| **Harish Gupta** | `tooling@precision.dev` | `SUPPLIER_NPD` | Tooling progress, sample manufacturing, DFM attachments | `/npd/mine` |
+| **Prakash Jadhav** | `planner@precision.dev` | `SUPPLIER_OFP` | Production batch tracking, committed dispatch dates, packing | `/ofp` |
+| **Lakshmi Menon** | `qa@precision.dev` | `SUPPLIER_QUALITY` | Self-inspection submission, 8D/CAPA responses, concessions | `/quality` |
 | **Farhan Sheikh** | `lead@precision.dev` | `SUPPLIER_KAM` | Commercial lead: Quotation reviews, order delivery capacity | `/` |
 
 ---
@@ -74,23 +74,24 @@ Per the **Software Requirements Document (SRS §2)** and `Role.java`:
   - Rehydrates the active demo session from `sessionStorage` on page refresh.
 
 ### 4. Database Alignment
-- Seeded the PostgreSQL database (`users` and `user_role_mappings` tables) with all 19 demo personas across ERGO, Acme Automotive, and Precision Castings.
-- Aligned user IDs in `demoAccounts.ts` with database primary keys.
+- `DevDataSeeder` (dev profile) creates every persona by email, idempotently, in a fixed order so a fresh database gives them ids 1..20. `demoAccounts.ts` signs tokens with those ids, so **do not reorder the `user(...)` calls** (append new personas at the end and give them the next id).
+- Each persona's `allRoles` in `demoAccounts.ts` equals its role set in the database, so the role dropdown in the top bar matches what the server knows.
+- Demo role switching never calls the backend: `startDemoSession` re-signs the token for the chosen role, clears the API cache and stores the session, exactly like a real login/role switch does.
 
----
+### 5. Demo dataset (every module, every field)
+`node ergo-connect-backend/docker/seed-demo-data.mjs` (backend on :8080) fills a fresh dev database through the real REST API, as the real demo personas, so every workflow rule, audit row and notification fires exactly as in use. It takes about 45 seconds and is safe to re-run (each phase skips what already exists). `--only=3,4` runs just those phases (phase 1 always runs, it feeds the others).
 
-## 4. How to Conduct the Client Demo
+| Phase | File | What it creates |
+| :--- | :--- | :--- |
+| 1 | `seed/01-master-and-companies.mjs` | 13 materials, 15 processes, 9 coatings, 6 payment terms, 7 shipment modes, 6 months of exchange rates; full profiles for 8 companies (one left pending approval); 10 extra users so Bharat, Shakti and Sahyadri have their own NPD/OFP/quality people; phone numbers for everyone |
+| 2 | `seed/02-rfq-and-quotes.mjs` | 16 RFQs covering every status (draft, submitted, under review, clarification asked and answered, validated, sent to suppliers, quotes partial/complete, sent to customer, revision requested, approved, declined, cancelled, closed); multi-supplier quotes with scoring, shortlisting, a re-opened quote and a supplier clarification; drawings, specs, cost sheets |
+| 3 | `seed/03-npd.mjs` | 4 NPD projects at different stages (one delayed with a blocked activity) with ERGO/supplier/customer activities, dependencies, checklists, issues/risks and approvals, advanced through the real stage-gate rules |
+| 4 | `seed/04-orders.mjs` | 9 orders from "created" to "closed" (hold, delayed, in transit, delivered with proof of delivery, NPD handover), material status, production progress, packaging, shipments |
+| 5 | `seed/05-quality.mjs` | 9 inspections in every result state, 5 NCRs from open to closed with CAPA actions and evidence, 5 deviations through the ERGO and customer approval chain |
+| 6 | `seed/06-comments-documents-notifications.mjs` | 27 comment threads (replies, mentions, queries, escalations, attachments), document-library approvals/rejection/lock/new version, real sign-ins, notifications spread over the last four weeks with most marked read |
 
-1. **Launch the Application**:
-   - Backend: Run `./mvnw spring-boot:run` in `ergo-connect-backend`.
-   - Frontend: Run `npm run dev` in `ergo-connect-frontend`.
-   - Open **`http://localhost:5173/login`** in your browser.
+Clean slate: recreate the database container, start the backend (it seeds the 20 personas as user ids 1..20), then run the script.
+Overdue-reminder notifications come from a scheduled job; in the dev profile it runs every 5 minutes, so they appear a few minutes after seeding.
 
-2. **Login as any Persona**:
-   - Select a tab (**ERGO Internal**, **Customer Accounts**, or **Supplier Partners**).
-   - Click on any card (e.g., **Mohan Management**, **Ravi Rao**, or **Alice Iyer**).
-   - You are immediately signed in and redirected to that role's primary landing dashboard.
-
-3. **Switch Roles During the Walkthrough**:
-   - Click **"Switch Demo Role"** in the top navigation bar.
-   - Choose a different persona to immediately switch context and show the customer or supplier view of the same data without having to sign out.
+### 6. Local setup notes
+- If another PostgreSQL already listens on 5432 (common on Windows), the backend's password check fails against it. Run the demo database on another port and point the backend there: `docker run -d --name ergo-pg -e POSTGRES_DB=ergo_connect -e POSTGRES_USER=ergo -e POSTGRES_PASSWORD=ergo -p 5433:5432 postgres:17-alpine`, then start the backend with `SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5433/ergo_connect`.
