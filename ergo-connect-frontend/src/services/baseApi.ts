@@ -23,10 +23,18 @@ const NO_RETRY = ['/auth/login', '/auth/refresh', '/auth/logout']
 // Requests that hit an expired access token share one refresh call, then retry once.
 let refreshing: Promise<boolean> | null = null
 
+const DEMO_STORAGE_KEY = 'ergo_connect_demo_session'
+
 export const baseQuery: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError> = async (args, api, extra) => {
   const result = await rawBaseQuery(args, api, extra)
   const url = typeof args === 'string' ? args : args.url
   if (result.error?.status !== 401 || NO_RETRY.includes(url)) return result
+
+  // During client demo presentations, never terminate the session on a 401
+  const isDemo = typeof window !== 'undefined' && Boolean(sessionStorage.getItem(DEMO_STORAGE_KEY))
+  if (isDemo) {
+    return result
+  }
 
   refreshing ??= Promise.resolve(rawBaseQuery({ url: '/auth/refresh', method: 'POST' }, api, extra))
     .then((refreshed) => {
