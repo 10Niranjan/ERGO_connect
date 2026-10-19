@@ -1,17 +1,18 @@
 // One-off: records the real backend's GET responses for every demo persona/role into src/demo/fixtures/*.json,
 // so the frontend-only demo build (VITE_DEMO_MOCK) can run without a server.
 //   node scripts/capture-fixtures.mjs [http://localhost:8080]   (backend on dev profile, data seeded)
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 
 const BASE = (process.argv[2] ?? 'http://localhost:8080') + '/api'
 const OUT = new URL('../src/demo/fixtures/', import.meta.url)
+// ONLY=a@x,b@y re-records just those personas; OTP_LOG=<backend log> lets 2FA personas (admin) sign in via the dev mailer's logged code.
+const ONLY = process.env.ONLY?.split(',')
 const EMAILS = `admin management kam rfq npd ofp quality`.split(' ').map((n) => `${n}@ergo.dev`)
   .concat(`buyer npd logistics quality account management`.split(' ').map((n) => `${n}@acme.dev`))
   .concat(`sales tooling planner qa lead`.split(' ').map((n) => `${n}@precision.dev`))
 const MODULES = ['rfq', 'quotation', 'npd', 'ofp', 'inspection', 'ncr', 'deviation']
 
-rmSync(OUT, { recursive: true, force: true })
-mkdirSync(OUT, { recursive: true })
+mkdirSync(OUT, { recursive: true }) // existing files are overwritten, others kept
 
 const call = async (path, token, init = {}) => {
   const res = await fetch(BASE + path, {
@@ -62,8 +63,14 @@ async function capture(session) {
   return out
 }
 
-for (const email of EMAILS) {
-  const login = await call('/auth/login', '', { method: 'POST', body: JSON.stringify({ email, password: 'ErgoDev#2026' }) })
+for (const email of EMAILS.filter((e) => !ONLY || ONLY.includes(e))) {
+  let login = await call('/auth/login', '', { method: 'POST', body: JSON.stringify({ email, password: 'ErgoDev#2026' }) })
+  if (login.body?.otpRequired && process.env.OTP_LOG) {
+    await new Promise((r) => setTimeout(r, 1000))
+    const lines = readFileSync(process.env.OTP_LOG, "latin1").split(/\r?\n/)
+    const code = lines.filter((l) => l.includes(`login code for ${email}`)).pop()?.match(/(\d{6})\s*$/)?.[1]
+    login = await call('/auth/verify-otp', '', { method: 'POST', body: JSON.stringify({ email, code }) })
+  }
   if (login.body?.otpRequired) { console.error('skipped (2FA required):', email); continue }
   if (login.status !== 200) { console.error('login failed', email, login.status); continue }
   const sessions = [login.body]

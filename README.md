@@ -20,5 +20,4 @@ output `dist`, SPA rewrite). No environment variables are needed.
 - Demo login/role switching: see `demoChanges.md`. Mock layer: `src/demo/mockBaseQuery.ts`, switched on in
   `src/services/baseApi.ts` (set `VITE_DEMO_MOCK=false` to talk to a real API again).
 - Refreshing the data needs the full backend (not on this branch): `node scripts/capture-fixtures.mjs`.
-- Not included: `admin@ergo.dev` (admin logins require a 2FA code) and `management@acme.dev` (login returned 403
-  when recorded), so those two personas show empty/"not part of the demo" screens.
+- All 18 roles are recorded. Admin's 2FA code and the inactive `CUSTOMER_MANAGEMENT` role were handled on a local dev database only (nothing in the backend changed).
