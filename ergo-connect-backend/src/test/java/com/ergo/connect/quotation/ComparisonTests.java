@@ -265,7 +265,7 @@ class ComparisonTests {
 
 		// ERGO Admin has no write right anywhere in quotation
 		Login admin = users.login(users.company("ERGO"), "ERGO_ADMIN");
-		call(post("/api/rfqs/{id}/quotes", rfqId), admin, "{\"supplierIds\": [%d]}".formatted(supplierX))
+		call(post("/api/rfqs/{id}/quotes", rfqId), admin, "{\"supplierIds\": [%d], \"responseDueDate\": \"2099-01-01\"}".formatted(supplierX))
 			.andExpect(status().isForbidden());
 		call(post("/api/quotes/{id}/decision", x), admin, "{\"decision\": \"SHORTLIST\"}")
 			.andExpect(status().isForbidden());
@@ -281,13 +281,21 @@ class ComparisonTests {
 			call(get("/api/rfqs/{id}/customer-quotes", rfqId), users.login(customer, role), null)
 				.andExpect(status().isForbidden());
 		}
-		for (String role : List.of("CUSTOMER_KAM", "CUSTOMER_MANAGEMENT")) {
-			Login limited = users.login(customer, role);
-			call(post("/api/customer-quotes/{id}/respond", sent), limited, "{\"response\": \"APPROVED\"}")
-				.andExpect(status().isForbidden());
-			call(post("/api/customer-quotes/{id}/respond", sent), limited,
-					"{\"response\": \"DECLINED\", \"comment\": \"x\"}")
-				.andExpect(status().isForbidden());
+		// Customer Management is inactive in the roles table for the MVP (V2), so it cannot sign in; switch it on
+		// for this check only, so the sheet's "A, not CO" cell is still exercised.
+		jdbc.update("UPDATE roles SET active = true WHERE role_code = 'CUSTOMER_MANAGEMENT'");
+		try {
+			for (String role : List.of("CUSTOMER_KAM", "CUSTOMER_MANAGEMENT")) {
+				Login limited = users.login(customer, role);
+				call(post("/api/customer-quotes/{id}/respond", sent), limited, "{\"response\": \"APPROVED\"}")
+					.andExpect(status().isForbidden());
+				call(post("/api/customer-quotes/{id}/respond", sent), limited,
+						"{\"response\": \"DECLINED\", \"comment\": \"x\"}")
+					.andExpect(status().isForbidden());
+			}
+		}
+		finally {
+			jdbc.update("UPDATE roles SET active = false WHERE role_code = 'CUSTOMER_MANAGEMENT'");
 		}
 		call(get("/api/rfqs/{id}/customer-quotes", rfqId), buyer, null)
 			.andExpect(jsonPath("$.quotes[0].actions", hasItem("APPROVE")));

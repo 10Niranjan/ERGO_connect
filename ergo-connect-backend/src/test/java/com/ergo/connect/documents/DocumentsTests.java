@@ -186,7 +186,7 @@ class DocumentsTests {
 		long rfqId = draftRfq(buyerA);
 		long docId = idOf(upload("/api/rfqs/{id}/documents", rfqId, buyerA, "spec.pdf")); // forced CUSTOMER visibility
 		validate(rfqId, buyerA);
-		call(patch("/api/documents/{id}", docId), ergoAdmin, "{\"visibility\": \"ALL\"}").andExpect(status().isOk());
+		call(patch("/api/documents/{id}", docId), ergoRfq, "{\"visibility\": \"ALL\"}").andExpect(status().isOk());
 		invite(rfqId, supplierX);
 
 		call(get("/api/documents/{id}", docId), sellerX, null).andExpect(status().isOk())
@@ -451,7 +451,7 @@ class DocumentsTests {
 				.andExpect(status().isUnprocessableEntity());
 		}
 		call(patch("/api/documents/{id}", docId), buyerA, "{\"visibility\": \"CUSTOMER\"}").andExpect(status().isOk());
-		call(patch("/api/documents/{id}", docId), ergoAdmin, "{\"visibility\": \"ALL\"}").andExpect(status().isOk())
+		call(patch("/api/documents/{id}", docId), ergoRfq, "{\"visibility\": \"ALL\"}").andExpect(status().isOk())
 			.andExpect(jsonPath("$.visibility").value("ALL"));
 	}
 
@@ -459,7 +459,7 @@ class DocumentsTests {
 	void anExternalReplaceResetsVisibilityInsteadOfInheritingWhatErgoGrantedTheReviewedVersion() throws Exception {
 		long rfqId = draftRfq(buyerA);
 		long v1 = idOf(upload("/api/rfqs/{id}/documents", rfqId, buyerA, "mine.pdf"));
-		call(patch("/api/documents/{id}", v1), ergoAdmin, "{\"visibility\": \"ALL\"}").andExpect(status().isOk());
+		call(patch("/api/documents/{id}", v1), ergoRfq, "{\"visibility\": \"ALL\"}").andExpect(status().isOk());
 
 		replace(v1, buyerA, "mine-v2.pdf").andExpect(status().isOk())
 			.andExpect(jsonPath("$.versionNo").value(2))
