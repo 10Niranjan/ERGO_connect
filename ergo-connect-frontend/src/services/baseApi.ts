@@ -8,6 +8,7 @@ import {
 import { API_BASE_URL } from '@/constants/config'
 import { sessionEnded, sessionStarted, type AuthState, type Session } from '@/features/auth/store/authSlice'
 import { DEMO_STORAGE_KEY } from '@/features/auth/utils/demoAccounts'
+import { mockBaseQuery } from '@/demo/mockBaseQuery'
 
 const rawBaseQuery = fetchBaseQuery({
   baseUrl: API_BASE_URL,
@@ -48,7 +49,10 @@ export const baseQuery: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryE
 }
 
 // RTK Query root. Each feature adds its endpoints with api.injectEndpoints().
+// This branch ships as a frontend-only demo (Vercel): recorded responses instead of a server. VITE_DEMO_MOCK=false restores the real API.
+const useMock = import.meta.env.VITE_DEMO_MOCK !== 'false'
+
 export const api = createApi({
-  baseQuery,
+  baseQuery: useMock ? mockBaseQuery : baseQuery,
   endpoints: () => ({}),
 })
