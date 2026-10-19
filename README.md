@@ -16,7 +16,7 @@ flowchart LR
 
 | Org type | Examples of role | Sees |
 |---|---|---|
-| **ERGO** | Admin, Management, RFQ/Sales, KAM, Quality, Production | everything in scope of their role + assigned accounts |
+| **ERGO** | Admin (view-only), Management, RFQ, KAM, NPD, OFP, Quality | what the role access sheet grants, within their assigned accounts/records |
 | **Customer** | Buyer | their own company's RFQs, quotes, NPD projects, orders — never suppliers, never competitor quotes |
 | **Supplier** | Sales | RFQs floated to them, their own quotes — never the customer, never other suppliers' quotes |
 
@@ -83,6 +83,15 @@ sequenceDiagram
 ```
 
 Every response also carries the caller's allowed actions (computed by the same checks that enforce them), so the UI only ever renders buttons the user can actually use.
+
+### Role access sheet (single source of truth)
+
+The module-by-role matrix lives in one place: `common/security/ModuleAccess.java`. Each role gets a level per module (RFQ, Quotation, NPD, OFP, Quality): `NONE` · `V` view · `A` act (edit/create) · `O` own/approve · `CO` customer-side approver. `AccessGuard` (bean `access`) exposes it to controllers, e.g. `@PreAuthorize("@access.view('RFQ')")`, `@access.act('OFP','SUPPLIER')`, `@access.approve('QUOTATION','ERGO')`, and services derive their actor/viewer sets from the same sheet. The frontend mirrors it in `features/auth/utils/access.ts`, and `ModuleAccessTests` cross-checks the backend sheet. Practical consequences:
+
+- A role with no access to a module gets 403/404 — and sees no data from it. For example Supplier Quality has RFQ access but none on Quotation, so it gets a dedicated assigned-RFQ view with no quote status, versions or correspondence.
+- Only the customer-side approver (`CO`, Customer RFQ) approves or declines a quote sent to the customer; other customer roles may only ask for a revision.
+- ERGO Admin is a viewer: it is in no actor or approver set.
+- Customer/supplier visibility flags on inspections, NCRs and deviations can be changed only by the Quality approvers.
 
 ## NPD workflow example (9 stages)
 
@@ -244,6 +253,7 @@ CI-only secret: `NVD_API_KEY` (GitHub repo secret, not an app env var) turns on 
 - [x] Phase 6: Documents Library (versions, locking, approvals) + Communication Center (threaded per-record comments, @mentions, attachments)
 - [x] Phase 7: Role-specific Dashboards (Management, Functional, Customer, Supplier)
 - [x] Sprint 2: Frontend refactored to scalable feature-based layout with responsive sidebar navigation for all logins
-- [ ] Phase 8: Azure cloud deployment & hardening
+- [x] Sprint 3: single role access sheet (`ModuleAccess` + `AccessGuard`) adopted across RFQ, Quotation, NPD, OFP and Quality, with security-review follow-ups (assigned-RFQ view for suppliers without Quotation access, exposure flags limited to Quality approvers, tightened cross-module facades). Backend suite still to be re-run with Docker.
+- [ ] Phase 8: hardening & Azure deployment — done: CVE gate, secrets audit, transport hardening, Redis rate limiter, change-password, first-admin bootstrap, forgot-password email, optional 2FA, Azure Blob storage, upload virus scanning, Dockerfiles, Bicep (`infra/`, not yet deployed) and deploy workflow (not yet run). Remaining: Application Insights, backup & recovery, load testing, pen-test pass, SRS §21 sign-off.
 
 See `ARCHITECTURE.md` §6 for the full build order and rationale.
