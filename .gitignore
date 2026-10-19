@@ -19,3 +19,8 @@ Thumbs.db
 .idea/
 .vscode/
 *.log
+
+# frontend
+dist-ssr
+*.local
+.vercel

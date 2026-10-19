@@ -1,9 +1,0 @@
-ergo:
-  security:
-    jwt-secret: test-only-jwt-secret-0123456789abcdef
-    login-rate-limit:
-      # Every IntegrationTest shares one context and one Redis, and MockMvc calls that don't set a remote
-      # address all land on the same IP key - so the whole suite's login traffic, not just one test's, would
-      # trip a production-sized limit. LoginRateLimiterEndpointTest overrides this back down to prove the
-      # real default actually blocks (Phase 8d, ARCHITECTURE.md §8).
-      max-attempts: 100000
