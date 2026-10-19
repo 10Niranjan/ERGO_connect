@@ -79,6 +79,13 @@ public interface RfqApi {
 	/** For the current customer user; 404 unless it is their own company's RFQ. */
 	CustomerRfqRef forCustomer(long rfqId);
 
+	/**
+	 * Just the RFQ's number, with no scope check of its own: for a module whose own record (an NPD project, an order)
+	 * the caller has already proven in scope, so an ERGO role with no RFQ access can still read which RFQ it came from.
+	 * External callers get 404: they read the number through {@link #forCustomer} / {@link #forSupplier}.
+	 */
+	String numberOf(long rfqId);
+
 	/** Callers must have checked the supplier's invitation first. */
 	SupplierRfq forSupplier(long rfqId);
 

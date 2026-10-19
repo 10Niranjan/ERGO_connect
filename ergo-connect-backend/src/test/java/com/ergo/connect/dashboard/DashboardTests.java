@@ -143,19 +143,20 @@ class DashboardTests {
 	@Test
 	void ergoFunctionalRolesGetOnlyTheirOwnModule() throws Exception {
 		createRfq(buyerA, "PN-FUNC-1");
+		createNcr(customerA);
 
+		// role sheet: ERGO RFQ has "V" on Quality, so its dashboard now carries the NCRs too
 		mvc.perform(get("/api/dashboard").header(HttpHeaders.AUTHORIZATION, ergoRfq.bearer()))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.audience").value("FUNCTIONAL"))
 			.andExpect(jsonPath("$.rfqItems", not(empty())))
-			.andExpect(jsonPath("$.ncrItems", empty())); // ERGO_RFQ has no Quality-module visibility (SRS §10.8 X)
+			.andExpect(jsonPath("$.ncrItems", not(empty())));
 
-		createNcr(customerA);
 		mvc.perform(get("/api/dashboard").header(HttpHeaders.AUTHORIZATION, ergoQuality.bearer()))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.audience").value("FUNCTIONAL"))
 			.andExpect(jsonPath("$.ncrItems", not(empty())))
-			.andExpect(jsonPath("$.rfqItems", empty())); // ERGO_QUALITY has no RFQ-module visibility (SRS §10.4 X)
+			.andExpect(jsonPath("$.rfqItems", empty())); // ERGO_QUALITY has no RFQ-module visibility (role sheet: blank)
 	}
 
 	@Test

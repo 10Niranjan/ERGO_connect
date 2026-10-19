@@ -87,13 +87,17 @@ function SentQuote({ quote }: { quote: CustomerQuoteView }) {
         )}
         {quote.actions.length > 0 && (
           <Stack direction="row" spacing={1}>
-            <Button variant="contained" onClick={() => setAnswer('APPROVED')}>
-              Approve
-            </Button>
-            <Button onClick={() => setAnswer('REVISION_REQUESTED')}>Request revision</Button>
-            <Button color="error" onClick={() => setAnswer('DECLINED')}>
-              Decline
-            </Button>
+            {quote.actions.includes('APPROVE') && (
+              <Button variant="contained" onClick={() => setAnswer('APPROVED')}>
+                Approve
+              </Button>
+            )}
+            {quote.actions.includes('REQUEST_REVISION') && <Button onClick={() => setAnswer('REVISION_REQUESTED')}>Request revision</Button>}
+            {quote.actions.includes('DECLINE') && (
+              <Button color="error" onClick={() => setAnswer('DECLINED')}>
+                Decline
+              </Button>
+            )}
           </Stack>
         )}
       </CardContent>

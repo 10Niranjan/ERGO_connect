@@ -29,6 +29,8 @@ import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.common.record.Awaiting;
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
+import com.ergo.connect.common.security.ModuleAccess;
+import com.ergo.connect.common.security.ModuleAccess.Module;
 import com.ergo.connect.common.security.Role;
 import com.ergo.connect.masterdata.api.Directory;
 import com.ergo.connect.masterdata.api.Directory.CompanyRef;
@@ -44,12 +46,14 @@ import com.ergo.connect.npd.api.NpdApi;
 @Transactional
 class NpdApiService implements NpdApi {
 
-	private static final Set<Role> FULL_VIEWERS = EnumSet.of(ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_RFQ, ERGO_NPD);
+	/** The role sheet (ModuleAccess), NPD column: every ERGO role with access except the account-scoped KAM. */
+	private static final Set<Role> FULL_VIEWERS = ModuleAccess.viewers(Module.NPD, CompanyType.ERGO).stream()
+		.filter(r -> r != ERGO_KAM)
+		.collect(Collectors.toCollection(() -> EnumSet.noneOf(Role.class)));
 
-	private static final Set<Role> CUSTOMER_EDITORS = EnumSet.of(CUSTOMER_NPD, CUSTOMER_QUALITY);
+	private static final Set<Role> CUSTOMER_VIEWERS = ModuleAccess.viewers(Module.NPD, CompanyType.CUSTOMER);
 
-	private static final Set<Role> SUPPLIER_EDITORS = EnumSet.of(SUPPLIER_NPD, SUPPLIER_OFP, SUPPLIER_QUALITY,
-			SUPPLIER_KAM);
+	private static final Set<Role> SUPPLIER_VIEWERS = ModuleAccess.viewers(Module.NPD, CompanyType.SUPPLIER);
 
 	private final NpdProjectRepository projects;
 
@@ -120,10 +124,10 @@ class NpdApiService implements NpdApi {
 			Set<Long> accounts = directory.accountsOf(me.userId());
 			visible = accounts.isEmpty() ? List.of() : projects.findByCustomerCompanyIdInOrderByIdDesc(accounts);
 		}
-		else if (CUSTOMER_EDITORS.contains(me.role())) {
+		else if (CUSTOMER_VIEWERS.contains(me.role())) {
 			visible = projects.findByCustomerCompanyIdInOrderByIdDesc(Set.of(me.companyId()));
 		}
-		else if (SUPPLIER_EDITORS.contains(me.role())) {
+		else if (SUPPLIER_VIEWERS.contains(me.role())) {
 			visible = projects.findBySupplierCompanyIdOrderByIdDesc(me.companyId());
 		}
 		else {
@@ -151,7 +155,7 @@ class NpdApiService implements NpdApi {
 	@Transactional(readOnly = true)
 	public int pendingApprovalsCount() {
 		CurrentUser me = CurrentUser.get();
-		if (!FULL_VIEWERS.contains(me.role())) {
+		if (me.companyType() != CompanyType.ERGO || (!ModuleAccess.canApprove(me.role(), Module.NPD) && me.role() != ERGO_ADMIN)) {
 			return 0; // Management-only widget (ARCHITECTURE.md §8, 2026-10-05): not shown on the KAM dashboard
 		}
 		return (int) approvals.countByApprovalStatus(ApprovalStatus.PENDING);

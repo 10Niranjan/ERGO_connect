@@ -50,27 +50,29 @@ import jakarta.validation.Valid;
 @RequestMapping("/api/ofp")
 class OrderController {
 
-	/** SRS §10.7: full View/Create/Edit/Submit/Approve. ERGO Management has no create/edit/submit right in 4a, and
-	 * shipments/status transitions (4c) never gain a wider write grant than this. */
-	private static final String EDITORS = "hasAnyRole('ERGO_ADMIN', 'ERGO_OFP')";
+	// The role sheet (ModuleAccess), OFP column; OrderService applies the record scope and the per-action rules.
 
-	/** EDITORS plus the four supplier roles' own assigned-order writes (SRS §10.7 "E**"): production progress and
+	/** ERGO's owning roles ("O"): create, edit, advance, dispatch, shipments, close; shipments/status transitions
+	 * never gain a wider write grant than this. */
+	private static final String EDITORS = "@access.approve('OFP', 'ERGO')";
+
+	/** ERGO roles that act ("A" and up): hold / release and material (inspection) status, the part ERGO Quality has
+	 * in OFP (SRS §10.7 "E*"). */
+	private static final String ACTORS = "@access.act('OFP', 'ERGO')";
+
+	/** EDITORS plus the supplier roles' own assigned-order writes (SRS §10.7 "E**"): production progress and
 	 * packaging/dispatch only — {@code OrderService} confines each to its own supplier company and these two write
 	 * actions specifically (never material status, header fields, hold/release/advance, or shipments). */
-	private static final String EDITORS_AND_SUPPLIER = "hasAnyRole('ERGO_ADMIN', 'ERGO_OFP', 'SUPPLIER_NPD', "
-			+ "'SUPPLIER_OFP', 'SUPPLIER_QUALITY', 'SUPPLIER_KAM')";
+	private static final String EDITORS_AND_SUPPLIER = "@access.approve('OFP', 'ERGO') or @access.act('OFP', 'SUPPLIER')";
 
-	/** EDITORS plus the view-only roles (ERGO Management, ERGO KAM within their assigned accounts, ERGO NPD within
-	 * their own NPD-scoped orders), the four supplier roles reaching their own assigned orders (SRS §10.7 "RV",
-	 * 4b), and, from 4c, Customer OFP reaching its own company's orders (also "RV"); the service confines each to
-	 * its own record scope. */
-	private static final String VIEWERS = "hasAnyRole('ERGO_ADMIN', 'ERGO_MANAGEMENT', 'ERGO_OFP', 'ERGO_KAM', "
-			+ "'ERGO_NPD', 'SUPPLIER_NPD', 'SUPPLIER_OFP', 'SUPPLIER_QUALITY', 'SUPPLIER_KAM', 'CUSTOMER_OFP')";
+	/** Every role with OFP access: ERGO (KAM within assigned accounts, NPD within NPD-linked orders), the supplier
+	 * roles reaching their own assigned orders and the customer roles reaching their own company's orders; the
+	 * service confines each to its own record scope. */
+	private static final String VIEWERS = "@access.view('OFP')";
 
 	/** ERGO roles only. Suppliers and customers get no POD file: it carries the supplier's letterhead/file name, which
 	 * would break the customer-never-sees-supplier rule. Customers see receipt fields only (ARCHITECTURE.md §8). */
-	private static final String POD_READERS = "hasAnyRole('ERGO_ADMIN', 'ERGO_MANAGEMENT', 'ERGO_OFP', 'ERGO_KAM', "
-			+ "'ERGO_NPD')";
+	private static final String POD_READERS = "@access.view('OFP', 'ERGO')";
 
 	private final OrderService orders;
 
@@ -125,26 +127,26 @@ class OrderController {
 	}
 
 	@PostMapping("/orders/{id}/hold")
-	@PreAuthorize(EDITORS)
+	@PreAuthorize(ACTORS)
 	OrderDetail hold(@PathVariable long id, @Valid @RequestBody CommentForm body) {
 		return orders.hold(id, body.comment());
 	}
 
 	@PostMapping("/orders/{id}/release")
-	@PreAuthorize(EDITORS)
+	@PreAuthorize(ACTORS)
 	OrderDetail release(@PathVariable long id, @Valid @RequestBody CommentForm body) {
 		return orders.release(id, body.comment());
 	}
 
 	@PostMapping("/orders/{id}/material-status")
-	@PreAuthorize(EDITORS)
+	@PreAuthorize(ACTORS)
 	@ResponseStatus(HttpStatus.CREATED)
 	OrderDetail addMaterialStatus(@PathVariable long id, @Valid @RequestBody MaterialStatusForm body) {
 		return orders.addMaterialStatus(id, body);
 	}
 
 	@PutMapping("/material-status/{statusId}")
-	@PreAuthorize(EDITORS)
+	@PreAuthorize(ACTORS)
 	OrderDetail updateMaterialStatus(@PathVariable long statusId, @Valid @RequestBody MaterialStatusForm body) {
 		return orders.updateMaterialStatus(statusId, body);
 	}

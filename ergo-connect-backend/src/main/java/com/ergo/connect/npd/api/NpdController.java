@@ -42,31 +42,30 @@ import jakarta.validation.Valid;
 @RequestMapping("/api/npd")
 class NpdController {
 
-	private static final String VIEWERS = "hasAnyRole('ERGO_ADMIN', 'ERGO_MANAGEMENT', 'ERGO_RFQ', 'ERGO_KAM', "
-			+ "'ERGO_NPD')";
+	// The role sheet (ModuleAccess), NPD column; NpdService applies the record scope and the per-action rules.
 
-	/** VIEWERS plus every customer/supplier role 3b actually wires up detail access for. SRS §10.6 gives
-	 * CUSTOMER_RFQ/OFP/KAM/MANAGEMENT and SUPPLIER_RFQ view-only (RV) access, not none — it is deferred here,
-	 * matching the same under-provisioning precedent 3a already set for ERGO OFP/Quality (built when those roles'
-	 * own modules/reasons to look at NPD exist), not an omission of an SRS grant. */
-	private static final String DETAIL_VIEWERS = "hasAnyRole('ERGO_ADMIN', 'ERGO_MANAGEMENT', 'ERGO_RFQ', 'ERGO_KAM', "
-			+ "'ERGO_NPD', 'CUSTOMER_NPD', 'CUSTOMER_QUALITY', 'SUPPLIER_NPD', 'SUPPLIER_OFP', 'SUPPLIER_QUALITY', "
-			+ "'SUPPLIER_KAM')";
+	/** The ERGO project list and conversion queue. */
+	private static final String VIEWERS = "@access.view('NPD', 'ERGO')";
 
-	private static final String EDITORS = "hasAnyRole('ERGO_ADMIN', 'ERGO_NPD')";
+	/** Everyone with any NPD access: the ERGO roles plus the customer and supplier roles that reach their own projects. */
+	private static final String DETAIL_VIEWERS = "@access.view('NPD')";
+
+	/** ERGO roles that create / edit / submit in NPD ("A" and up). */
+	private static final String EDITORS = "@access.act('NPD', 'ERGO')";
+
+	/** ERGO's owning roles ("O"): convert an RFQ, close a stage. */
+	private static final String OWNERS = "@access.approve('NPD', 'ERGO')";
 
 	/** EDITORS plus the owning company's own activity/issue/checklist actions (the service confines each to its own
 	 * company). */
-	private static final String OWN_ACTIVITY_EDITORS = "hasAnyRole('ERGO_ADMIN', 'ERGO_NPD', 'CUSTOMER_NPD', "
-			+ "'CUSTOMER_QUALITY', 'SUPPLIER_NPD', 'SUPPLIER_OFP', 'SUPPLIER_QUALITY', 'SUPPLIER_KAM')";
+	private static final String OWN_ACTIVITY_EDITORS = "@access.act('NPD')";
 
 	/** Customer/supplier NPD-touching roles only (not ERGO, which already has {@code list()}). */
-	private static final String OWN_PROJECT_VIEWERS = "hasAnyRole('CUSTOMER_NPD', 'CUSTOMER_QUALITY', 'SUPPLIER_NPD', "
-			+ "'SUPPLIER_OFP', 'SUPPLIER_QUALITY', 'SUPPLIER_KAM')";
+	private static final String OWN_PROJECT_VIEWERS = "@access.view('NPD', 'CUSTOMER') or @access.view('NPD', 'SUPPLIER')";
 
-	/** Whoever an approval's own approver_role could ever name, plus ERGO Admin; no supplier role is ever named. */
-	private static final String APPROVAL_DECIDERS = "hasAnyRole('ERGO_ADMIN', 'ERGO_NPD', 'ERGO_QUALITY', "
-			+ "'CUSTOMER_NPD', 'CUSTOMER_QUALITY')";
+	/** Final approval ("O" / "CO"): ERGO's owners decide ERGO-owned gates, the customer's CO the customer ones; no
+	 * supplier role ever decides. NpdService matches the side to the approval's own type. */
+	private static final String APPROVAL_DECIDERS = "@access.approve('NPD', 'ERGO') or @access.approve('NPD', 'CUSTOMER')";
 
 	private final NpdService npd;
 
@@ -81,7 +80,7 @@ class NpdController {
 	}
 
 	@PostMapping("/convert/{rfqId}")
-	@PreAuthorize(EDITORS)
+	@PreAuthorize(OWNERS)
 	@ResponseStatus(HttpStatus.CREATED)
 	NpdView convert(@PathVariable long rfqId, @Valid @RequestBody CommentForm body) {
 		return npd.convert(rfqId, body.comment());
@@ -119,7 +118,7 @@ class NpdController {
 	}
 
 	@PostMapping("/{id}/close-stage")
-	@PreAuthorize(EDITORS)
+	@PreAuthorize(OWNERS)
 	NpdView closeStage(@PathVariable long id, @Valid @RequestBody CommentForm body) {
 		return npd.closeStage(id, body.comment());
 	}

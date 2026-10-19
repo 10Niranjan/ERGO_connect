@@ -38,6 +38,8 @@ import com.ergo.connect.common.event.Recipients;
 import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
+import com.ergo.connect.common.security.ModuleAccess;
+import com.ergo.connect.common.security.ModuleAccess.Module;
 import com.ergo.connect.common.security.Role;
 import com.ergo.connect.masterdata.api.Directory;
 import com.ergo.connect.masterdata.api.Directory.CompanyRef;
@@ -95,12 +97,11 @@ import com.ergo.connect.quality.domain.QualityDtos.SupplierInspectionView;
 @Transactional
 public class InspectionService {
 
-	/** SRS §10.8 Create/Edit/Submit, ERGO side. */
-	private static final Set<Role> EDITORS = EnumSet.of(ERGO_ADMIN, ERGO_QUALITY);
+	/** The role sheet (ModuleAccess), Quality column. Create/Edit/Submit, ERGO side ("A" and up). */
+	private static final Set<Role> EDITORS = ModuleAccess.actors(Module.QUALITY, CompanyType.ERGO);
 
-	/** SRS §10.8 Create/Edit/Submit, supplier side: Supplier Quality only - the other three supplier roles are
-	 * view-only (RV) in this module, unlike OFP's "E**" which names all four. */
-	private static final Role SUPPLIER_EDITOR = SUPPLIER_QUALITY;
+	/** Create/Edit/Submit, supplier side ("A"). */
+	private static final Set<Role> SUPPLIER_EDITORS = ModuleAccess.actors(Module.QUALITY, CompanyType.SUPPLIER);
 
 	/** SRS §10.8 Approve, separate from edit (CLAUDE.md non-negotiable): notably includes ERGO Management, who has
 	 * no create/edit/submit right at all - approval rights are their own authority, not folded into edit. Used for
@@ -109,13 +110,11 @@ public class InspectionService {
 	 * that decides PASSED/REJECTED/RELEASED_WITH_DEVIATION - the same tier that decides an inspection's outcome
 	 * decides when that outcome is finalized (Close) or reversed (Reopen). Supplier Quality is deliberately absent
 	 * ("X (no approve)"). */
-	private static final Set<Role> APPROVERS = EnumSet.of(ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_QUALITY);
+	private static final Set<Role> APPROVERS = ModuleAccess.approvers(Module.QUALITY, CompanyType.ERGO);
 
-	private static final Set<Role> SUPPLIER_VIEWERS = EnumSet.of(SUPPLIER_QUALITY, SUPPLIER_NPD, SUPPLIER_OFP,
-			SUPPLIER_KAM);
+	private static final Set<Role> SUPPLIER_VIEWERS = ModuleAccess.viewers(Module.QUALITY, CompanyType.SUPPLIER);
 
-	private static final Set<Role> CUSTOMER_VIEWERS = EnumSet.of(CUSTOMER_QUALITY, CUSTOMER_NPD, CUSTOMER_OFP,
-			CUSTOMER_KAM, CUSTOMER_MANAGEMENT);
+	private static final Set<Role> CUSTOMER_VIEWERS = ModuleAccess.viewers(Module.QUALITY, CompanyType.CUSTOMER);
 
 	private final InspectionRepository inspections;
 
@@ -159,14 +158,14 @@ public class InspectionService {
 						i.batchLotNo, i.resultStatus, i.inspectionDate))
 				.toList();
 		}
-		List<Inspection> visible = switch (me.role()) {
-			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_QUALITY -> inspections.findAllByOrderByIdDesc();
-			case ERGO_KAM -> {
+		List<Inspection> visible = switch (QualityScope.of(me.role())) {
+			case FULL -> inspections.findAllByOrderByIdDesc();
+			case KAM -> {
 				Set<Long> accounts = directory.accountsOf(me.userId());
 				yield accounts.isEmpty() ? List.of() : inspections.findByCustomerCompanyIdInOrderByIdDesc(accounts);
 			}
-			case ERGO_NPD -> inspections.findByLinkedModuleOrderByIdDesc(LinkedModule.NPD);
-			case ERGO_OFP -> inspections.findByLinkedModuleOrderByIdDesc(LinkedModule.OFP);
+			case NPD_LINKED -> inspections.findByLinkedModuleOrderByIdDesc(LinkedModule.NPD);
+			case OFP_LINKED -> inspections.findByLinkedModuleOrderByIdDesc(LinkedModule.OFP);
 			default -> List.of(); // SRS §10.8 X: ERGO RFQ and every other role not handled above/below
 		};
 		Map<Long, CompanyRef> customers = directory.companies(ids(visible, i -> i.customerCompanyId));
@@ -189,7 +188,7 @@ public class InspectionService {
 	public InspectionDetail create(InspectionForm form) {
 		CurrentUser me = CurrentUser.get();
 		boolean ergoEditor = EDITORS.contains(me.role());
-		boolean supplierEditor = me.role() == SUPPLIER_EDITOR;
+		boolean supplierEditor = SUPPLIER_EDITORS.contains(me.role());
 		if (!ergoEditor && !supplierEditor) {
 			throw ApiException.forbidden("Only ERGO Quality/Admin or Supplier Quality may create an inspection");
 		}
@@ -204,7 +203,7 @@ public class InspectionService {
 			// freely ERGO-editable either (see applyUpdate's own NPD/OFP guard below).
 			applyLinkedCompanies(inspection, form.linkedModule(), form.linkedRecordId(),
 					supplierEditor ? me.companyId() : null);
-			inspection.customerVisible = ergoEditor && form.customerVisible();
+			inspection.customerVisible = ModuleAccess.canApprove(me.role(), Module.QUALITY) && form.customerVisible();
 		}
 		else if (supplierEditor) {
 			// Two-way anonymity: a supplier's own inspection is tagged to its own company only. customerCompanyId
@@ -227,6 +226,10 @@ public class InspectionService {
 		inspection.quantityRejected = BigDecimal.ZERO;
 		inspection.createdByUserId = me.userId();
 		inspection.createdByCompanyId = me.companyId(); // security review H2: who actually created this row
+		if (!inScope(me, inspection)) {
+			// e.g. ERGO OFP ("A") may only raise inspections against OFP orders: it could never open any other one
+			throw ApiException.unprocessable("Your role can only raise inspections within its own area");
+		}
 		inspections.save(inspection);
 		return view(me, inspection);
 	}
@@ -261,11 +264,12 @@ public class InspectionService {
 		CurrentUser me = CurrentUser.get();
 		Inspection i = visible(me, id);
 		require(InspectionAction.EDIT, me, i);
-		applyUpdate(i, form, EDITORS.contains(me.role()));
+		applyUpdate(i, form, EDITORS.contains(me.role()), ModuleAccess.canApprove(me.role(), Module.QUALITY));
 		return view(me, i);
 	}
 
-	private void applyUpdate(Inspection i, InspectionUpdateForm form, boolean ergoEditor) {
+	private void applyUpdate(Inspection i, InspectionUpdateForm form, boolean ergoEditor,
+			boolean decidesExposure) {
 		// Captured before any mutation below (security review M6): if this edit turns out to reassign the customer
 		// or supplier, the record's pre-edit remarks is what the audit trail needs to show as cleared - by the time
 		// reassignment is known, i.remarks below has already been overwritten by this same request's own value.
@@ -287,7 +291,10 @@ public class InspectionService {
 		// out whatever ERGO Quality had written. A supplier's edit leaves remarks untouched, same as the other three.
 		if (ergoEditor) {
 			i.remarks = text(form.remarks());
-			i.customerVisible = form.customerVisible();
+			// external exposure is decided by the Quality approvers only, not by every ERGO editor (e.g. ERGO OFP)
+			if (decidesExposure) {
+				i.customerVisible = form.customerVisible();
+			}
 			// Security review M5: an NPD/OFP-linked inspection's companies come only from applyLinkedCompanies at
 			// creation - not from a later edit - so they can never drift from the record they're linked to.
 			if (i.linkedModule != LinkedModule.NPD && i.linkedModule != LinkedModule.OFP) {
@@ -384,7 +391,7 @@ public class InspectionService {
 		CurrentUser me = CurrentUser.get();
 		Inspection i = visible(me, id);
 		require(InspectionAction.SUBMIT, me, i);
-		applyUpdate(i, form, EDITORS.contains(me.role()));
+		applyUpdate(i, form, EDITORS.contains(me.role()), ModuleAccess.canApprove(me.role(), Module.QUALITY));
 		if (i.quantityChecked == null) {
 			throw ApiException.unprocessable("Quantity checked is required before an inspection can be submitted");
 		}
@@ -466,22 +473,25 @@ public class InspectionService {
 	/** Record scope. Out-of-scope inspections do not exist for the caller (404, not 403). */
 	Inspection visible(CurrentUser me, long id) {
 		Inspection i = inspections.findById(id).orElse(null);
-		boolean inScope = i != null && switch (me.role()) {
-			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_QUALITY -> true;
-			case ERGO_KAM ->
-				i.customerCompanyId != null && directory.accountsOf(me.userId()).contains(i.customerCompanyId);
-			case ERGO_NPD -> i.linkedModule == LinkedModule.NPD;
-			case ERGO_OFP -> i.linkedModule == LinkedModule.OFP;
-			case SUPPLIER_QUALITY, SUPPLIER_NPD, SUPPLIER_OFP, SUPPLIER_KAM ->
-				i.supplierCompanyId != null && me.companyId() == i.supplierCompanyId;
-			case CUSTOMER_QUALITY, CUSTOMER_NPD, CUSTOMER_OFP, CUSTOMER_KAM, CUSTOMER_MANAGEMENT ->
-				i.customerVisible && i.customerCompanyId != null && me.companyId() == i.customerCompanyId;
-			default -> false; // ERGO_RFQ, CUSTOMER_RFQ, SUPPLIER_RFQ: SRS §10.8 X
-		};
-		if (!inScope) {
+		if (!inScope(me, i)) {
 			throw ApiException.notFound("Inspection");
 		}
 		return i;
+	}
+
+	private boolean inScope(CurrentUser me, Inspection i) {
+		return i != null && switch (QualityScope.of(me.role())) {
+			case FULL -> true;
+			case KAM ->
+				i.customerCompanyId != null && directory.accountsOf(me.userId()).contains(i.customerCompanyId);
+			case NPD_LINKED -> i.linkedModule == LinkedModule.NPD;
+			case OFP_LINKED -> i.linkedModule == LinkedModule.OFP;
+			case SUPPLIER ->
+				i.supplierCompanyId != null && me.companyId() == i.supplierCompanyId;
+			case CUSTOMER ->
+				i.customerVisible && i.customerCompanyId != null && me.companyId() == i.customerCompanyId;
+			default -> false; // roles with no Quality access
+		};
 	}
 
 	/** The rule book: SRS §10.8 rights combined with the §14.7 status. */
@@ -491,7 +501,7 @@ public class InspectionService {
 		// only an inspection its own company *created* - not merely one tagged to its company (an ERGO-authored
 		// inspection tagged to a supplier, e.g. ERGO's own incoming inspection of that supplier's goods, must stay
 		// read-only to that supplier).
-		boolean ownSupplier = me.role() == SUPPLIER_EDITOR && i.createdByCompanyId != null
+		boolean ownSupplier = SUPPLIER_EDITORS.contains(me.role()) && i.createdByCompanyId != null
 				&& me.companyId() == i.createdByCompanyId;
 		boolean approver = APPROVERS.contains(me.role());
 		// Security review M2: the same user who submitted the inspection (and so became inspectedByUserId) must not

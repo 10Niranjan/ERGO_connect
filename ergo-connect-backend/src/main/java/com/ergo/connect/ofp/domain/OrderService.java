@@ -37,6 +37,8 @@ import com.ergo.connect.common.event.Recipients;
 import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
+import com.ergo.connect.common.security.ModuleAccess;
+import com.ergo.connect.common.security.ModuleAccess.Module;
 import com.ergo.connect.common.security.Role;
 import com.ergo.connect.documents.api.DocumentStore;
 import com.ergo.connect.documents.api.DocumentStore.DocumentInfo;
@@ -100,14 +102,23 @@ import jakarta.persistence.PersistenceContext;
 @Transactional
 public class OrderService {
 
-	/** SRS §10.7 full View/Create/Edit/Submit/Approve. ERGO Management is view-only in 4a (no approval gate yet). */
-	private static final Set<Role> EDITORS = EnumSet.of(ERGO_ADMIN, ERGO_OFP);
+	/** The role sheet (ModuleAccess), OFP column. ERGO's owning roles ("O"): full create / edit / workflow rights. */
+	private static final Set<Role> EDITORS = ModuleAccess.approvers(Module.OFP, CompanyType.ERGO);
 
-	/** SRS §10.7 "E**": all four supplier-side roles (confirmed by the user, same grant NPD 3b already gives the
-	 * identical role set), edit rights limited to production progress and packaging/dispatch on their own assigned
-	 * order only — never material status, order header fields, or the workflow actions (hold/release/advance). */
-	private static final Set<Role> SUPPLIER_EDITORS = EnumSet.of(SUPPLIER_NPD, SUPPLIER_OFP, SUPPLIER_QUALITY,
-			SUPPLIER_KAM);
+	/** ERGO roles that act ("A" and up). Beyond EDITORS this adds ERGO Quality's part in OFP: hold, release and
+	 * material (inspection) status (SRS §10.7 "E*"), nothing else. */
+	private static final Set<Role> ERGO_ACTORS = ModuleAccess.actors(Module.OFP, CompanyType.ERGO);
+
+	/** Supplier roles with OFP access ("A"): edit rights limited to production progress and packaging/dispatch on
+	 * their own assigned order only — never material status, order header fields, or the workflow actions. */
+	private static final Set<Role> SUPPLIER_EDITORS = ModuleAccess.actors(Module.OFP, CompanyType.SUPPLIER);
+
+	/** Supplier roles that can see their own orders (view level of the sheet); writes use {@link #SUPPLIER_EDITORS}. */
+	private static final Set<Role> SUPPLIER_VIEWERS = ModuleAccess.viewers(Module.OFP, CompanyType.SUPPLIER);
+
+	/** Customer roles with OFP access (CO / A / V): their own company's orders, read-only. The sheet's customer
+	 * approval rights have no OFP action to attach to (no customer-side OFP workflow step exists). */
+	private static final Set<Role> CUSTOMER_VIEWERS = ModuleAccess.viewers(Module.OFP, CompanyType.CUSTOMER);
 
 	private final OrderRepository orders;
 
@@ -169,28 +180,27 @@ public class OrderService {
 	@Transactional(readOnly = true)
 	public List<? extends OrderSummary> list() {
 		CurrentUser me = CurrentUser.get();
-		if (SUPPLIER_EDITORS.contains(me.role())) {
+		if (SUPPLIER_VIEWERS.contains(me.role())) {
 			// Two-way anonymity: no customer lookup is ever made building the supplier's rows.
 			return orders.findBySupplierCompanyIdOrderByIdDesc(me.companyId()).stream()
 				.map(o -> new SupplierOrderRow(o.id, o.orderNumber, o.supplierPoNo, o.partNumber, o.revision,
 						o.orderedQuantity, o.dueDate, o.currentStatus))
 				.toList();
 		}
-		if (me.role() == CUSTOMER_OFP) {
+		if (CUSTOMER_VIEWERS.contains(me.role())) {
 			// Phase 4c, same two-way anonymity rule: no supplier lookup is ever made building the customer's rows.
 			return orders.findByCustomerCompanyIdInOrderByIdDesc(Set.of(me.companyId())).stream()
 				.map(o -> new CustomerOrderRow(o.id, o.orderNumber, o.customerPoNo, o.partNumber, o.revision,
 						o.orderedQuantity, o.dueDate, o.currentStatus))
 				.toList();
 		}
-		List<Order> visible = switch (me.role()) {
-			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_OFP -> orders.findAllByOrderByIdDesc();
+		List<Order> visible = !ModuleAccess.canView(me.role(), Module.OFP) ? List.<Order>of() : switch (me.role()) {
 			case ERGO_KAM -> {
 				Set<Long> accounts = directory.accountsOf(me.userId());
 				yield accounts.isEmpty() ? List.of() : orders.findByCustomerCompanyIdInOrderByIdDesc(accounts);
 			}
 			case ERGO_NPD -> orders.findByLinkedNpdProjectIdIsNotNullOrderByIdDesc();
-			default -> List.of(); // SRS §10.7 X: ERGO RFQ/Quality and every other customer role
+			default -> orders.findAllByOrderByIdDesc(); // the other ERGO roles with OFP access see every order
 		};
 		Map<Long, CompanyRef> customers = directory.companies(ids(visible, o -> o.customerCompanyId));
 		Map<Long, CompanyRef> suppliers = directory.companies(ids(visible, o -> o.supplierCompanyId));
@@ -689,14 +699,14 @@ public class OrderService {
 
 	private static Recipients ergoAndCustomer(Order order) {
 		return Recipients.ergo(Role.ERGO_ADMIN, Role.ERGO_OFP)
-			.and(Recipients.company(order.customerCompanyId, Role.CUSTOMER_OFP));
+			.and(Recipients.company(order.customerCompanyId, CUSTOMER_VIEWERS.toArray(Role[]::new)));
 	}
 
 	/** Everyone on the order: ERGO OFP, the customer's OFP users and the supplier's staff. The detail is the new status
 	 * only - never the reason an order was put on hold. */
 	private void statusChanged(Order order, String detail) {
 		notifier.send(NotificationKind.ORDER_STATUS_CHANGED, "ofp", order.id, order.orderNumber, detail,
-				ergoAndCustomer(order).and(Recipients.company(order.supplierCompanyId, SUPPLIER_EDITORS.toArray(Role[]::new))));
+				ergoAndCustomer(order).and(Recipients.company(order.supplierCompanyId, SUPPLIER_VIEWERS.toArray(Role[]::new))));
 	}
 
 	private static String pretty(OrderStatus status) {
@@ -733,11 +743,13 @@ public class OrderService {
 		if (order == null) {
 			return false;
 		}
+		if (me.companyType() != CompanyType.ERGO || !ModuleAccess.canView(me.role(), Module.OFP)) {
+			return false;
+		}
 		return switch (me.role()) {
-			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_OFP -> true;
 			case ERGO_KAM -> directory.accountsOf(me.userId()).contains(order.customerCompanyId);
 			case ERGO_NPD -> order.linkedNpdProjectId != null;
-			default -> false;
+			default -> true;
 		};
 	}
 
@@ -749,16 +761,19 @@ public class OrderService {
 	}
 
 	private boolean inScope(CurrentUser me, Order order) {
-		return order != null && switch (me.role()) {
-			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_OFP -> true;
-			case ERGO_KAM -> directory.accountsOf(me.userId()).contains(order.customerCompanyId);
-			case ERGO_NPD -> order.linkedNpdProjectId != null;
-			case SUPPLIER_NPD, SUPPLIER_OFP, SUPPLIER_QUALITY, SUPPLIER_KAM ->
-				me.companyId() == order.supplierCompanyId;
+		if (order == null || !ModuleAccess.canView(me.role(), Module.OFP)) {
+			return false;
+		}
+		return switch (me.companyType()) {
+			case ERGO -> switch (me.role()) {
+				case ERGO_KAM -> directory.accountsOf(me.userId()).contains(order.customerCompanyId);
+				case ERGO_NPD -> order.linkedNpdProjectId != null;
+				default -> true;
+			};
+			case SUPPLIER -> me.companyId() == order.supplierCompanyId;
 			// Phase 4c: pure read-only, own company's orders only (SRS §10.7 "RV"); write actions still 409/403
-			// below since CUSTOMER_OFP never appears in EDITORS/SUPPLIER_EDITORS.
-			case CUSTOMER_OFP -> me.companyId() == order.customerCompanyId;
-			default -> false;
+			// below since no customer role appears in EDITORS/SUPPLIER_EDITORS.
+			case CUSTOMER -> me.companyId() == order.customerCompanyId;
 		};
 	}
 
@@ -773,18 +788,20 @@ public class OrderService {
 	 * not just the status. */
 	private boolean allowed(OrderAction action, CurrentUser me, Order order) {
 		boolean editor = EDITORS.contains(me.role());
+		boolean ergoActor = ERGO_ACTORS.contains(me.role());
 		boolean ownSupplier = SUPPLIER_EDITORS.contains(me.role()) && me.companyId() == order.supplierCompanyId;
 		OrderStatus status = order.currentStatus;
 		return switch (action) {
 			case EDIT -> editor && status != OrderStatus.CLOSED;
 			case ADVANCE -> editor && OrderStatus.SEQUENCE.contains(status)
 					&& !status.equals(OrderStatus.SEQUENCE.getLast());
-			case HOLD -> editor && status != OrderStatus.CLOSED && status != OrderStatus.ON_HOLD;
-			case RELEASE -> editor && status == OrderStatus.ON_HOLD;
+			// Hold / release are inspection-clearance decisions too (SRS §10.7 "E*"): ERGO Quality acts here as well.
+			case HOLD -> ergoActor && status != OrderStatus.CLOSED && status != OrderStatus.ON_HOLD;
+			case RELEASE -> ergoActor && status == OrderStatus.ON_HOLD;
 			// M4/L1 fix (ARCHITECTURE.md §8 2026-09-29): frozen once the order has (effectively) reached Dispatched —
 			// closes the gap the 4b security review deferred twice already, now load-bearing since the customer can
 			// see production-progress figures (4c). Resolved through ON_HOLD so a Hold can't dodge the freeze.
-			case UPDATE_MATERIAL_STATUS -> editor && beforeDispatch(effectiveStatus(order));
+			case UPDATE_MATERIAL_STATUS -> ergoActor && beforeDispatch(effectiveStatus(order));
 			// SRS §10.7 "E**": the assigned supplier, alongside ERGO OFP/Admin, but never Hold/Release/Advance/
 			// Edit/material status (point 1/5, ARCHITECTURE.md §8 2026-09-29). Security review L2 (4b, ARCHITECTURE.md
 			// §8 2026-09-29): a supplier's own write is additionally blocked while ON_HOLD (an order on hold is meant
@@ -867,7 +884,7 @@ public class OrderService {
 					d.dispatchDate, d.dispatchRemarks, userName(dispatchUsers, d.updatedByUserId), d.updatedAt))
 			.toList();
 
-		if (SUPPLIER_EDITORS.contains(me.role())) {
+		if (me.companyType() == CompanyType.SUPPLIER) {
 			List<SupplierMaterialStatusView> supplierMaterialViews = materials.stream()
 				.map(m -> new SupplierMaterialStatusView(m.id, m.materialStatus, m.materialOrderDate,
 						m.expectedReceiptDate, m.actualReceiptDate, m.inspectionStatus, m.createdAt, m.updatedAt))
@@ -878,7 +895,7 @@ public class OrderService {
 					o.createdAt, o.updatedAt);
 		}
 
-		if (me.role() == CUSTOMER_OFP) {
+		if (me.companyType() == CompanyType.CUSTOMER) {
 			List<SupplierMaterialStatusView> customerMaterialViews = materials.stream()
 				.map(m -> new SupplierMaterialStatusView(m.id, m.materialStatus, m.materialOrderDate,
 						m.expectedReceiptDate, m.actualReceiptDate, m.inspectionStatus, m.createdAt, m.updatedAt))

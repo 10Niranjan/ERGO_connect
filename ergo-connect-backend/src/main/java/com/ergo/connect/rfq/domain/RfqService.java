@@ -48,6 +48,8 @@ import com.ergo.connect.common.event.Recipients;
 import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
+import com.ergo.connect.common.security.ModuleAccess;
+import com.ergo.connect.common.security.ModuleAccess.Module;
 import com.ergo.connect.common.security.Role;
 import com.ergo.connect.documents.api.DocumentStore;
 import com.ergo.connect.documents.api.DocumentStore.DocumentInfo;
@@ -82,13 +84,13 @@ public class RfqService {
 
 	static final String MODULE = "rfq";
 
-	/** SRS §10.4 create / edit / submit. */
-	private static final Set<Role> ERGO_EDITORS = EnumSet.of(ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_RFQ, ERGO_KAM);
+	/** The role sheet (ModuleAccess): who creates / edits / submits ("A" and up) ... */
+	private static final Set<Role> ERGO_EDITORS = ModuleAccess.actors(Module.RFQ, CompanyType.ERGO);
 
-	/** SRS §10.4 approve = validate. */
-	private static final Set<Role> ERGO_REVIEWERS = EnumSet.of(ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_RFQ);
+	/** ... and who gives the final approval ("O"): validate, reopen, close. */
+	private static final Set<Role> ERGO_REVIEWERS = ModuleAccess.approvers(Module.RFQ, CompanyType.ERGO);
 
-	private static final Set<Role> CUSTOMER_EDITORS = EnumSet.of(CUSTOMER_RFQ, CUSTOMER_KAM, CUSTOMER_MANAGEMENT);
+	private static final Set<Role> CUSTOMER_EDITORS = ModuleAccess.actors(Module.RFQ, CompanyType.CUSTOMER);
 
 	/** SRS §10.4 "RV" for ERGO NPD: approved RFQs heading to NPD. */
 	private static final Set<RfqStatus> NPD_VISIBLE = EnumSet.of(CUSTOMER_APPROVED);
@@ -142,16 +144,17 @@ public class RfqService {
 	@Transactional(readOnly = true)
 	public List<RfqRow> list() {
 		CurrentUser me = CurrentUser.get();
-		List<Rfq> visible = switch (me.role()) {
-			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_RFQ -> rfqs.findAllByOrderByIdDesc();
-			case ERGO_KAM -> {
-				Set<Long> accounts = directory.accountsOf(me.userId());
-				yield accounts.isEmpty() ? List.of() : rfqs.findByCustomerCompanyIdInOrderByIdDesc(accounts);
-			}
-			case ERGO_NPD -> rfqs.findByStatusInOrderByIdDesc(NPD_VISIBLE);
-			case CUSTOMER_RFQ, CUSTOMER_KAM, CUSTOMER_MANAGEMENT ->
-				rfqs.findByCustomerCompanyIdOrderByIdDesc(me.companyId());
-			default -> List.of(); // suppliers: RFQs sent to them (Phase 2b); other roles: no RFQ access (SRS §10.4 X)
+		List<Rfq> visible = !ModuleAccess.canView(me.role(), Module.RFQ) ? List.of() : switch (me.companyType()) {
+			case ERGO -> switch (me.role()) {
+				case ERGO_KAM -> {
+					Set<Long> accounts = directory.accountsOf(me.userId());
+					yield accounts.isEmpty() ? List.of() : rfqs.findByCustomerCompanyIdInOrderByIdDesc(accounts);
+				}
+				case ERGO_NPD -> rfqs.findByStatusInOrderByIdDesc(NPD_VISIBLE);
+				default -> rfqs.findAllByOrderByIdDesc();
+			};
+			case CUSTOMER -> rfqs.findByCustomerCompanyIdOrderByIdDesc(me.companyId());
+			case SUPPLIER -> List.of(); // suppliers see RFQs only as the quotes ERGO asks them for (QuoteService)
 		};
 		if (!isErgo(me)) {
 			return visible.stream()
@@ -473,13 +476,14 @@ public class RfqService {
 	}
 
 	private boolean inScope(CurrentUser me, Rfq rfq) {
-		return rfq != null && switch (me.role()) {
-			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_RFQ -> true;
-			case ERGO_KAM -> directory.accountsOf(me.userId()).contains(rfq.customerCompanyId);
-			case ERGO_NPD -> NPD_VISIBLE.contains(rfq.status);
-			case CUSTOMER_RFQ, CUSTOMER_KAM, CUSTOMER_MANAGEMENT, CUSTOMER_NPD, CUSTOMER_QUALITY ->
-				rfq.customerCompanyId == me.companyId();
-			default -> false;
+		return rfq != null && ModuleAccess.canView(me.role(), Module.RFQ) && switch (me.companyType()) {
+			case ERGO -> switch (me.role()) {
+				case ERGO_KAM -> directory.accountsOf(me.userId()).contains(rfq.customerCompanyId);
+				case ERGO_NPD -> NPD_VISIBLE.contains(rfq.status);
+				default -> true;
+			};
+			case CUSTOMER -> rfq.customerCompanyId == me.companyId();
+			case SUPPLIER -> false;
 		};
 	}
 
@@ -497,7 +501,7 @@ public class RfqService {
 			case START_REVIEW -> status == SUBMITTED && reviewer;
 			case REQUEST_CLARIFICATION -> status == UNDER_REVIEW && ergo;
 			case VALIDATE -> status == UNDER_REVIEW && reviewer;
-			case REOPEN -> status == VALIDATED && (role == ERGO_ADMIN || role == ERGO_RFQ);
+			case REOPEN -> status == VALIDATED && reviewer;
 			case CANCEL -> customer ? CUSTOMER_OPEN.contains(status) : ergo && ERGO_CANCELLABLE.contains(status);
 			case CLOSE -> reviewer && CLOSABLE.contains(status);
 			case CLONE -> customer || ergo;

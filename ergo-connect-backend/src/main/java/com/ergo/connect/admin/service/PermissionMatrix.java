@@ -2,6 +2,7 @@ package com.ergo.connect.admin.service;
 
 import java.util.List;
 
+import com.ergo.connect.common.security.ModuleAccess;
 import com.ergo.connect.common.security.Role;
 
 import static com.ergo.connect.admin.service.PermissionMatrix.Grant.A;
@@ -96,76 +97,36 @@ public final class PermissionMatrix {
 							g(CUSTOMER_MANAGEMENT, X, X, X, X, X), g(SUPPLIER_RFQ, RV, X, E, S, X), g(SUPPLIER_NPD, RV, X, X, X, X),
 							g(SUPPLIER_OFP, RV, X, X, X, X), g(SUPPLIER_QUALITY, RV, X, X, X, X), g(SUPPLIER_KAM, RV, X, E, S, X)),
 					List.of()),
-			new Module("10.4", "RFQ Management",
-					List.of(g(ERGO_ADMIN, V, C, E, S, A), g(ERGO_MANAGEMENT, V, C, E, S, A), g(ERGO_KAM, RV, C, E, S, X),
-							g(ERGO_RFQ, V, C, E, S, A), g(ERGO_NPD, RV, X, X, X, X), g(ERGO_OFP, X, X, X, X, X),
-							g(ERGO_QUALITY, X, X, X, X, X), g(CUSTOMER_RFQ, RV, C, E, S, X), g(CUSTOMER_NPD, X, X, X, X, X),
-							g(CUSTOMER_OFP, X, X, X, X, X), g(CUSTOMER_QUALITY, X, X, X, X, X), g(CUSTOMER_KAM, RV, C, E, S, X),
-							g(CUSTOMER_MANAGEMENT, RV, C, E, S, X),
-							new RoleGrant(SUPPLIER_RFQ, c(RV), c(X), c(E, "E*"), c(S), c(X)),
-							g(SUPPLIER_NPD, X, X, X, X, X), g(SUPPLIER_OFP, X, X, X, X, X), g(SUPPLIER_QUALITY, X, X, X, X, X),
-							new RoleGrant(SUPPLIER_KAM, c(RV), c(X), c(E, "E*"), c(S), c(X))),
-					List.of("E*: Supplier RFQ and Supplier KAM can edit quotation data only when ERGO has explicitly opened "
-							+ "quote edit permission.")),
-			new Module("10.5", "Quotation Management",
-					List.of(g(ERGO_ADMIN, V, C, E, S, A), g(ERGO_MANAGEMENT, V, X, X, X, A), g(ERGO_KAM, RV, X, X, X, X),
-							g(ERGO_RFQ, V, C, E, S, A), g(ERGO_NPD, RV, X, X, X, X), g(ERGO_OFP, X, X, X, X, X),
-							g(ERGO_QUALITY, X, X, X, X, X),
-							new RoleGrant(CUSTOMER_RFQ, c(RV, "RV**"), c(X), c(X), c(S, "S***"), c(X)),
-							g(CUSTOMER_NPD, X, X, X, X, X), g(CUSTOMER_OFP, X, X, X, X, X), g(CUSTOMER_QUALITY, X, X, X, X, X),
-							new RoleGrant(CUSTOMER_KAM, c(RV, "RV**"), c(X), c(X), c(S, "S***"), c(X)),
-							new RoleGrant(CUSTOMER_MANAGEMENT, c(RV, "RV**"), c(X), c(X), c(S, "S***"), c(X)),
-							new RoleGrant(SUPPLIER_RFQ, c(RV), c(C), c(E, "E*"), c(S), c(X)), g(SUPPLIER_NPD, X, X, X, X, X),
-							g(SUPPLIER_OFP, X, X, X, X, X), g(SUPPLIER_QUALITY, X, X, X, X, X),
-							new RoleGrant(SUPPLIER_KAM, c(RV), c(C), c(E, "E*"), c(S), c(X))),
-					List.of("RV**: Customer sees only ERGO-selected quotes for its own company.",
-							"S***: Customer can submit approve / revise / decline response only on an ERGO-shared quote.",
-							"E*: Supplier RFQ and Supplier KAM can edit their own quote only when ERGO has explicitly opened "
-									+ "quote edit permission (same condition as RFQ Management's E*).")),
-			new Module("10.6", "NPD Management",
-					List.of(g(ERGO_ADMIN, V, C, E, S, A), g(ERGO_MANAGEMENT, V, X, X, X, A), g(ERGO_KAM, RV, X, X, X, X),
-							g(ERGO_RFQ, RV, X, X, X, X), g(ERGO_NPD, V, C, E, S, A), g(ERGO_OFP, RV, X, X, X, X),
-							new RoleGrant(ERGO_QUALITY, c(RV), c(X), c(E), c(S), c(A, "A*")),
-							g(CUSTOMER_RFQ, RV, X, X, X, X),
-							new RoleGrant(CUSTOMER_NPD, c(RV), c(X), c(E, "E**"), c(S), c(A, "A**")),
-							g(CUSTOMER_OFP, RV, X, X, X, X),
-							new RoleGrant(CUSTOMER_QUALITY, c(RV), c(X), c(E, "E**"), c(S), c(A, "A**")),
-							g(CUSTOMER_KAM, RV, X, X, X, X), g(CUSTOMER_MANAGEMENT, RV, X, X, X, X),
-							g(SUPPLIER_RFQ, RV, X, X, X, X),
-							new RoleGrant(SUPPLIER_NPD, c(RV), c(X), c(E, "E***"), c(S), c(X)),
-							new RoleGrant(SUPPLIER_OFP, c(RV), c(X), c(E, "E***"), c(S), c(X)),
-							new RoleGrant(SUPPLIER_QUALITY, c(RV), c(X), c(E, "E***"), c(S), c(X)),
-							new RoleGrant(SUPPLIER_KAM, c(RV), c(X), c(E, "E***"), c(S), c(X))),
-					List.of("A*: ERGO Quality approval applicable for quality-related stage gates only.",
-							"E**/A**: Customer NPD and Customer Quality can edit/approve only customer-facing sample approval, "
-									+ "milestone acknowledgment, and quality acceptance records.",
-							"E***: Supplier NPD/OFP/Quality/KAM edit rights are limited to supplier-owned activities, dates, "
-									+ "attachments, readiness updates, and issue responses.")),
-			new Module("10.7", "OFP / Production Tracking",
-					List.of(g(ERGO_ADMIN, V, C, E, S, A), g(ERGO_MANAGEMENT, V, X, X, X, A), g(ERGO_KAM, RV, X, X, X, X),
-							g(ERGO_RFQ, X, X, X, X, X), g(ERGO_NPD, RV, X, X, X, X), g(ERGO_OFP, V, C, E, S, A),
-							new RoleGrant(ERGO_QUALITY, c(RV), c(X), c(E, "E*"), c(S), c(A, "A*")),
-							g(CUSTOMER_RFQ, X, X, X, X, X), g(CUSTOMER_NPD, RV, X, X, X, X), g(CUSTOMER_OFP, RV, X, X, X, X),
-							g(CUSTOMER_QUALITY, RV, X, X, X, X), g(CUSTOMER_KAM, RV, X, X, X, X), g(CUSTOMER_MANAGEMENT, RV, X, X, X, X),
-							g(SUPPLIER_RFQ, X, X, X, X, X),
-							new RoleGrant(SUPPLIER_NPD, c(RV), c(X), c(E, "E**"), c(S), c(X)),
-							new RoleGrant(SUPPLIER_OFP, c(RV), c(X), c(E, "E**"), c(S), c(X)),
-							new RoleGrant(SUPPLIER_QUALITY, c(RV), c(X), c(E, "E**"), c(S), c(X)),
-							new RoleGrant(SUPPLIER_KAM, c(RV), c(X), c(E, "E**"), c(S), c(X))),
-					List.of("E*/A*: ERGO Quality for inspection clearance, hold, and release decisions.",
-							"E**: Supplier NPD/OFP/Quality/KAM edit rights limited to production status, quantities, dispatch "
-									+ "readiness, blocker reasons, and attachments for assigned orders.")),
-			new Module("10.8", "Quality Management",
-					List.of(g(ERGO_ADMIN, V, C, E, S, A), g(ERGO_MANAGEMENT, V, X, X, X, A), g(ERGO_KAM, RV, X, X, X, X),
-							g(ERGO_RFQ, X, X, X, X, X), g(ERGO_NPD, RV, X, X, X, X), g(ERGO_OFP, RV, X, X, X, X),
-							g(ERGO_QUALITY, V, C, E, S, A), g(CUSTOMER_RFQ, X, X, X, X, X), g(CUSTOMER_NPD, RV, X, X, X, X),
-							g(CUSTOMER_OFP, RV, X, X, X, X),
-							new RoleGrant(CUSTOMER_QUALITY, c(RV), c(C), c(E), c(S), c(A, "A*")),
-							g(CUSTOMER_KAM, RV, X, X, X, X), g(CUSTOMER_MANAGEMENT, RV, X, X, X, X), g(SUPPLIER_RFQ, X, X, X, X, X),
-							g(SUPPLIER_NPD, RV, X, X, X, X), g(SUPPLIER_OFP, RV, X, X, X, X), g(SUPPLIER_QUALITY, RV, C, E, S, X),
-							g(SUPPLIER_KAM, RV, X, X, X, X)),
-					List.of("A*: Customer Quality approval applies only to customer-side acceptance/closure items where "
-							+ "customer action is required.")),
+				// 10.4-10.8: the five workflow modules come straight from the role sheet (ModuleAccess), the one place
+				// the enforced access lives (client decision 2026-10-19, ARCHITECTURE.md §8), so this screen cannot drift.
+				sheetModule("10.4", "RFQ Management", ModuleAccess.Module.RFQ,
+						List.of("Source: the role access sheet. V = view only; A = create, edit, submit without final approval; "
+								+ "O = owns and gives the final approval (validate, reopen, close); CO = the customer's final approval.",
+								"Suppliers reach RFQs only as the quotes ERGO asks them for (Assigned RFQs): A = respond, V = read the "
+										+ "assigned RFQ.")),
+				sheetModule("10.5", "Quotation Management", ModuleAccess.Module.QUOTATION,
+						List.of("Source: the role access sheet. O (ERGO) decides on the comparison and sends quotes to the customer.",
+								"Customer: CO approves, requests a revision or declines an ERGO quote; A may only request a revision. "
+										+ "Customers see only quotes ERGO has sent to their own company.",
+								"Supplier: A creates, edits and submits its own quote (while ERGO has it open).")),
+				sheetModule("10.6", "NPD Management", ModuleAccess.Module.NPD,
+						List.of("Source: the role access sheet. O (ERGO NPD, Management) converts RFQs, closes stages and decides "
+								+ "ERGO-owned stage and quality gates; ERGO Quality (A) prepares and requests them.",
+								"Customer NPD (CO) decides the customer-facing approvals (sample, milestone, quality acceptance); "
+										+ "other customer roles act or view on their own company's projects.",
+								"Supplier roles (A) edit only supplier-owned activities, dates, attachments and issue responses.")),
+				sheetModule("10.7", "OFP / Production Tracking", ModuleAccess.Module.OFP,
+						List.of("Source: the role access sheet. O (ERGO OFP, Management) creates orders and runs the workflow and "
+								+ "shipments; ERGO Quality (A) holds and releases orders and records material inspection status.",
+								"Suppliers (A) update production progress and packaging/dispatch of their own assigned orders only.",
+								"Customers see their own company's orders read-only; no customer-side OFP action exists yet, so CO/A "
+										+ "customers have view access today.")),
+				sheetModule("10.8", "Quality Management", ModuleAccess.Module.QUALITY,
+						List.of("Source: the role access sheet. O (ERGO Management, Quality) passes, rejects, closes and approves; "
+								+ "A creates, edits and submits inspections, NCRs and deviations within the role's own records.",
+								"Deviations: the customer's CO roles decide the customer-approval step; every acting role may raise one.",
+								"Customers see inspections and NCRs only where ERGO has made them customer-visible; customers and "
+										+ "suppliers never see each other.")),
 			new Module("10.9", "Document Management System",
 					List.of(g(ERGO_ADMIN, V, C, E, S, A), g(ERGO_MANAGEMENT, V, X, X, X, A), g(ERGO_KAM, RV, C, E, S, X),
 							g(ERGO_RFQ, RV, C, E, S, X), g(ERGO_NPD, RV, C, E, S, X), g(ERGO_OFP, RV, C, E, S, X),
@@ -227,6 +188,25 @@ public final class PermissionMatrix {
 							+ "deviation approval, etc.) is separate and already built into that module.")));
 
 	private PermissionMatrix() {
+	}
+
+	/** One module's table, generated from {@link ModuleAccess}: V = view; A adds create / edit / submit; O and CO add
+	 * the final approval. View is restricted (RV) wherever record scope narrows it. */
+	private static Module sheetModule(String section, String title, ModuleAccess.Module module, List<String> notes) {
+		List<RoleGrant> grants = java.util.Arrays.stream(Role.values()).map(role -> {
+			ModuleAccess.Level level = ModuleAccess.level(role, module);
+			if (!level.canView()) {
+				return g(role, X, X, X, X, X);
+			}
+			boolean restricted = role.companyType() != com.ergo.connect.common.security.CompanyType.ERGO
+					|| role == ERGO_KAM || role == ERGO_NPD || role == ERGO_OFP && module == ModuleAccess.Module.QUALITY;
+			Cell view = c(restricted ? RV : V);
+			Cell act = level.canAct() ? null : c(X);
+			Cell approve = level.canApprove() ? (level == ModuleAccess.Level.CO ? c(A, "CO") : c(A)) : c(X);
+			return new RoleGrant(role, view, act == null ? c(C) : act, act == null ? c(E) : act, act == null ? c(S) : act,
+					approve);
+		}).toList();
+		return new Module(section, title, grants, notes);
 	}
 
 	private static Cell c(Grant value) {

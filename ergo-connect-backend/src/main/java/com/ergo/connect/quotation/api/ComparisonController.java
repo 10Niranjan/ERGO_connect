@@ -27,15 +27,15 @@ import jakarta.validation.Valid;
 @RestController
 class ComparisonController {
 
-	private static final String ERGO_VIEWERS = "hasAnyRole('ERGO_ADMIN', 'ERGO_MANAGEMENT', 'ERGO_RFQ', 'ERGO_KAM', "
-			+ "'ERGO_NPD')";
+	// The role sheet (ModuleAccess), Quotation column.
+	private static final String ERGO_VIEWERS = "@access.view('QUOTATION', 'ERGO')";
 
-	private static final String EVALUATORS = "hasAnyRole('ERGO_ADMIN', 'ERGO_RFQ')";
+	private static final String EVALUATORS = "@access.approve('QUOTATION', 'ERGO')";
 
-	private static final String CUSTOMERS = "hasAnyRole('CUSTOMER_RFQ', 'CUSTOMER_KAM', 'CUSTOMER_MANAGEMENT')";
+	/** Customers that may answer a quote at all; CustomerQuoteService limits the final answers to "CO". */
+	private static final String CUSTOMERS = "@access.act('QUOTATION', 'CUSTOMER')";
 
-	private static final String QUOTE_READERS = "hasAnyRole('ERGO_ADMIN', 'ERGO_MANAGEMENT', 'ERGO_RFQ', 'ERGO_KAM', "
-			+ "'ERGO_NPD', 'CUSTOMER_RFQ', 'CUSTOMER_KAM', 'CUSTOMER_MANAGEMENT')";
+	private static final String QUOTE_READERS = "@access.view('QUOTATION', 'ERGO') or @access.view('QUOTATION', 'CUSTOMER')";
 
 	private final ComparisonService comparisons;
 

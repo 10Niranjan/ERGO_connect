@@ -42,6 +42,8 @@ import com.ergo.connect.common.event.Recipients;
 import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
+import com.ergo.connect.common.security.ModuleAccess;
+import com.ergo.connect.common.security.ModuleAccess.Module;
 import com.ergo.connect.common.security.Role;
 import com.ergo.connect.masterdata.api.Directory;
 import com.ergo.connect.masterdata.api.Directory.CompanyRef;
@@ -111,20 +113,22 @@ import tools.jackson.databind.json.JsonMapper;
 @Transactional
 public class DeviationService {
 
-	/** SRS §10.8 Create/Edit/Submit: ERGO Admin/Quality, Customer Quality and Supplier Quality. */
-	private static final Set<Role> EDITORS = EnumSet.of(ERGO_ADMIN, ERGO_QUALITY, CUSTOMER_QUALITY, SUPPLIER_QUALITY);
+	/** The role sheet (ModuleAccess), Quality column. Create/Edit/Submit: every role that acts ("A" and up), all
+	 * three sides. */
+	private static final Set<Role> EDITORS = ModuleAccess.actors(Module.QUALITY);
 
-	/** REQUESTED -&gt; UNDER_REVIEW ("ERGO Quality starts review", brief item 3) - narrower than {@link #EDITORS}. */
-	private static final Set<Role> REVIEW_STARTERS = EnumSet.of(ERGO_ADMIN, ERGO_QUALITY);
+	/** ERGO's acting roles: may edit any deviation while it is still REQUESTED, whoever raised it. */
+	private static final Set<Role> ERGO_EDITORS = ModuleAccess.actors(Module.QUALITY, CompanyType.ERGO);
 
-	/** APPROVED/EXPIRED -&gt; CLOSED (brief item 5): the same two roles as {@link #REVIEW_STARTERS}. */
-	private static final Set<Role> CLOSERS = EnumSet.of(ERGO_ADMIN, ERGO_QUALITY);
+	/** REQUESTED -&gt; UNDER_REVIEW ("ERGO Quality starts review", brief item 3) - ERGO's final-approval roles. */
+	private static final Set<Role> REVIEW_STARTERS = ModuleAccess.approvers(Module.QUALITY, CompanyType.ERGO);
 
-	private static final Set<Role> SUPPLIER_VIEWERS = EnumSet.of(SUPPLIER_QUALITY, SUPPLIER_NPD, SUPPLIER_OFP,
-			SUPPLIER_KAM);
+	/** APPROVED/EXPIRED -&gt; CLOSED (brief item 5): the same roles as {@link #REVIEW_STARTERS}. */
+	private static final Set<Role> CLOSERS = REVIEW_STARTERS;
 
-	private static final Set<Role> CUSTOMER_VIEWERS = EnumSet.of(CUSTOMER_QUALITY, CUSTOMER_NPD, CUSTOMER_OFP,
-			CUSTOMER_KAM, CUSTOMER_MANAGEMENT);
+	private static final Set<Role> SUPPLIER_VIEWERS = ModuleAccess.viewers(Module.QUALITY, CompanyType.SUPPLIER);
+
+	private static final Set<Role> CUSTOMER_VIEWERS = ModuleAccess.viewers(Module.QUALITY, CompanyType.CUSTOMER);
 
 	private final DeviationRepository deviations;
 
@@ -178,14 +182,14 @@ public class DeviationService {
 						d.partNumber, d.currentStatus, d.customerApprovalRequiredFlag, d.validityEndDate))
 				.toList();
 		}
-		List<Deviation> visible = switch (me.role()) {
-			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_QUALITY -> deviations.findAllByOrderByIdDesc();
-			case ERGO_KAM -> {
+		List<Deviation> visible = switch (QualityScope.of(me.role())) {
+			case FULL -> deviations.findAllByOrderByIdDesc();
+			case KAM -> {
 				Set<Long> accounts = directory.accountsOf(me.userId());
 				yield accounts.isEmpty() ? List.of() : deviations.findByCustomerCompanyIdInOrderByIdDesc(accounts);
 			}
-			case ERGO_NPD -> deviations.findByLinkedModuleOrderByIdDesc(LinkedModule.NPD);
-			case ERGO_OFP -> deviations.findByLinkedModuleOrderByIdDesc(LinkedModule.OFP);
+			case NPD_LINKED -> deviations.findByLinkedModuleOrderByIdDesc(LinkedModule.NPD);
+			case OFP_LINKED -> deviations.findByLinkedModuleOrderByIdDesc(LinkedModule.OFP);
 			default -> List.of(); // SRS §10.8 X: ERGO RFQ and every other role not handled above/below
 		};
 		Map<Long, CompanyRef> customers = directory.companies(ids(visible, d -> d.customerCompanyId));
@@ -208,7 +212,7 @@ public class DeviationService {
 	public DeviationDetail create(DeviationForm form) {
 		CurrentUser me = CurrentUser.get();
 		if (!EDITORS.contains(me.role())) {
-			throw ApiException.forbidden("Only ERGO Quality/Admin, Customer Quality or Supplier Quality may raise a deviation");
+			throw ApiException.forbidden("Your role may not raise a deviation");
 		}
 		if (form.linkedModule() != LinkedModule.NPD && form.linkedModule() != LinkedModule.OFP) {
 			throw ApiException.unprocessable("A deviation can only be linked to an NPD project or an OFP order");
@@ -227,13 +231,17 @@ public class DeviationService {
 		d.validityEndDate = form.validityEndDate();
 		d.requestedByUserId = me.userId();
 		// Judgment call (class comment): true only for a customer's own creation of its own record.
-		d.customerVisible = me.role() == CUSTOMER_QUALITY;
+		d.customerVisible = me.companyType() == CompanyType.CUSTOMER;
 		// Security review H3 fix (class comment): false only for a customer's own creation, true otherwise.
-		d.supplierVisible = me.role() != CUSTOMER_QUALITY;
+		d.supplierVisible = me.companyType() != CompanyType.CUSTOMER;
 		d.currentStatus = DeviationStatus.REQUESTED;
 		d.createdByUserId = me.userId();
 		d.createdByCompanyId = me.companyId();
 		d.deviationNumber = nextDeviationNumber();
+		if (!inScope(me, d)) {
+			// e.g. ERGO OFP ("A") may only raise deviations against OFP orders: it could never open any other one
+			throw ApiException.unprocessable("Your role can only raise deviations within its own area");
+		}
 		deviations.save(d);
 		createApprovalRow(d.id, Role.ERGO_QUALITY);
 		if (d.customerApprovalRequiredFlag) {
@@ -309,8 +317,10 @@ public class DeviationService {
 		if (ergoEditor(me)) {
 			// Security review H2 precedent (NcrUpdateForm.customerVisible): ERGO-only, full-replace - a non-ERGO
 			// editor's own value is ignored. Security review H3 fix: supplierVisible follows the same rule.
-			d.customerVisible = form.customerVisible();
-			d.supplierVisible = form.supplierVisible();
+			if (ModuleAccess.canApprove(me.role(), Module.QUALITY)) { // external exposure: Quality approvers only
+				d.customerVisible = form.customerVisible();
+				d.supplierVisible = form.supplierVisible();
+			}
 		}
 		return view(me, d);
 	}
@@ -472,26 +482,29 @@ public class DeviationService {
 	/** Record scope. Out-of-scope deviations do not exist for the caller (404, not 403). */
 	Deviation visible(CurrentUser me, long id) {
 		Deviation d = deviations.findById(id).orElse(null);
-		boolean inScope = d != null && switch (me.role()) {
-			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_QUALITY -> true;
-			case ERGO_KAM -> d.customerCompanyId != null && directory.accountsOf(me.userId()).contains(d.customerCompanyId);
-			case ERGO_NPD -> d.linkedModule == LinkedModule.NPD;
-			case ERGO_OFP -> d.linkedModule == LinkedModule.OFP;
-			// Security review H3 fix: supplierVisible gate, mirroring the customer branch below.
-			case SUPPLIER_QUALITY, SUPPLIER_NPD, SUPPLIER_OFP, SUPPLIER_KAM ->
-				d.supplierVisible && d.supplierCompanyId != null && me.companyId() == d.supplierCompanyId;
-			case CUSTOMER_QUALITY, CUSTOMER_NPD, CUSTOMER_OFP, CUSTOMER_KAM, CUSTOMER_MANAGEMENT ->
-				d.customerVisible && d.customerCompanyId != null && me.companyId() == d.customerCompanyId;
-			default -> false; // ERGO_RFQ, CUSTOMER_RFQ, SUPPLIER_RFQ: SRS §10.8 X
-		};
-		if (!inScope) {
+		if (!inScope(me, d)) {
 			throw ApiException.notFound("Deviation");
 		}
 		return d;
 	}
 
+	private boolean inScope(CurrentUser me, Deviation d) {
+		return d != null && switch (QualityScope.of(me.role())) {
+			case FULL -> true;
+			case KAM -> d.customerCompanyId != null && directory.accountsOf(me.userId()).contains(d.customerCompanyId);
+			case NPD_LINKED -> d.linkedModule == LinkedModule.NPD;
+			case OFP_LINKED -> d.linkedModule == LinkedModule.OFP;
+			// Security review H3 fix: supplierVisible gate, mirroring the customer branch below.
+			case SUPPLIER ->
+				d.supplierVisible && d.supplierCompanyId != null && me.companyId() == d.supplierCompanyId;
+			case CUSTOMER ->
+				d.customerVisible && d.customerCompanyId != null && me.companyId() == d.customerCompanyId;
+			default -> false; // roles with no Quality access
+		};
+	}
+
 	private boolean ergoEditor(CurrentUser me) {
-		return me.role() == ERGO_ADMIN || me.role() == ERGO_QUALITY;
+		return ERGO_EDITORS.contains(me.role());
 	}
 
 	/** Which {@link DeviationApproval#approverRole} row this caller's role may decide (brief item 4), or {@code null}
@@ -499,10 +512,14 @@ public class DeviationService {
 	 * (including ERGO Management, who has no create/edit/submit right at all but does have this one); Customer
 	 * Quality decides only the {@code CUSTOMER_QUALITY} row; Supplier Quality decides neither. */
 	private static Role myApprovalRole(Role role) {
-		return switch (role) {
-			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_QUALITY -> Role.ERGO_QUALITY;
-			case CUSTOMER_QUALITY -> Role.CUSTOMER_QUALITY;
-			default -> null;
+		if (!ModuleAccess.canApprove(role, Module.QUALITY)) {
+			return null;
+		}
+		// the two approval rows are logical slots (ERGO's, the customer's); the sheet decides who fills them
+		return switch (role.companyType()) {
+			case ERGO -> Role.ERGO_QUALITY;
+			case CUSTOMER -> Role.CUSTOMER_QUALITY;
+			case SUPPLIER -> null;
 		};
 	}
 

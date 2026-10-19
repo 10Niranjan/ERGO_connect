@@ -37,12 +37,10 @@ import {
   NPD_CUSTOMER_ROLES,
   NPD_SUPPLIER_ROLES,
   NPD_VIEWERS,
-  OFP_CUSTOMER_ROLES,
-  OFP_SUPPLIER_ROLES,
-  OFP_VIEWERS,
   QUALITY_VIEWERS,
+  OFP_DETAIL_VIEWERS,
   RFQ_VIEWERS,
-  SUPPLIER_QUOTERS,
+  SUPPLIER_RFQ_VIEWERS,
 } from '@/features/auth/utils/access'
 import type { Role, Session } from '@/features/auth/store/authSlice'
 
@@ -69,7 +67,7 @@ const NAV_SECTIONS: NavSection[] = [
     title: 'Sourcing & Workflow',
     items: [
       { label: 'RFQs', to: '/rfqs', icon: RequestQuoteIcon, roles: RFQ_VIEWERS },
-      { label: 'Assigned RFQs', to: '/quotes', icon: AssignmentIcon, roles: SUPPLIER_QUOTERS },
+      { label: 'Assigned RFQs', to: '/quotes', icon: AssignmentIcon, roles: SUPPLIER_RFQ_VIEWERS },
       { label: 'NPD', to: '/npd', icon: EngineeringIcon, roles: NPD_VIEWERS },
       { label: 'NPD', to: '/npd/mine', icon: EngineeringIcon, roles: NPD_CUSTOMER_ROLES },
       { label: 'NPD Tasks', to: '/npd/mine', icon: EngineeringIcon, roles: NPD_SUPPLIER_ROLES },
@@ -77,7 +75,7 @@ const NAV_SECTIONS: NavSection[] = [
         label: 'Orders',
         to: '/ofp',
         icon: LocalShippingIcon,
-        roles: [...OFP_VIEWERS, ...OFP_SUPPLIER_ROLES, ...OFP_CUSTOMER_ROLES],
+        roles: OFP_DETAIL_VIEWERS,
       },
     ],
   },

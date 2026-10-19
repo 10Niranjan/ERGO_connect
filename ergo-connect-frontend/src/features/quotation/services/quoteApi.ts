@@ -120,9 +120,18 @@ export interface ErgoQuoteView extends QuoteViewBase {
   quote: QuoteData | null
 }
 
-export type QuoteView = SupplierQuoteView | ErgoQuoteView
+/** A supplier role with RFQ access but none on Quotation: the assigned RFQ only, no quote status or correspondence. */
+export interface SupplierAssignedRfqView {
+  audience: 'SUPPLIER_RFQ'
+  id: number
+  responseDueDate: string
+  rfq: SupplierRfq
+  actions: QuoteAction[]
+}
 
-/** The supplier's "Assigned RFQs" list. */
+export type QuoteView = SupplierQuoteView | ErgoQuoteView | SupplierAssignedRfqView
+
+/** The supplier's "Assigned RFQs" list; the quote columns are absent for a role without Quotation access. */
 export interface SupplierQuoteRow {
   id: number
   rfqNumber: string
@@ -130,9 +139,9 @@ export interface SupplierQuoteRow {
   revision: string | null
   description: string | null
   responseDueDate: string
-  status: QuoteStatus
-  version: number
-  submittedAt: string | null
+  status?: QuoteStatus
+  version?: number
+  submittedAt?: string | null
   quotingOpen: boolean
 }
 

@@ -45,6 +45,8 @@ import com.ergo.connect.common.event.Recipients;
 import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
+import com.ergo.connect.common.security.ModuleAccess;
+import com.ergo.connect.common.security.ModuleAccess.Module;
 import com.ergo.connect.common.security.Role;
 import com.ergo.connect.documents.api.DocumentStore;
 import com.ergo.connect.documents.api.DocumentStore.DocumentInfo;
@@ -67,6 +69,8 @@ import com.ergo.connect.quotation.domain.QuoteDtos.QuoteForm;
 import com.ergo.connect.quotation.domain.QuoteDtos.QuoteView;
 import com.ergo.connect.quotation.domain.QuoteDtos.RfqSuppliers;
 import com.ergo.connect.quotation.domain.QuoteDtos.StepView;
+import com.ergo.connect.quotation.domain.QuoteDtos.SupplierAssignedRfqRow;
+import com.ergo.connect.quotation.domain.QuoteDtos.SupplierAssignedRfqView;
 import com.ergo.connect.quotation.domain.QuoteDtos.SupplierQuoteRow;
 import com.ergo.connect.quotation.domain.QuoteDtos.SupplierQuoteView;
 import com.ergo.connect.quotation.domain.QuoteDtos.VersionView;
@@ -88,17 +92,17 @@ public class QuoteService {
 	/** linked_module of files attached to a quote. */
 	static final String MODULE = "quotation";
 
-	/** SRS §10.5 view: ERGO Admin, Management, RFQ (V); KAM and NPD (RV, scoped by the RFQ module). */
-	private static final Set<Role> ERGO_VIEWERS = EnumSet.of(ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_RFQ, ERGO_KAM, ERGO_NPD);
+	/** The role sheet (ModuleAccess), Quotation column. View (ERGO KAM/NPD are scoped by the RFQ module). */
+	private static final Set<Role> ERGO_VIEWERS = ModuleAccess.viewers(Module.QUOTATION, CompanyType.ERGO);
 
-	/** SRS §9.1: ERGO RFQ runs the float and controls supplier quote edit permission (with Admin, Management). */
-	private static final Set<Role> ERGO_BUYERS = EnumSet.of(ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_RFQ);
+	/** ERGO that runs the float and controls supplier quote edit permission ("A" and up). */
+	private static final Set<Role> ERGO_BUYERS = ModuleAccess.actors(Module.QUOTATION, CompanyType.ERGO);
 
-	/** SRS §9.1/§10.5: ERGO RFQ (and Admin) compare quotes and submit them to the customer. */
-	static final Set<Role> EVALUATORS = EnumSet.of(ERGO_ADMIN, ERGO_RFQ);
+	/** ERGO that compares quotes, decides and submits them to the customer: the final-approval ("O") roles. */
+	static final Set<Role> EVALUATORS = ModuleAccess.approvers(Module.QUOTATION, CompanyType.ERGO);
 
-	/** SRS §10.5: Supplier RFQ and Supplier KAM create, edit (when open) and submit quotes. */
-	static final Set<Role> SUPPLIER_QUOTERS = EnumSet.of(SUPPLIER_RFQ, SUPPLIER_KAM);
+	/** Supplier roles that create, edit (when open) and submit quotes. */
+	static final Set<Role> SUPPLIER_QUOTERS = ModuleAccess.actors(Module.QUOTATION, CompanyType.SUPPLIER);
 
 	/** The RFQ-side facts the rule book needs; a supplier only ever learns whether quoting is open. */
 	record RfqState(boolean quotingOpen, boolean evaluating, boolean offering) {
@@ -216,7 +220,28 @@ public class QuoteService {
 	// ---------------------------------------------------------------- supplier: my invitations
 
 	@Transactional(readOnly = true)
-	public List<SupplierQuoteRow> mine() {
+	public List<?> mine() {
+		if (!quoteVisible(CurrentUser.get())) {
+			// no Quotation access: the quote is never loaded, only the assigned RFQ is listed
+			return assignedRfqs();
+		}
+		return quoteRows();
+	}
+
+	private List<SupplierAssignedRfqRow> assignedRfqs() {
+		CurrentUser me = CurrentUser.get();
+		List<Invitation> mine = invitations.findBySupplierCompanyIdOrderByIdDesc(me.companyId());
+		Map<Long, SupplierRfq> rfqInfo = rfqs.forSupplier(mine.stream().map(i -> i.rfqId).collect(Collectors.toSet()));
+		return mine.stream().map(i -> {
+			SupplierRfq r = rfqInfo.get(i.rfqId);
+			return new SupplierAssignedRfqRow(i.id, r.number(), r.partNumber(), r.revision(), r.description(),
+					i.responseDueDate, r.quotingOpen());
+		}).toList();
+	}
+
+	/** The supplier's assignments with their quote status; only for roles that may see quotes. */
+	@Transactional(readOnly = true)
+	List<SupplierQuoteRow> quoteRows() {
 		CurrentUser me = CurrentUser.get();
 		List<Invitation> mine = invitations.findBySupplierCompanyIdOrderByIdDesc(me.companyId());
 		Map<Long, SupplierRfq> rfqInfo = rfqs.forSupplier(mine.stream().map(i -> i.rfqId).collect(Collectors.toSet()));
@@ -386,7 +411,7 @@ public class QuoteService {
 	public List<VersionView> versions(long id) {
 		CurrentUser me = CurrentUser.get();
 		Invitation invitation = visible(me, id);
-		SupplierQuote quote = quotes.findByAssignmentId(invitation.id).orElse(null);
+		SupplierQuote quote = quoteVisible(me) ? quotes.findByAssignmentId(invitation.id).orElse(null) : null;
 		if (quote == null) {
 			return List.of();
 		}
@@ -421,7 +446,7 @@ public class QuoteService {
 		if (me.companyType() == CompanyType.SUPPLIER) {
 			rfqs.supplierDocuments(invitation.rfqId).forEach(d -> result.add(documentView(me, "RFQ", d, false)));
 		}
-		documents.list(MODULE, invitation.id).stream().filter(d -> canSee(me, invitation, d, submitted))
+		documents.list(MODULE, invitation.id).stream().filter(d -> quoteVisible(me) && canSee(me, invitation, d, submitted))
 			.forEach(d -> result.add(documentView(me, "QUOTE", d,
 					mayDelete && d.uploadedByCompanyId() == me.companyId() && !submitted.contains(d.id()))));
 		return result;
@@ -449,7 +474,7 @@ public class QuoteService {
 				? rfqs.supplierDocuments(invitation.rfqId).stream().filter(d -> d.id() == documentId).findFirst()
 					.orElse(null)
 				: documents.find(MODULE, invitation.id, documentId)
-					.filter(d -> canSee(me, invitation, d, submittedFiles(invitation)))
+					.filter(d -> quoteVisible(me) && canSee(me, invitation, d, submittedFiles(invitation)))
 					.orElse(null);
 		if (document == null) {
 			throw ApiException.notFound("Document");
@@ -531,7 +556,7 @@ public class QuoteService {
 	/** Security review M2: one file of the quote as the caller may see it (see {@code canSee}); drafts stay private. */
 	boolean fileVisible(CurrentUser me, long invitationId, long documentId) {
 		Invitation invitation = invitations.findById(invitationId).orElse(null);
-		return inScope(me, invitation) && documents.find(MODULE, invitationId, documentId)
+		return quoteVisible(me) && inScope(me, invitation) && documents.find(MODULE, invitationId, documentId)
 			.filter(d -> canSee(me, invitation, d, submittedFiles(invitation)))
 			.isPresent();
 	}
@@ -547,7 +572,7 @@ public class QuoteService {
 
 	private boolean inScope(CurrentUser me, Invitation invitation) {
 		return invitation != null && switch (me.companyType()) {
-			case SUPPLIER -> SUPPLIER_QUOTERS.contains(me.role()) && invitation.supplierCompanyId == me.companyId();
+			case SUPPLIER -> ModuleAccess.canView(me.role(), Module.RFQ) && invitation.supplierCompanyId == me.companyId();
 			case ERGO -> ERGO_VIEWERS.contains(me.role()) && rfqs.visibleToCaller(invitation.rfqId);
 			case CUSTOMER -> false; // customers only ever see what ERGO sends them (Phase 2c)
 		};
@@ -702,6 +727,11 @@ public class QuoteService {
 	}
 
 	private QuoteView view(CurrentUser me, Invitation i) {
+		if (me.companyType() == CompanyType.SUPPLIER && !quoteVisible(me)) {
+			// A supplier role with RFQ access but none on Quotation sees the assigned RFQ, never the quote itself.
+			return new SupplierAssignedRfqView("SUPPLIER_RFQ", i.id, i.responseDueDate, rfqs.forSupplier(i.rfqId),
+					Set.of());
+		}
 		SupplierQuote q = quotes.findByAssignmentId(i.id).orElse(null);
 		QuoteData data = q == null ? null : data(q);
 		int version = q == null ? 0 : q.currentVersion;
@@ -756,6 +786,10 @@ public class QuoteService {
 	private boolean mayDeleteOwnFiles(CurrentUser me, Invitation i) {
 		return SUPPLIER_QUOTERS.contains(me.role()) ? allowed(QuoteAction.EDIT, me, i, rfqState(me, i))
 				: ERGO_BUYERS.contains(me.role());
+	}
+
+	private static boolean quoteVisible(CurrentUser me) {
+		return ModuleAccess.canView(me.role(), Module.QUOTATION);
 	}
 
 	/** Ids of the supplier's files that went out with any submitted version of this quote. */

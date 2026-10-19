@@ -62,11 +62,11 @@ class DeviationTests {
 
 	long supplierY;
 
-	Login ergoAdmin;
+	Login ergoManagement;
 
 	Login ergoQuality;
 
-	Login ergoManagement;
+	Login ergoAdmin;
 
 	Login ergoKam;
 
@@ -112,9 +112,9 @@ class DeviationTests {
 		customerB = users.company("CUSTOMER");
 		supplierX = users.company("SUPPLIER");
 		supplierY = users.company("SUPPLIER");
-		ergoAdmin = users.login(ergo, "ERGO_ADMIN");
-		ergoQuality = users.login(ergo, "ERGO_QUALITY");
 		ergoManagement = users.login(ergo, "ERGO_MANAGEMENT");
+		ergoQuality = users.login(ergo, "ERGO_QUALITY");
+		ergoAdmin = users.login(ergo, "ERGO_ADMIN");
 		ergoKam = users.login(ergo, "ERGO_KAM");
 		users.assignAccounts(ergoKam.userId(), customerA);
 		ergoNpd = users.login(ergo, "ERGO_NPD");
@@ -136,16 +136,24 @@ class DeviationTests {
 	// ---------------------------------------------------------------- create / role check
 
 	@Test
-	void onlyErgoAdminErgoQualityCustomerQualityAndSupplierQualityMayCreate() throws Exception {
+	void everyRoleThatActsOnQualityMayRaiseADeviationAndTheViewOnlyOnesMayNot() throws Exception {
 		long orderId = createOrder(customerA, supplierX);
-		call(post("/api/quality/deviations"), ergoAdmin, deviationForm(orderId, false)).andExpect(status().isCreated());
+		// role sheet: ERGO Management / Quality ("O"), ERGO OFP ("A", OFP-linked only), Customer NPD / Quality ("CO"),
+		// Supplier Quality / KAM ("A")
+		call(post("/api/quality/deviations"), ergoManagement, deviationForm(orderId, false)).andExpect(status().isCreated());
 		call(post("/api/quality/deviations"), ergoQuality, deviationForm(orderId, false)).andExpect(status().isCreated());
+		call(post("/api/quality/deviations"), ergoOfp, deviationForm(orderId, false)).andExpect(status().isCreated());
 		call(post("/api/quality/deviations"), customerAQuality, deviationForm(orderId, false))
+			.andExpect(status().isCreated());
+		call(post("/api/quality/deviations"), customerANpd, deviationForm(orderId, false))
 			.andExpect(status().isCreated());
 		call(post("/api/quality/deviations"), supplierXQuality, deviationForm(orderId, false))
 			.andExpect(status().isCreated());
+		call(post("/api/quality/deviations"), supplierXKam, deviationForm(orderId, false))
+			.andExpect(status().isCreated());
 
-		for (Login denied : List.of(ergoManagement, ergoKam, ergoNpd, ergoOfp, ergoRfq)) {
+		for (Login denied : List.of(ergoAdmin, ergoKam, ergoNpd, ergoRfq, customerAOfp, customerAKam, supplierXNpd,
+				supplierXOfp)) {
 			call(post("/api/quality/deviations"), denied, deviationForm(orderId, false)).andExpect(status().isForbidden());
 		}
 	}
@@ -222,8 +230,11 @@ class DeviationTests {
 		call(get("/api/quality/deviations"), ergoOfp, null).andExpect(jsonPath("$[*].id", hasItem((int) ofpOne)))
 			.andExpect(jsonPath("$[*].id", not(hasItem((int) npdOne))));
 
-		call(get("/api/quality/deviations"), ergoRfq, null).andExpect(status().isForbidden());
-		call(get("/api/quality/deviations/{id}", forA), ergoRfq, null).andExpect(status().isForbidden());
+		// ERGO RFQ and Admin view every deviation (role sheet "V")
+		for (Login viewer : List.of(ergoRfq, ergoAdmin)) {
+			call(get("/api/quality/deviations"), viewer, null).andExpect(jsonPath("$[*].id", hasItem((int) forB)));
+			call(get("/api/quality/deviations/{id}", forA), viewer, null).andExpect(status().isOk());
+		}
 	}
 
 	/** Security review M5 precedent ({@code NcrService.applyLinkedCompanies}): companies always come from the linked
@@ -253,8 +264,8 @@ class DeviationTests {
 	@Test
 	void twoWayAnonymityNeitherPartyLearnsTheOtherIncludingApprovalComments() throws Exception {
 		long orderId = createOrder(customerA, supplierX);
-		// creator is ergoAdmin, decider is ergoQuality (security review H2: a creator may not decide its own row)
-		long id = createAsErgo(ergoAdmin, orderId, true); // customerApprovalRequiredFlag forces customerVisible later
+		// creator is ergoManagement, decider is ergoQuality (security review H2: a creator may not decide its own row)
+		long id = createAsErgo(ergoManagement, orderId, true); // customerApprovalRequiredFlag forces customerVisible later
 		call(post("/api/quality/deviations/{id}/start-review", id), ergoQuality, null).andExpect(status().isOk());
 		// the ERGO_QUALITY row's comment is, by design, shown in full to the supplier (DeviationDtos's own H3
 		// javadoc) - so it is kept free of anything that would itself leak the customer's identity
@@ -314,8 +325,8 @@ class DeviationTests {
 	@Test
 	void whenCustomerApprovalIsNotRequiredErgoApprovalAloneFinalizesIt() throws Exception {
 		long orderId = createOrder(customerA, supplierX);
-		// creator is ergoAdmin, decider is ergoQuality (security review H2: a creator may not decide its own row)
-		long id = createAsErgo(ergoAdmin, orderId, false);
+		// creator is ergoManagement, decider is ergoQuality (security review H2: a creator may not decide its own row)
+		long id = createAsErgo(ergoManagement, orderId, false);
 
 		call(get("/api/quality/deviations/{id}", id), ergoQuality, null).andExpect(status().isOk())
 			.andExpect(jsonPath("$.approvals.length()").value(1)); // only the ERGO_QUALITY row exists
@@ -335,8 +346,8 @@ class DeviationTests {
 	@Test
 	void whenCustomerApprovalIsRequiredBothRowsMustApproveBeforeFinalApproval() throws Exception {
 		long orderId = createOrder(customerA, supplierX);
-		// creator is ergoAdmin, decider is ergoQuality (security review H2: a creator may not decide its own row)
-		long id = createAsErgo(ergoAdmin, orderId, true);
+		// creator is ergoManagement, decider is ergoQuality (security review H2: a creator may not decide its own row)
+		long id = createAsErgo(ergoManagement, orderId, true);
 
 		call(get("/api/quality/deviations/{id}", id), ergoQuality, null).andExpect(status().isOk())
 			.andExpect(jsonPath("$.approvals.length()").value(2)) // both rows exist up front
@@ -400,17 +411,20 @@ class DeviationTests {
 		call(post("/api/quality/deviations/{id}/approve", id), ergoKam, "{}").andExpect(status().isForbidden());
 	}
 
-	/** ERGO Management: view + approve only, no create/edit/submit (SRS §10.8). */
+	/** Role sheet: ERGO Admin is view-only on Quality - it creates, edits and approves nothing; ERGO Management ("O")
+	 * decides the ERGO approval row. */
 	@Test
-	void ergoManagementMayApproveButNeverCreateOrEdit() throws Exception {
+	void ergoAdminIsViewOnlyAndErgoManagementMayApprove() throws Exception {
 		long orderId = createOrder(customerA, supplierX);
 		long id = createAsErgo(ergoQuality, orderId, false);
 		call(post("/api/quality/deviations/{id}/start-review", id), ergoQuality, null).andExpect(status().isOk());
 
-		call(post("/api/quality/deviations"), ergoManagement, deviationForm(orderId, false))
+		call(post("/api/quality/deviations"), ergoAdmin, deviationForm(orderId, false))
 			.andExpect(status().isForbidden());
-		call(put("/api/quality/deviations/{id}", id), ergoManagement, updateForm(false, false))
+		call(put("/api/quality/deviations/{id}", id), ergoAdmin, updateForm(false, false))
 			.andExpect(status().isForbidden());
+		call(post("/api/quality/deviations/{id}/approve", id), ergoAdmin, "{}").andExpect(status().isForbidden());
+		call(get("/api/quality/deviations/{id}", id), ergoAdmin, null).andExpect(status().isOk());
 
 		call(post("/api/quality/deviations/{id}/approve", id), ergoManagement, "{}")
 			.andExpect(jsonPath("$.currentStatus").value("APPROVED"));
@@ -421,8 +435,8 @@ class DeviationTests {
 	@Test
 	void rejectRequiresAReasonAndIsTerminal() throws Exception {
 		long orderId = createOrder(customerA, supplierX);
-		// creator is ergoAdmin, decider is ergoQuality (security review H2: a creator may not decide its own row)
-		long id = createAsErgo(ergoAdmin, orderId, false);
+		// creator is ergoManagement, decider is ergoQuality (security review H2: a creator may not decide its own row)
+		long id = createAsErgo(ergoManagement, orderId, false);
 		call(post("/api/quality/deviations/{id}/start-review", id), ergoQuality, null).andExpect(status().isOk());
 
 		call(post("/api/quality/deviations/{id}/reject", id), ergoQuality, "{}")
@@ -443,8 +457,8 @@ class DeviationTests {
 	@Test
 	void sendBackFromErgoRowReturnsToRequestedAndStartReviewReArmsIt() throws Exception {
 		long orderId = createOrder(customerA, supplierX);
-		// creator is ergoAdmin, decider is ergoQuality (security review H2: a creator may not decide its own row)
-		long id = createAsErgo(ergoAdmin, orderId, false);
+		// creator is ergoManagement, decider is ergoQuality (security review H2: a creator may not decide its own row)
+		long id = createAsErgo(ergoManagement, orderId, false);
 		call(post("/api/quality/deviations/{id}/start-review", id), ergoQuality, null).andExpect(status().isOk());
 
 		call(post("/api/quality/deviations/{id}/send-back", id), ergoQuality, "{}")
@@ -452,7 +466,7 @@ class DeviationTests {
 		call(post("/api/quality/deviations/{id}/send-back", id), ergoQuality, "{\"reason\": \"need more detail\"}")
 			.andExpect(jsonPath("$.currentStatus").value("REQUESTED"));
 
-		// security review H1: this deviation was created by ERGO (ergoAdmin), not the supplier - the supplier never
+		// security review H1: this deviation was created by ERGO (ergoManagement), not the supplier - the supplier never
 		// edits it, even while REQUESTED
 		call(put("/api/quality/deviations/{id}", id), supplierXQuality, updateForm(false, false))
 			.andExpect(status().isConflict());
@@ -471,8 +485,8 @@ class DeviationTests {
 	@Test
 	void sendBackFromCustomerRowReturnsToUnderReviewAndReArmsTheErgoRow() throws Exception {
 		long orderId = createOrder(customerA, supplierX);
-		// creator is ergoAdmin, decider is ergoQuality (security review H2: a creator may not decide its own row)
-		long id = createAsErgo(ergoAdmin, orderId, true);
+		// creator is ergoManagement, decider is ergoQuality (security review H2: a creator may not decide its own row)
+		long id = createAsErgo(ergoManagement, orderId, true);
 		call(post("/api/quality/deviations/{id}/start-review", id), ergoQuality, null).andExpect(status().isOk());
 		call(post("/api/quality/deviations/{id}/approve", id), ergoQuality, "{}")
 			.andExpect(jsonPath("$.currentStatus").value("CUSTOMER_APPROVAL_PENDING"));
@@ -494,8 +508,8 @@ class DeviationTests {
 	@Test
 	void closeOnlyFromApprovedOrExpiredAndOnlyErgoQualityAdmin() throws Exception {
 		long orderId = createOrder(customerA, supplierX);
-		// creator is ergoAdmin, decider is ergoQuality (security review H2: a creator may not decide its own row)
-		long id = createAsErgo(ergoAdmin, orderId, false);
+		// creator is ergoManagement, decider is ergoQuality (security review H2: a creator may not decide its own row)
+		long id = createAsErgo(ergoManagement, orderId, false);
 		call(post("/api/quality/deviations/{id}/close", id), ergoQuality, "{}").andExpect(status().isConflict());
 
 		call(post("/api/quality/deviations/{id}/start-review", id), ergoQuality, null).andExpect(status().isOk());
@@ -514,8 +528,8 @@ class DeviationTests {
 		// Validity is set directly via jdbc below (bypassing the @FutureOrPresent create-time validation added by
 		// security review L1) so the deviation can already be APPROVED before its validity lapses - the create form
 		// itself can no longer carry a past validityEndDate.
-		// creator is ergoAdmin, decider is ergoQuality (security review H2: a creator may not decide its own row)
-		long id = createAsErgoWithValidity(ergoAdmin, orderId, false, LocalDate.now().plusDays(1));
+		// creator is ergoManagement, decider is ergoQuality (security review H2: a creator may not decide its own row)
+		long id = createAsErgoWithValidity(ergoManagement, orderId, false, LocalDate.now().plusDays(1));
 		call(post("/api/quality/deviations/{id}/start-review", id), ergoQuality, null).andExpect(status().isOk());
 		call(post("/api/quality/deviations/{id}/approve", id), ergoQuality, "{}")
 			.andExpect(jsonPath("$.currentStatus").value("APPROVED"));
@@ -535,8 +549,8 @@ class DeviationTests {
 	@Test
 	void everyApprovalDecisionWritesAnImmutableVersionSnapshot() throws Exception {
 		long orderId = createOrder(customerA, supplierX);
-		// creator is ergoAdmin, decider is ergoQuality (security review H2: a creator may not decide its own row)
-		long id = createAsErgo(ergoAdmin, orderId, false); // version 1: initial submission
+		// creator is ergoManagement, decider is ergoQuality (security review H2: a creator may not decide its own row)
+		long id = createAsErgo(ergoManagement, orderId, false); // version 1: initial submission
 		call(post("/api/quality/deviations/{id}/start-review", id), ergoQuality, null).andExpect(status().isOk());
 		call(post("/api/quality/deviations/{id}/approve", id), ergoQuality, "{}").andExpect(status().isOk()); // version 2
 
@@ -578,11 +592,11 @@ class DeviationTests {
 	@Test
 	void editIsFrozenForEveryoneOnceUnderReviewNotJustTheOtherParty() throws Exception {
 		long orderId = createOrder(customerA, supplierX);
-		long id = createAsErgo(ergoAdmin, orderId, false);
+		long id = createAsErgo(ergoManagement, orderId, false);
 		call(post("/api/quality/deviations/{id}/start-review", id), ergoQuality, null).andExpect(status().isOk());
 
 		// even ERGO (the creator's own side here) cannot edit while UNDER_REVIEW
-		call(put("/api/quality/deviations/{id}", id), ergoAdmin, updateForm(false, false)).andExpect(status().isConflict());
+		call(put("/api/quality/deviations/{id}", id), ergoManagement, updateForm(false, false)).andExpect(status().isConflict());
 		call(put("/api/quality/deviations/{id}", id), ergoQuality, updateForm(false, false)).andExpect(status().isConflict());
 	}
 
@@ -592,7 +606,7 @@ class DeviationTests {
 	void theDeviationsOwnCreatorCannotApproveRejectOrSendBackTheErgoQualityRow() throws Exception {
 		long orderId = createOrder(customerA, supplierX);
 		long id = createAsErgo(ergoQuality, orderId, false);
-		call(post("/api/quality/deviations/{id}/start-review", id), ergoAdmin, null).andExpect(status().isOk());
+		call(post("/api/quality/deviations/{id}/start-review", id), ergoManagement, null).andExpect(status().isOk());
 
 		call(post("/api/quality/deviations/{id}/approve", id), ergoQuality, "{}").andExpect(status().isConflict());
 		call(post("/api/quality/deviations/{id}/reject", id), ergoQuality, "{\"reason\": \"x\"}")
@@ -601,7 +615,7 @@ class DeviationTests {
 			.andExpect(status().isConflict());
 
 		// a different ERGO approver (not the creator) may still decide it
-		call(post("/api/quality/deviations/{id}/approve", id), ergoAdmin, "{}")
+		call(post("/api/quality/deviations/{id}/approve", id), ergoManagement, "{}")
 			.andExpect(jsonPath("$.currentStatus").value("APPROVED"));
 	}
 
@@ -656,7 +670,7 @@ class DeviationTests {
 	@Test
 	void crossCompanyActionsAllReturnNotFoundNotForbiddenOrConflict() throws Exception {
 		long orderId = createOrder(customerA, supplierX);
-		long id = createAsErgo(ergoAdmin, orderId, true);
+		long id = createAsErgo(ergoManagement, orderId, true);
 		call(post("/api/quality/deviations/{id}/start-review", id), ergoQuality, null).andExpect(status().isOk());
 		call(post("/api/quality/deviations/{id}/approve", id), ergoQuality, "{}")
 			.andExpect(jsonPath("$.currentStatus").value("CUSTOMER_APPROVAL_PENDING"));
@@ -679,7 +693,7 @@ class DeviationTests {
 	@Test
 	void everySupplierAndCustomerViewerRoleCanReadADeviationOnceVisible() throws Exception {
 		long orderId = createOrder(customerA, supplierX);
-		long id = createAsErgo(ergoAdmin, orderId, true); // supplierVisible true immediately (ERGO-created)
+		long id = createAsErgo(ergoManagement, orderId, true); // supplierVisible true immediately (ERGO-created)
 		call(post("/api/quality/deviations/{id}/start-review", id), ergoQuality, null).andExpect(status().isOk());
 		call(post("/api/quality/deviations/{id}/approve", id), ergoQuality, "{}")
 			.andExpect(jsonPath("$.customerVisible").value(true)); // forces customerVisible true
@@ -712,7 +726,7 @@ class DeviationTests {
 	@Test
 	void aDeviationCannotBeApprovedOnceItsValidityHasLapsed() throws Exception {
 		long orderId = createOrder(customerA, supplierX);
-		long id = createAsErgoWithValidity(ergoAdmin, orderId, false, LocalDate.now().plusDays(1));
+		long id = createAsErgoWithValidity(ergoManagement, orderId, false, LocalDate.now().plusDays(1));
 		call(post("/api/quality/deviations/{id}/start-review", id), ergoQuality, null).andExpect(status().isOk());
 		jdbc.update("UPDATE deviations SET validity_end_date = ? WHERE deviation_id = ?", LocalDate.now().minusDays(1),
 				id);
@@ -792,7 +806,7 @@ class DeviationTests {
 				INSERT INTO inspections (linked_module, linked_record_id, customer_company_id, supplier_company_id,
 				                         part_number, created_by_user_id, created_by_company_id)
 				VALUES (?, ?, ?, ?, 'PN-INSPECT', ?, ?) RETURNING inspection_id""", Long.class, linkedModule, linkedRecordId,
-				customerCompanyId, supplierCompanyId, ergoAdmin.userId(), ergoAdmin.companyId());
+				customerCompanyId, supplierCompanyId, ergoManagement.userId(), ergoManagement.companyId());
 	}
 
 	/** A minimal OFP order, no MockMvc call needed (same helper as {@code NcrTests}). */
@@ -811,12 +825,12 @@ class DeviationTests {
 				INSERT INTO rfqs (rfq_number, source_type, customer_company_id, created_by_user_id, status, priority,
 				                  part_number, currency_id)
 				VALUES (?, 'CUSTOMER', ?, ?, 'CUSTOMER_APPROVED', 'NORMAL', 'PN-RFQ', ?) RETURNING rfq_id""",
-				Long.class, "NX" + SEQ.incrementAndGet(), customerCompanyId, ergoAdmin.userId(), currencyId);
+				Long.class, "NX" + SEQ.incrementAndGet(), customerCompanyId, ergoManagement.userId(), currencyId);
 		return jdbc.queryForObject("""
 				INSERT INTO npd_projects (npd_number, source_rfq_id, customer_company_id, supplier_company_id,
 				                          part_number, stage, created_by_user_id)
 				VALUES (?, ?, ?, ?, 'PN-NPD', 'PLANNING', ?) RETURNING npd_project_id""", Long.class,
-				"NY" + SEQ.incrementAndGet(), rfqId, customerCompanyId, supplierCompanyId, ergoAdmin.userId());
+				"NY" + SEQ.incrementAndGet(), rfqId, customerCompanyId, supplierCompanyId, ergoManagement.userId());
 	}
 
 	private ResultActions call(MockHttpServletRequestBuilder request, Login user, String body) throws Exception {

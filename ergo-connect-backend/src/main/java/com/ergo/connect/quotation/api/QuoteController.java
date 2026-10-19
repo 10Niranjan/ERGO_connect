@@ -28,7 +28,6 @@ import com.ergo.connect.quotation.domain.QuoteDtos.InviteForm;
 import com.ergo.connect.quotation.domain.QuoteDtos.QuoteForm;
 import com.ergo.connect.quotation.domain.QuoteDtos.QuoteView;
 import com.ergo.connect.quotation.domain.QuoteDtos.RfqSuppliers;
-import com.ergo.connect.quotation.domain.QuoteDtos.SupplierQuoteRow;
 import com.ergo.connect.quotation.domain.QuoteDtos.VersionView;
 import com.ergo.connect.quotation.domain.QuoteService;
 import com.ergo.connect.quotation.domain.QuoteService.DocumentFile;
@@ -42,20 +41,24 @@ import jakarta.validation.Valid;
 @RestController
 class QuoteController {
 
-	private static final String ERGO_VIEWERS = "hasAnyRole('ERGO_ADMIN', 'ERGO_MANAGEMENT', 'ERGO_RFQ', 'ERGO_KAM', "
-			+ "'ERGO_NPD')";
+	// The role sheet (ModuleAccess) decides. Customers never reach these endpoints (ComparisonController is theirs),
+	// whatever the sheet grants them on Quotation, hence the explicit sides.
+	private static final String ERGO_VIEWERS = "@access.view('QUOTATION', 'ERGO')";
 
-	private static final String ERGO_BUYERS = "hasAnyRole('ERGO_ADMIN', 'ERGO_MANAGEMENT', 'ERGO_RFQ')";
+	private static final String ERGO_BUYERS = "@access.act('QUOTATION', 'ERGO')";
 
-	private static final String EVALUATORS = "hasAnyRole('ERGO_ADMIN', 'ERGO_RFQ')";
+	private static final String EVALUATORS = "@access.approve('QUOTATION', 'ERGO')";
 
-	private static final String SUPPLIERS = "hasAnyRole('SUPPLIER_RFQ', 'SUPPLIER_KAM')";
+	private static final String SUPPLIERS = "@access.act('QUOTATION', 'SUPPLIER')";
 
-	private static final String VIEWERS = "hasAnyRole('ERGO_ADMIN', 'ERGO_MANAGEMENT', 'ERGO_RFQ', 'ERGO_KAM', "
-			+ "'ERGO_NPD', 'SUPPLIER_RFQ', 'SUPPLIER_KAM')";
+	/** The supplier's assigned-RFQ pages belong to the RFQ column; the quote itself to Quotation (QuoteService). */
+	private static final String SUPPLIER_RFQ_VIEWERS = "@access.view('RFQ', 'SUPPLIER')";
 
-	private static final String UPLOADERS = "hasAnyRole('ERGO_ADMIN', 'ERGO_MANAGEMENT', 'ERGO_RFQ', "
-			+ "'SUPPLIER_RFQ', 'SUPPLIER_KAM')";
+	private static final String QUOTE_VIEWERS = "@access.view('QUOTATION', 'ERGO') or @access.view('QUOTATION', 'SUPPLIER')";
+
+	private static final String VIEWERS = "@access.view('QUOTATION', 'ERGO') or @access.view('RFQ', 'SUPPLIER')";
+
+	private static final String UPLOADERS = "@access.act('QUOTATION', 'ERGO') or @access.act('QUOTATION', 'SUPPLIER')";
 
 	private final QuoteService quotes;
 
@@ -81,8 +84,8 @@ class QuoteController {
 
 	/** The supplier's "Assigned RFQs" (SRS §12.15). */
 	@GetMapping("/api/quotes")
-	@PreAuthorize(SUPPLIERS)
-	List<SupplierQuoteRow> mine() {
+	@PreAuthorize(SUPPLIER_RFQ_VIEWERS)
+	List<?> mine() {
 		return quotes.mine();
 	}
 
@@ -136,7 +139,7 @@ class QuoteController {
 	}
 
 	@GetMapping("/api/quotes/{id}/versions")
-	@PreAuthorize(VIEWERS)
+	@PreAuthorize(QUOTE_VIEWERS)
 	List<VersionView> versions(@PathVariable long id) {
 		return quotes.versions(id);
 	}

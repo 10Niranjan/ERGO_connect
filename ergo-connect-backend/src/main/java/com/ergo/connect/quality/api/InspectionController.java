@@ -30,18 +30,16 @@ import jakarta.validation.Valid;
 @RequestMapping("/api/quality/inspections")
 class InspectionController {
 
-	/** SRS §10.8 View: every role except the three *_RFQ roles (X). */
-	private static final String VIEWERS = "hasAnyRole('ERGO_ADMIN', 'ERGO_MANAGEMENT', 'ERGO_KAM', 'ERGO_NPD', "
-			+ "'ERGO_OFP', 'ERGO_QUALITY', 'CUSTOMER_NPD', 'CUSTOMER_OFP', 'CUSTOMER_QUALITY', 'CUSTOMER_KAM', "
-			+ "'CUSTOMER_MANAGEMENT', 'SUPPLIER_NPD', 'SUPPLIER_OFP', 'SUPPLIER_QUALITY', 'SUPPLIER_KAM')";
+	// The role sheet (ModuleAccess), Quality column; the service applies the record scope and per-action rules.
+	private static final String VIEWERS = "@access.view('QUALITY')";
 
 	/** SRS §10.8 Create/Edit/Submit: ERGO Admin/Quality and Supplier Quality only (see {@code InspectionService}'s
 	 * class comment for why Customer Quality is not here despite the matrix's literal C/E/S). */
-	private static final String EDITORS = "hasAnyRole('ERGO_ADMIN', 'ERGO_QUALITY', 'SUPPLIER_QUALITY')";
+	private static final String EDITORS = "@access.act('QUALITY', 'ERGO') or @access.act('QUALITY', 'SUPPLIER')";
 
 	/** SRS §10.8 Approve, its own authority separate from edit (CLAUDE.md non-negotiable): includes ERGO Management,
 	 * who has no create/edit/submit right at all. */
-	private static final String APPROVERS = "hasAnyRole('ERGO_ADMIN', 'ERGO_MANAGEMENT', 'ERGO_QUALITY')";
+	private static final String APPROVERS = "@access.approve('QUALITY', 'ERGO')";
 
 	private final InspectionService inspections;
 

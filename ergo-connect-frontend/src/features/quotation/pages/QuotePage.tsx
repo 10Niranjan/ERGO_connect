@@ -1,6 +1,8 @@
 import { Alert, Box, Button, Chip, LinearProgress, Link, Stack, Tab, Tabs, Typography } from '@mui/material'
 import { useState } from 'react'
 import { Link as RouterLink, useParams } from 'react-router'
+import { useAppSelector } from '../../../app/store'
+import { canViewModule } from '../../../auth/access'
 import { CommentsPanel } from '../../communication/components/CommentsPanel'
 import { CommentDialog } from '../../../shared/components/CommentDialog'
 import { Facts } from '../../../shared/components/Facts'
@@ -11,7 +13,7 @@ import { QuoteFilesPanel } from '../components/QuoteFilesPanel'
 import { QuoteSummary } from '../components/QuoteSummary'
 import { VersionsPanel } from '../components/VersionsPanel'
 import { QUOTE_STATUS } from '../labels'
-import { useQuoteCommandMutation, useQuoteQuery, type QuoteCommand, type QuoteView, type SupplierRfq } from '../quoteApi'
+import { useQuoteCommandMutation, useQuoteQuery, type QuoteCommand, type QuoteView, type SupplierAssignedRfqView, type SupplierRfq } from '../quoteApi'
 
 type DialogCommand = Exclude<QuoteCommand, 'submit'>
 
@@ -34,12 +36,15 @@ export function QuotePage() {
   const { data: view, isLoading, error } = useQuoteQuery(id)
   if (isLoading) return <LinearProgress />
   if (!view) return <Alert severity="error">{problemMessage(error)}</Alert>
+  if (view.audience === 'SUPPLIER_RFQ') return <AssignedRfq key={view.id} view={view} />
   return <Quote key={view.id} view={view} />
 }
 
-function Quote({ view }: { view: QuoteView }) {
+function Quote({ view }: { view: Exclude<QuoteView, SupplierAssignedRfqView> }) {
   const isSupplier = view.audience === 'SUPPLIER'
-  const [tab, setTab] = useState('quote')
+  // A supplier role with RFQ access but none on Quotation (the role sheet) sees the assigned RFQ only, never the quote.
+  const canSeeQuote = useAppSelector((state) => canViewModule(state.auth.session?.activeRole, 'QUOTATION'))
+  const [tab, setTab] = useState(canSeeQuote ? 'quote' : 'rfq')
   const [dialog, setDialog] = useState<DialogCommand | null>(null)
   const [run, running] = useQuoteCommandMutation()
   const can = (action: QuoteView['actions'][number]) => view.actions.includes(action)
@@ -121,11 +126,11 @@ function Quote({ view }: { view: QuoteView }) {
       )}
 
       <Tabs value={tab} onChange={(_e, value: string) => setTab(value)}>
-        <Tab value="quote" label={isSupplier ? 'Your quote' : 'Submitted quote'} />
+        {canSeeQuote && <Tab value="quote" label={isSupplier ? 'Your quote' : 'Submitted quote'} />}
         {isSupplier && <Tab value="rfq" label="RFQ details" />}
         <Tab value="files" label="Files" />
-        <Tab value="versions" label="Versions" />
-        <Tab value="comments" label="Comments" />
+        {canSeeQuote && <Tab value="versions" label="Versions" />}
+        {canSeeQuote && <Tab value="comments" label="Comments" />}
       </Tabs>
 
       {/* hidden rather than unmounted, so switching tabs keeps unsaved edits */}
@@ -140,8 +145,8 @@ function Quote({ view }: { view: QuoteView }) {
       </Box>
       {tab === 'rfq' && isSupplier && <RfqDetails rfq={view.rfq} />}
       {tab === 'files' && <QuoteFilesPanel quoteId={view.id} canUpload={can('UPLOAD')} isErgo={!isSupplier} />}
-      {tab === 'versions' && <VersionsPanel quoteId={view.id} />}
-      {tab === 'comments' && <CommentsPanel linkedModule="quotation" recordId={view.id} />}
+      {tab === 'versions' && canSeeQuote && <VersionsPanel quoteId={view.id} />}
+      {tab === 'comments' && canSeeQuote && <CommentsPanel linkedModule="quotation" recordId={view.id} />}
 
       {dialog && (
         <CommentDialog
@@ -190,5 +195,32 @@ function RfqDetails({ rfq }: { rfq: SupplierRfq }) {
         ]}
       />
     </Box>
+  )
+}
+
+/** A supplier role with RFQ access but none on Quotation: the RFQ and its shared files, nothing of the quote. */
+function AssignedRfq({ view }: { view: SupplierAssignedRfqView }) {
+  const [tab, setTab] = useState('rfq')
+  return (
+    <Stack spacing={2}>
+      <Stack spacing={0.5}>
+        <Typography variant="h5" component="h1">
+          {view.rfq.number}
+        </Typography>
+        <Typography color="text.secondary">
+          {view.rfq.partNumber}
+          {view.rfq.revision ? ` rev ${view.rfq.revision}` : ''} · {view.rfq.description ?? 'No description'}
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          Quote due {formatDate(view.responseDueDate)}
+        </Typography>
+      </Stack>
+      <Tabs value={tab} onChange={(_e, value: string) => setTab(value)}>
+        <Tab value="rfq" label="RFQ details" />
+        <Tab value="files" label="Files" />
+      </Tabs>
+      {tab === 'rfq' && <RfqDetails rfq={view.rfq} />}
+      {tab === 'files' && <QuoteFilesPanel quoteId={view.id} canUpload={false} isErgo={false} />}
+    </Stack>
   )
 }

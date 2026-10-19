@@ -13,6 +13,8 @@ import com.ergo.connect.common.audit.AuditLogService;
 import com.ergo.connect.common.record.Awaiting;
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
+import com.ergo.connect.common.security.ModuleAccess;
+import com.ergo.connect.common.security.ModuleAccess.Module;
 import com.ergo.connect.common.security.Role;
 import com.ergo.connect.masterdata.api.Directory;
 import com.ergo.connect.masterdata.api.Directory.CompanyRef;
@@ -118,14 +120,14 @@ class QualityApiService implements QualityApi {
 	private java.util.Optional<com.ergo.connect.common.record.RecordParties> parties(LinkedModule linkedModule, Long customerCompanyId,
 			Long supplierCompanyId, boolean customerVisible, boolean supplierVisible) {
 		CurrentUser me = CurrentUser.get();
-		boolean inScope = switch (me.role()) {
-			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_QUALITY -> true;
-			case ERGO_KAM -> customerCompanyId != null && directory.accountsOf(me.userId()).contains(customerCompanyId);
-			case ERGO_NPD -> linkedModule == LinkedModule.NPD;
-			case ERGO_OFP -> linkedModule == LinkedModule.OFP;
-			case SUPPLIER_QUALITY, SUPPLIER_NPD, SUPPLIER_OFP, SUPPLIER_KAM ->
+		boolean inScope = switch (QualityScope.of(me.role())) {
+			case FULL -> true;
+			case KAM -> customerCompanyId != null && directory.accountsOf(me.userId()).contains(customerCompanyId);
+			case NPD_LINKED -> linkedModule == LinkedModule.NPD;
+			case OFP_LINKED -> linkedModule == LinkedModule.OFP;
+			case SUPPLIER ->
 					supplierVisible && supplierCompanyId != null && me.companyId() == supplierCompanyId;
-			case CUSTOMER_QUALITY, CUSTOMER_NPD, CUSTOMER_OFP, CUSTOMER_KAM, CUSTOMER_MANAGEMENT ->
+			case CUSTOMER ->
 					customerVisible && customerCompanyId != null && me.companyId() == customerCompanyId;
 			default -> false;
 		};
@@ -194,13 +196,13 @@ class QualityApiService implements QualityApi {
 			return false;
 		}
 		CurrentUser me = CurrentUser.get();
-		return switch (me.role()) {
-			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_QUALITY -> true;
-			case ERGO_KAM -> n.customerCompanyId != null
+		return switch (QualityScope.of(me.role())) {
+			case FULL -> true;
+			case KAM -> n.customerCompanyId != null
 					&& directory.accountsOf(me.userId()).contains(n.customerCompanyId);
-			case ERGO_NPD -> n.linkedModule == LinkedModule.NPD;
-			case ERGO_OFP -> n.linkedModule == LinkedModule.OFP;
-			case SUPPLIER_QUALITY, SUPPLIER_NPD, SUPPLIER_OFP, SUPPLIER_KAM ->
+			case NPD_LINKED -> n.linkedModule == LinkedModule.NPD;
+			case OFP_LINKED -> n.linkedModule == LinkedModule.OFP;
+			case SUPPLIER ->
 					n.supplierCompanyId != null && me.companyId() == n.supplierCompanyId;
 			default -> false;
 		};
@@ -222,8 +224,9 @@ class QualityApiService implements QualityApi {
 			return false;
 		}
 		CurrentUser me = CurrentUser.get();
-		boolean ergoEditor = me.role() == Role.ERGO_ADMIN || me.role() == Role.ERGO_QUALITY;
-		boolean ownSupplier = me.role() == Role.SUPPLIER_QUALITY && n.supplierCompanyId != null
+		boolean ergoEditor = ModuleAccess.actors(Module.QUALITY, CompanyType.ERGO).contains(me.role());
+		boolean ownSupplier = ModuleAccess.actors(Module.QUALITY, CompanyType.SUPPLIER).contains(me.role())
+				&& n.supplierCompanyId != null
 				&& me.companyId() == n.supplierCompanyId;
 		return ergoEditor || ownSupplier;
 	}
@@ -242,17 +245,17 @@ class QualityApiService implements QualityApi {
 	@Transactional(readOnly = true)
 	public List<NcrDashboardItem> ncrDashboardItems() {
 		CurrentUser me = CurrentUser.get();
-		List<Ncr> visible = switch (me.role()) {
-			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_QUALITY -> ncrs.findAllByOrderByIdDesc();
-			case ERGO_KAM -> {
+		List<Ncr> visible = switch (QualityScope.of(me.role())) {
+			case FULL -> ncrs.findAllByOrderByIdDesc();
+			case KAM -> {
 				java.util.Set<Long> accounts = directory.accountsOf(me.userId());
 				yield accounts.isEmpty() ? List.of() : ncrs.findByCustomerCompanyIdInOrderByIdDesc(accounts);
 			}
-			case ERGO_NPD -> ncrs.findByLinkedModuleOrderByIdDesc(LinkedModule.NPD);
-			case ERGO_OFP -> ncrs.findByLinkedModuleOrderByIdDesc(LinkedModule.OFP);
-			case SUPPLIER_QUALITY, SUPPLIER_NPD, SUPPLIER_OFP, SUPPLIER_KAM ->
+			case NPD_LINKED -> ncrs.findByLinkedModuleOrderByIdDesc(LinkedModule.NPD);
+			case OFP_LINKED -> ncrs.findByLinkedModuleOrderByIdDesc(LinkedModule.OFP);
+			case SUPPLIER ->
 				ncrs.findBySupplierCompanyIdOrderByIdDesc(me.companyId());
-			case CUSTOMER_QUALITY, CUSTOMER_NPD, CUSTOMER_OFP, CUSTOMER_KAM, CUSTOMER_MANAGEMENT ->
+			case CUSTOMER ->
 				ncrs.findByCustomerCompanyIdAndCustomerVisibleTrueOrderByIdDesc(me.companyId());
 			default -> List.of();
 		};
@@ -284,17 +287,17 @@ class QualityApiService implements QualityApi {
 	@Transactional(readOnly = true)
 	public List<DeviationDashboardItem> deviationDashboardItems() {
 		CurrentUser me = CurrentUser.get();
-		List<Deviation> visible = switch (me.role()) {
-			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_QUALITY -> deviations.findAllByOrderByIdDesc();
-			case ERGO_KAM -> {
+		List<Deviation> visible = switch (QualityScope.of(me.role())) {
+			case FULL -> deviations.findAllByOrderByIdDesc();
+			case KAM -> {
 				java.util.Set<Long> accounts = directory.accountsOf(me.userId());
 				yield accounts.isEmpty() ? List.of() : deviations.findByCustomerCompanyIdInOrderByIdDesc(accounts);
 			}
-			case ERGO_NPD -> deviations.findByLinkedModuleOrderByIdDesc(LinkedModule.NPD);
-			case ERGO_OFP -> deviations.findByLinkedModuleOrderByIdDesc(LinkedModule.OFP);
-			case SUPPLIER_QUALITY, SUPPLIER_NPD, SUPPLIER_OFP, SUPPLIER_KAM ->
+			case NPD_LINKED -> deviations.findByLinkedModuleOrderByIdDesc(LinkedModule.NPD);
+			case OFP_LINKED -> deviations.findByLinkedModuleOrderByIdDesc(LinkedModule.OFP);
+			case SUPPLIER ->
 				deviations.findBySupplierCompanyIdAndSupplierVisibleTrueOrderByIdDesc(me.companyId());
-			case CUSTOMER_QUALITY, CUSTOMER_NPD, CUSTOMER_OFP, CUSTOMER_KAM, CUSTOMER_MANAGEMENT ->
+			case CUSTOMER ->
 				deviations.findByCustomerCompanyIdAndCustomerVisibleTrueOrderByIdDesc(me.companyId());
 			default -> List.of();
 		};
@@ -328,8 +331,8 @@ class QualityApiService implements QualityApi {
 	@Transactional(readOnly = true)
 	public List<SupplierNcrCount> openNcrCountsBySupplier() {
 		CurrentUser me = CurrentUser.get();
-		boolean unrestricted = switch (me.role()) {
-			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_QUALITY -> true;
+		boolean unrestricted = switch (QualityScope.of(me.role())) {
+			case FULL -> true;
 			default -> false;
 		};
 		if (!unrestricted) {

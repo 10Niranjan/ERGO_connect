@@ -32,6 +32,8 @@ import org.springframework.transaction.annotation.Transactional;
 import com.ergo.connect.common.record.Awaiting;
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
+import com.ergo.connect.common.security.ModuleAccess;
+import com.ergo.connect.common.security.ModuleAccess.Module;
 import com.ergo.connect.common.security.Role;
 import com.ergo.connect.masterdata.api.Directory;
 import com.ergo.connect.masterdata.api.Directory.CompanyRef;
@@ -46,8 +48,8 @@ class OfpApiService implements OfpApi {
 	private static final Set<OrderStatus> NOT_YET_DISPATCHED = EnumSet.complementOf(
 			EnumSet.of(DISPATCHED, IN_TRANSIT, DELIVERED, CLOSED));
 
-	private static final Set<Role> SUPPLIER_EDITORS = EnumSet.of(SUPPLIER_NPD, SUPPLIER_OFP, SUPPLIER_QUALITY,
-			SUPPLIER_KAM);
+	/** The role sheet (ModuleAccess), OFP column: the supplier roles with access to their own orders. */
+	private static final Set<Role> SUPPLIER_VIEWERS = ModuleAccess.viewers(Module.OFP, CompanyType.SUPPLIER);
 
 	private final OrderRepository orders;
 
@@ -106,21 +108,21 @@ class OfpApiService implements OfpApi {
 	public List<OrderDashboardItem> dashboardItems() {
 		CurrentUser me = CurrentUser.get();
 		List<Order> visible;
-		if (SUPPLIER_EDITORS.contains(me.role())) {
+		if (SUPPLIER_VIEWERS.contains(me.role())) {
 			visible = orders.findBySupplierCompanyIdOrderByIdDesc(me.companyId());
 		}
-		else if (me.role() == CUSTOMER_OFP) {
-			visible = orders.findByCustomerCompanyIdInOrderByIdDesc(Set.of(me.companyId()));
+		else if (me.companyType() == CompanyType.CUSTOMER) {
+			visible = ModuleAccess.canView(me.role(), Module.OFP)
+					? orders.findByCustomerCompanyIdInOrderByIdDesc(Set.of(me.companyId())) : List.of();
 		}
 		else {
-			visible = switch (me.role()) {
-				case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_OFP -> orders.findAllByOrderByIdDesc();
+			visible = !ModuleAccess.canView(me.role(), Module.OFP) ? List.<Order>of() : switch (me.role()) {
 				case ERGO_KAM -> {
 					Set<Long> accounts = directory.accountsOf(me.userId());
 					yield accounts.isEmpty() ? List.of() : orders.findByCustomerCompanyIdInOrderByIdDesc(accounts);
 				}
 				case ERGO_NPD -> orders.findByLinkedNpdProjectIdIsNotNullOrderByIdDesc();
-				default -> List.of();
+				default -> orders.findAllByOrderByIdDesc();
 			};
 		}
 		boolean ergo = me.companyType() == CompanyType.ERGO;

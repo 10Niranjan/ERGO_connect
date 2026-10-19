@@ -109,14 +109,21 @@ class QualityTests {
 	// ---------------------------------------------------------------- create / role check
 
 	@Test
-	void onlyErgoAdminErgoQualityAndSupplierQualityMayCreate() throws Exception {
-		call(post("/api/quality/inspections"), ergoAdmin, inspectionForm("INCOMING", 1)).andExpect(status().isCreated());
+	void rolesThatActOnQualityMayCreateAndTheViewOnlyOnesMayNot() throws Exception {
+		// role sheet: ERGO Management / Quality ("O"), Supplier Quality / KAM ("A") create
+		call(post("/api/quality/inspections"), ergoManagement, inspectionForm("INCOMING", 1)).andExpect(status().isCreated());
 		call(post("/api/quality/inspections"), ergoQuality, inspectionForm("INCOMING", 2)).andExpect(status().isCreated());
 		call(post("/api/quality/inspections"), supplierXQuality, inspectionForm("INCOMING", 3))
 			.andExpect(status().isCreated());
+		Login supplierKam = users.login(supplierX, "SUPPLIER_KAM");
+		call(post("/api/quality/inspections"), supplierKam, inspectionForm("INCOMING", 5)).andExpect(status().isCreated());
 
-		// no create right at all: ERGO Management/KAM/NPD/OFP/RFQ, Customer Quality
-		for (Login denied : List.of(ergoManagement, ergoKam, ergoNpd, ergoOfp, ergoRfq, customerAQuality)) {
+		// ERGO OFP ("A") may only raise inspections within its own area: OFP-linked ones, never a free-standing one
+		call(post("/api/quality/inspections"), ergoOfp, inspectionForm("INCOMING", 6))
+			.andExpect(status().isUnprocessableContent());
+
+		// view only: ERGO Admin/KAM/NPD/RFQ; customers never create inspections
+		for (Login denied : List.of(ergoAdmin, ergoKam, ergoNpd, ergoRfq, customerAQuality)) {
 			call(post("/api/quality/inspections"), denied, inspectionForm("INCOMING", 4))
 				.andExpect(status().isForbidden());
 		}
@@ -234,9 +241,14 @@ class QualityTests {
 			.andExpect(jsonPath("$[*].id", not(hasItem((int) npdOne))));
 		call(get("/api/quality/inspections/{id}", npdOne), ergoOfp, null).andExpect(status().isNotFound());
 
-		// ERGO RFQ has no access at all (SRS §10.8 X)
-		call(get("/api/quality/inspections"), ergoRfq, null).andExpect(status().isForbidden());
-		call(get("/api/quality/inspections/{id}", forA), ergoRfq, null).andExpect(status().isForbidden());
+		// ERGO RFQ and Admin view every inspection (role sheet "V")
+		for (Login viewer : List.of(ergoRfq, ergoAdmin)) {
+			call(get("/api/quality/inspections"), viewer, null).andExpect(jsonPath("$[*].id", hasItem((int) forB)));
+			call(get("/api/quality/inspections/{id}", forA), viewer, null).andExpect(status().isOk());
+		}
+		// customer RFQ / supplier RFQ: customers view only customer-visible ones, supplier RFQ has no access at all
+		Login supplierRfq = users.login(supplierX, "SUPPLIER_RFQ");
+		call(get("/api/quality/inspections"), supplierRfq, null).andExpect(status().isForbidden());
 	}
 
 	// ---------------------------------------------------------------- workflow: allowed / forbidden / missing reason
@@ -256,14 +268,14 @@ class QualityTests {
 		call(post("/api/quality/inspections/{id}/pass", id), ergoQuality, "{}")
 			.andExpect(jsonPath("$.resultStatus").value("PASSED"));
 
-		// ERGO Management may also approve (separate authority from edit - it has no create/edit/submit right)
+		// ERGO Management may also approve (it owns Quality, "O")
 		long id2 = createAsSupplier(supplierXQuality, "INCOMING", 51);
 		call(post("/api/quality/inspections/{id}/submit", id2), supplierXQuality, updateForm("10", "0"))
 			.andExpect(status().isOk());
 		call(post("/api/quality/inspections/{id}/pass", id2), ergoManagement, "{}")
 			.andExpect(jsonPath("$.resultStatus").value("PASSED"));
-		call(post("/api/quality/inspections", id2), ergoManagement, inspectionForm("INCOMING", 999))
-			.andExpect(status().isForbidden()); // still no create right
+		call(post("/api/quality/inspections/{id}/close", id2), ergoAdmin, "{}")
+			.andExpect(status().isForbidden()); // ERGO Admin is view-only: it approves nothing
 
 		call(post("/api/quality/inspections/{id}/close", id), ergoQuality, "{}")
 			.andExpect(jsonPath("$.resultStatus").value("CLOSED"));
@@ -392,7 +404,7 @@ class QualityTests {
 			.andExpect(jsonPath("$.actions", not(hasItem("PASS"))));
 
 		// a different approver still may
-		call(post("/api/quality/inspections/{id}/pass", id), ergoAdmin, "{}")
+		call(post("/api/quality/inspections/{id}/pass", id), ergoManagement, "{}")
 			.andExpect(jsonPath("$.resultStatus").value("PASSED"));
 	}
 

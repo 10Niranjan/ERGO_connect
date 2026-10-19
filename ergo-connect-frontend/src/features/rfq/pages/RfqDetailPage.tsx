@@ -21,6 +21,8 @@ import {
 } from '@mui/material'
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
+import { useAppSelector } from '../../../app/store'
+import { QUOTATION_CUSTOMER_VIEWERS } from '../../../auth/access'
 import { AuditTrail } from '../../../shared/components/AuditTrail'
 import { CommentsPanel } from '../../communication/components/CommentsPanel'
 import { CommentDialog } from '../../../shared/components/CommentDialog'
@@ -67,6 +69,8 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
   const [cloneRfq] = useCloneRfqMutation()
   const [actionError, setActionError] = useState<unknown>(null)
   const isErgo = rfq.audience === 'ERGO'
+  // The role sheet: a customer role with RFQ access but none on Quotation (e.g. Customer NPD) never sees the quotes ERGO sends.
+  const canSeeQuotes = useAppSelector((state) => QUOTATION_CUSTOMER_VIEWERS.includes(state.auth.session?.activeRole ?? 'ERGO_ADMIN'))
   const can = (action: RfqView['actions'][number]) => rfq.actions.includes(action)
   const answering = rfq.status === 'CLARIFICATION_REQUIRED' && can('SUBMIT')
 
@@ -142,7 +146,7 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
       </Stack>
 
       {actionError != null && <Alert severity="error">{problemMessage(actionError)}</Alert>}
-      {rfq.status === 'QUOTE_RECEIVED' && (
+      {rfq.status === 'QUOTE_RECEIVED' && !isErgo && canSeeQuotes && (
         <Alert severity="info" action={<Button color="inherit" size="small" onClick={() => setTab('quotes')}>Open quote</Button>}>
           ERGO has sent you a quote. Approve it, ask for a revision or decline it.
         </Alert>
@@ -163,7 +167,7 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
         <Tab value="overview" label="Overview" />
         <Tab value="process" label="Process flow" />
         <Tab value="documents" label="Documents" />
-        {!isErgo && <Tab value="quotes" label="Quotes" />}
+        {!isErgo && canSeeQuotes && <Tab value="quotes" label="Quotes" />}
         {isErgo && <Tab value="suppliers" label="Suppliers & quotes" />}
         {isErgo && <Tab value="comparison" label="Comparison" />}
         {isErgo && <Tab value="history" label="Audit trail" />}
@@ -240,7 +244,7 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
       )}
 
       {tab === 'documents' && <DocumentsPanel rfqId={rfq.id} canUpload={can('UPLOAD')} isErgo={isErgo} />}
-      {tab === 'quotes' && !isErgo && <CustomerQuotesPanel rfqId={rfq.id} />}
+      {tab === 'quotes' && !isErgo && canSeeQuotes && <CustomerQuotesPanel rfqId={rfq.id} />}
       {tab === 'suppliers' && isErgo && <SuppliersPanel rfqId={rfq.id} />}
       {tab === 'comparison' && isErgo && <ComparisonPanel rfqId={rfq.id} />}
       {tab === 'history' && isErgo && <History rfqId={rfq.id} />}

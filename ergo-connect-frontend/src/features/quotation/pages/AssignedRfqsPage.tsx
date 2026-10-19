@@ -55,9 +55,10 @@ export function AssignedRfqsPage() {
           </TableHead>
           <TableBody>
             {shown.map((r) => {
-              const closed = !r.quotingOpen && OPEN.includes(r.status)
-              const overdue = !closed && OPEN.includes(r.status) && r.responseDueDate < today
-              const status = closed ? { label: 'RFQ closed', color: 'default' as const } : QUOTE_STATUS[r.status]
+              const st = r.status
+              const closed = st !== undefined && !r.quotingOpen && OPEN.includes(st)
+              const overdue = st !== undefined && !closed && OPEN.includes(st) && r.responseDueDate < today
+              const status = st === undefined ? null : closed ? { label: 'RFQ closed', color: 'default' as const } : QUOTE_STATUS[st]
               return (
                 <TableRow key={r.id} hover sx={{ cursor: 'pointer' }} onClick={() => navigate(`/quotes/${r.id}`)}>
                   <TableCell>{r.rfqNumber}</TableCell>
@@ -67,14 +68,14 @@ export function AssignedRfqsPage() {
                   </TableCell>
                   <TableCell sx={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.description ?? '—'}</TableCell>
                   <TableCell>
-                    <Chip size="small" label={status.label} color={status.color} />
+                    {status ? <Chip size="small" label={status.label} color={status.color} /> : '—'}
                   </TableCell>
                   <TableCell sx={overdue ? { color: 'error.main' } : undefined}>
                     {formatDate(r.responseDueDate)}
                     {overdue && ' (overdue)'}
                   </TableCell>
                   <TableCell>{r.version || '—'}</TableCell>
-                  <TableCell>{formatDate(r.submittedAt)}</TableCell>
+                  <TableCell>{formatDate(r.submittedAt ?? null)}</TableCell>
                 </TableRow>
               )
             })}

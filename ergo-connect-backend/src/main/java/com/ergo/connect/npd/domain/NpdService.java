@@ -41,6 +41,8 @@ import com.ergo.connect.common.event.Recipients;
 import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
+import com.ergo.connect.common.security.ModuleAccess;
+import com.ergo.connect.common.security.ModuleAccess.Module;
 import com.ergo.connect.common.security.Role;
 import com.ergo.connect.masterdata.api.Directory;
 import com.ergo.connect.masterdata.api.Directory.CompanyRef;
@@ -89,24 +91,31 @@ import com.ergo.connect.rfq.api.RfqApi.RfqRef;
 @Transactional
 public class NpdService {
 
-	/** SRS §10.6 create / edit / submit / approve for NPD (the client decision restricts all of 3a's actual write
-	 * actions to these two roles; ERGO Management's "approve" right has nothing to attach to until 3b). */
-	private static final Set<Role> EDITORS = EnumSet.of(ERGO_ADMIN, ERGO_NPD);
+	/** The role sheet (ModuleAccess), NPD column. ERGO roles that create / edit / submit ("A" and up). */
+	private static final Set<Role> EDITORS = ModuleAccess.actors(Module.NPD, CompanyType.ERGO);
 
-	/** SRS §10.6 "E**" / "A**": confirmed by the user against the SRS's literal matrix. */
-	private static final Set<Role> CUSTOMER_EDITORS = EnumSet.of(CUSTOMER_NPD, CUSTOMER_QUALITY);
+	/** ERGO's owning roles ("O"): convert an RFQ, close a stage, decide the ERGO-owned approvals. */
+	private static final Set<Role> OWNERS = ModuleAccess.approvers(Module.NPD, CompanyType.ERGO);
 
-	/** SRS §10.6 "E***" / "S": all four supplier-side roles, confirmed by the user (matches the identical grant
-	 * already given in the OFP module, SRS §10.7), not just Supplier NPD. */
-	private static final Set<Role> SUPPLIER_EDITORS = EnumSet.of(SUPPLIER_NPD, SUPPLIER_OFP, SUPPLIER_QUALITY,
-			SUPPLIER_KAM);
+	/** Customer roles that work on their own company's activities and issues ("A" and up). */
+	private static final Set<Role> CUSTOMER_EDITORS = ModuleAccess.actors(Module.NPD, CompanyType.CUSTOMER);
+
+	/** Supplier roles that work on their own company's activities and issues ("A" and up). */
+	private static final Set<Role> SUPPLIER_EDITORS = ModuleAccess.actors(Module.NPD, CompanyType.SUPPLIER);
+
+	/** Every customer / supplier role that may open its own company's projects, view-only ones included. */
+	private static final Set<Role> CUSTOMER_VIEWERS = ModuleAccess.viewers(Module.NPD, CompanyType.CUSTOMER);
+
+	private static final Set<Role> SUPPLIER_VIEWERS = ModuleAccess.viewers(Module.NPD, CompanyType.SUPPLIER);
 
 	/** The three customer-facing approval types (SRS §13.4.7); a supplier's view never queries approvals at all. */
 	private static final Set<ApprovalType> CUSTOMER_APPROVAL_TYPES = EnumSet.of(ApprovalType.CUSTOMER_SAMPLE_APPROVAL,
 			ApprovalType.CUSTOMER_MILESTONE_ACKNOWLEDGMENT, ApprovalType.CUSTOMER_QUALITY_ACCEPTANCE);
 
-	/** The "full, unrestricted view" grouping, mirroring RfqApi.customerApproved()'s own four-role branch. */
-	private static final Set<Role> FULL_VIEWERS = EnumSet.of(ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_RFQ, ERGO_NPD);
+	/** The "full, unrestricted view" grouping: every ERGO role with NPD access except the account-scoped KAM. */
+	private static final Set<Role> FULL_VIEWERS = ModuleAccess.viewers(Module.NPD, CompanyType.ERGO).stream()
+		.filter(r -> r != ERGO_KAM)
+		.collect(Collectors.toCollection(() -> EnumSet.noneOf(Role.class)));
 
 	private final NpdProjectRepository projects;
 
@@ -179,18 +188,19 @@ public class NpdService {
 		List<ApprovedRfq> unconverted = approved.stream().filter(r -> !projects.existsBySourceRfqId(r.id())).toList();
 		Map<Long, CompanyRef> customers = directory.companies(unconverted.stream().map(ApprovedRfq::customerCompanyId)
 			.collect(Collectors.toSet()));
-		Set<NpdAction> actions = EDITORS.contains(me.role()) ? EnumSet.of(NpdAction.CONVERT) : Set.of();
+		Set<NpdAction> actions = OWNERS.contains(me.role()) ? EnumSet.of(NpdAction.CONVERT) : Set.of();
 		return unconverted.stream()
 			.map(r -> new ConversionQueueRow(r.id(), r.number(), name(customers, r.customerCompanyId()),
 					r.partNumber(), r.revision(), r.description(), r.approvedAt(), actions))
 			.toList();
 	}
 
-	/** SRS §14.5: only ERGO Admin / ERGO NPD may convert. One approved RFQ converts to at most one NPD project. */
+	/** SRS §14.5: only ERGO's NPD owners (the "O" roles) may convert. One approved RFQ converts to at most one NPD
+	 * project. */
 	public NpdView convert(long rfqId, String comment) {
 		CurrentUser me = CurrentUser.get();
-		if (!EDITORS.contains(me.role())) {
-			throw ApiException.forbidden("Only ERGO Admin or ERGO NPD can convert an RFQ");
+		if (!OWNERS.contains(me.role())) {
+			throw ApiException.forbidden("Only ERGO NPD or ERGO Management can convert an RFQ");
 		}
 		RfqRef rfq = rfqApi.forErgo(rfqId); // 404 outside the caller's RFQ scope, checked before revealing anything else
 		if (projects.existsBySourceRfqId(rfqId)) {
@@ -263,10 +273,10 @@ public class NpdService {
 	public List<NpdOwnProjectRow> myProjects() {
 		CurrentUser me = CurrentUser.get();
 		List<NpdProject> mine;
-		if (CUSTOMER_EDITORS.contains(me.role())) {
+		if (CUSTOMER_VIEWERS.contains(me.role())) {
 			mine = projects.findByCustomerCompanyIdInOrderByIdDesc(Set.of(me.companyId()));
 		}
-		else if (SUPPLIER_EDITORS.contains(me.role())) {
+		else if (SUPPLIER_VIEWERS.contains(me.role())) {
 			mine = projects.findBySupplierCompanyIdOrderByIdDesc(me.companyId());
 		}
 		else {
@@ -652,7 +662,7 @@ public class NpdService {
 	 * project's customer. */
 	private static Recipients approverSide(NpdProject project, Role approver) {
 		return switch (approver.companyType()) {
-			case ERGO -> Recipients.ergo(approver, Role.ERGO_ADMIN);
+			case ERGO -> Recipients.ergo(OWNERS.toArray(Role[]::new));
 			case CUSTOMER -> Recipients.company(project.customerCompanyId, approver);
 			case SUPPLIER -> Recipients.company(project.supplierCompanyId, approver);
 		};
@@ -690,8 +700,8 @@ public class NpdService {
 	private boolean inScope(CurrentUser me, NpdProject project) {
 		return project != null && (FULL_VIEWERS.contains(me.role())
 				|| me.role() == ERGO_KAM && directory.accountsOf(me.userId()).contains(project.customerCompanyId)
-				|| CUSTOMER_EDITORS.contains(me.role()) && me.companyId() == project.customerCompanyId
-				|| SUPPLIER_EDITORS.contains(me.role()) && me.companyId() == project.supplierCompanyId);
+				|| CUSTOMER_VIEWERS.contains(me.role()) && me.companyId() == project.customerCompanyId
+				|| SUPPLIER_VIEWERS.contains(me.role()) && me.companyId() == project.supplierCompanyId);
 	}
 
 	/** Project-level actions: header edit, stage close, and everything EDITORS alone may originate. */
@@ -699,7 +709,8 @@ public class NpdService {
 		boolean editor = EDITORS.contains(me.role());
 		return switch (action) {
 			case UPDATE_PROJECT -> editor;
-			case CLOSE_STAGE, ADD_ACTIVITY, MANAGE_PROMPT_CHECKLIST, RAISE_ISSUE, REQUEST_APPROVAL ->
+			case CLOSE_STAGE -> OWNERS.contains(me.role()) && project.stage != NpdStage.CLOSED;
+			case ADD_ACTIVITY, MANAGE_PROMPT_CHECKLIST, RAISE_ISSUE, REQUEST_APPROVAL ->
 				editor && project.stage != NpdStage.CLOSED;
 			default -> false; // CONVERT acts on an RFQ; the rest need a specific activity/issue/approval
 		};
@@ -768,8 +779,7 @@ public class NpdService {
 	 * of a 404, security review finding L2) from "the row just isn't decidable right now" (409: already decided, or
 	 * the project itself is CLOSED — the latter matching every other write in this module). */
 	private static void requireCanDecideApproval(CurrentUser me, NpdProject project, NpdApproval approval) {
-		boolean adminOverride = me.role() == ERGO_ADMIN && approval.approvalType.ergoOwned();
-		if (!adminOverride && me.role() != approval.approverRole) {
+		if (!mayDecide(me, approval)) {
 			throw ApiException.notFound("Approval");
 		}
 		if (project.stage == NpdStage.CLOSED || approval.approvalStatus != ApprovalStatus.PENDING) {
@@ -791,8 +801,14 @@ public class NpdService {
 	private static boolean allowed(NpdAction action, CurrentUser me, NpdProject project, NpdApproval approval) {
 		return action == NpdAction.DECIDE_APPROVAL && project.stage != NpdStage.CLOSED
 				&& approval.approvalStatus == ApprovalStatus.PENDING
-				&& (me.role() == ERGO_ADMIN && approval.approvalType.ergoOwned() || me.role() == approval.approverRole)
-				&& me.userId() != approval.requestedByUserId;
+				&& mayDecide(me, approval) && me.userId() != approval.requestedByUserId;
+	}
+
+	/** The role sheet: only the final-approval role of the approval's own side decides it - ERGO's "O" roles an
+	 * ERGO-owned type, the customer's "CO" role a customer type. Which side is the type's own, not the named role. */
+	private static boolean mayDecide(CurrentUser me, NpdApproval approval) {
+		return ModuleAccess.canApprove(me.role(), Module.NPD)
+				&& me.companyType() == approval.approvalType.approverRole().companyType();
 	}
 
 	private static Set<NpdAction> projectActions(CurrentUser me, NpdProject project) {
@@ -919,12 +935,12 @@ public class NpdService {
 	// ---------------------------------------------------------------- per-audience view assembly
 
 	private NpdView view(CurrentUser me, NpdProject p) {
-		boolean isCustomer = CUSTOMER_EDITORS.contains(me.role());
-		boolean isSupplier = SUPPLIER_EDITORS.contains(me.role());
+		boolean isCustomer = CUSTOMER_VIEWERS.contains(me.role());
+		boolean isSupplier = SUPPLIER_VIEWERS.contains(me.role());
 		// RfqApi's own record scope is per-audience (forErgo/forCustomer/forSupplier): the caller's own visible()
 		// pass already proved this project (and so this RFQ) is theirs, so each is safe to call here.
 		String rfqNumber = isCustomer ? rfqApi.forCustomer(p.sourceRfqId).number()
-				: isSupplier ? rfqApi.forSupplier(p.sourceRfqId).number() : rfqApi.forErgo(p.sourceRfqId).number();
+				: isSupplier ? rfqApi.forSupplier(p.sourceRfqId).number() : rfqApi.numberOf(p.sourceRfqId);
 		Map<Long, UserRef> owner = directory.users(ids(List.of(p), x -> x.ownerUserId));
 
 		List<NpdStageHistoryEntry> history = stageHistory.findByNpdProjectIdOrderById(p.id);
@@ -1054,7 +1070,7 @@ public class NpdService {
 
 	/** ponytail: one RfqApi call per row (no batch facade exists for ERGO RFQ numbers); fine at 3a's expected volume. */
 	private String rfqNumber(long rfqId) {
-		return rfqApi.forErgo(rfqId).number();
+		return rfqApi.numberOf(rfqId);
 	}
 
 	private static Long delayDays(NpdProject p) {

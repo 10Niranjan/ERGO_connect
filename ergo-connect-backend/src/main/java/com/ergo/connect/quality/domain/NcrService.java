@@ -41,6 +41,8 @@ import com.ergo.connect.common.event.Recipients;
 import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
+import com.ergo.connect.common.security.ModuleAccess;
+import com.ergo.connect.common.security.ModuleAccess.Module;
 import com.ergo.connect.common.security.Role;
 import com.ergo.connect.documents.api.DocumentStore;
 import com.ergo.connect.documents.api.DocumentStore.DocumentInfo;
@@ -109,22 +111,21 @@ public class NcrService {
 
 	private static final String CAPA_MODULE = "QUALITY_CAPA";
 
-	/** SRS §10.8 Create/Edit/Submit, ERGO side - same set as {@code InspectionService.EDITORS}. */
-	private static final Set<Role> EDITORS = EnumSet.of(ERGO_ADMIN, ERGO_QUALITY);
+	/** The role sheet (ModuleAccess), Quality column. Create/Edit/Submit, ERGO side - same set as {@code
+	 * InspectionService.EDITORS}. */
+	private static final Set<Role> EDITORS = ModuleAccess.actors(Module.QUALITY, CompanyType.ERGO);
 
-	/** Supplier Quality only, scoped to NCRs linked to its own company (security review L4 - see {@link #editor}) -
-	 * same as {@code InspectionService.SUPPLIER_EDITOR}. */
-	private static final Role SUPPLIER_EDITOR = SUPPLIER_QUALITY;
+	/** Supplier roles that act ("A"), scoped to NCRs linked to their own company (security review L4 - see {@link
+	 * #editor}) - same as {@code InspectionService.SUPPLIER_EDITORS}. */
+	private static final Set<Role> SUPPLIER_EDITORS = ModuleAccess.actors(Module.QUALITY, CompanyType.SUPPLIER);
 
 	/** SRS §10.8 Approve, its own authority separate from edit: ERGO Management has no create/edit/submit right at
 	 * all but decides closure/send-back/reopen. Supplier Quality is deliberately absent. */
-	private static final Set<Role> APPROVERS = EnumSet.of(ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_QUALITY);
+	private static final Set<Role> APPROVERS = ModuleAccess.approvers(Module.QUALITY, CompanyType.ERGO);
 
-	private static final Set<Role> SUPPLIER_VIEWERS = EnumSet.of(SUPPLIER_QUALITY, SUPPLIER_NPD, SUPPLIER_OFP,
-			SUPPLIER_KAM);
+	private static final Set<Role> SUPPLIER_VIEWERS = ModuleAccess.viewers(Module.QUALITY, CompanyType.SUPPLIER);
 
-	private static final Set<Role> CUSTOMER_VIEWERS = EnumSet.of(CUSTOMER_QUALITY, CUSTOMER_NPD, CUSTOMER_OFP,
-			CUSTOMER_KAM, CUSTOMER_MANAGEMENT);
+	private static final Set<Role> CUSTOMER_VIEWERS = ModuleAccess.viewers(Module.QUALITY, CompanyType.CUSTOMER);
 
 	private final NcrRepository ncrs;
 
@@ -174,14 +175,14 @@ public class NcrService {
 						n.currentStatus, n.targetClosureDate))
 				.toList();
 		}
-		List<Ncr> visible = switch (me.role()) {
-			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_QUALITY -> ncrs.findAllByOrderByIdDesc();
-			case ERGO_KAM -> {
+		List<Ncr> visible = switch (QualityScope.of(me.role())) {
+			case FULL -> ncrs.findAllByOrderByIdDesc();
+			case KAM -> {
 				Set<Long> accounts = directory.accountsOf(me.userId());
 				yield accounts.isEmpty() ? List.of() : ncrs.findByCustomerCompanyIdInOrderByIdDesc(accounts);
 			}
-			case ERGO_NPD -> ncrs.findByLinkedModuleOrderByIdDesc(LinkedModule.NPD);
-			case ERGO_OFP -> ncrs.findByLinkedModuleOrderByIdDesc(LinkedModule.OFP);
+			case NPD_LINKED -> ncrs.findByLinkedModuleOrderByIdDesc(LinkedModule.NPD);
+			case OFP_LINKED -> ncrs.findByLinkedModuleOrderByIdDesc(LinkedModule.OFP);
 			default -> List.of(); // SRS §10.8 X: ERGO RFQ and every other role not handled above/below
 		};
 		Map<Long, CompanyRef> customers = directory.companies(ids(visible, n -> n.customerCompanyId));
@@ -218,7 +219,7 @@ public class NcrService {
 	public NcrDetail create(NcrForm form) {
 		CurrentUser me = CurrentUser.get();
 		boolean ergoEditor = EDITORS.contains(me.role());
-		boolean supplierEditor = me.role() == SUPPLIER_EDITOR;
+		boolean supplierEditor = SUPPLIER_EDITORS.contains(me.role());
 		if (!ergoEditor && !supplierEditor) {
 			throw ApiException.forbidden("Only ERGO Quality/Admin or Supplier Quality may raise an NCR");
 		}
@@ -253,6 +254,10 @@ public class NcrService {
 		n.createdByUserId = me.userId();
 		n.createdByCompanyId = me.companyId();
 		n.ncrNumber = nextNcrNumber();
+		if (!inScope(me, n)) {
+			// e.g. ERGO OFP ("A") may only raise NCRs against OFP orders: it could never open any other one
+			throw ApiException.unprocessable("Your role can only raise NCRs within its own area");
+		}
 		ncrs.save(n);
 		// SRS §14.9 record assignment: a supplier-raised NCR is for ERGO; an ERGO-raised one is for the supplier it is against
 		// (and the named owner). The customer is not told at creation - an NCR starts hidden from the customer.
@@ -322,7 +327,9 @@ public class NcrService {
 			// Security review M3: validated, not trusted verbatim - see resolveNcrOwner.
 			n.ownerUserId = resolveNcrOwner(me, form.ownerUserId());
 			// Security review H2: ERGO-only toggle, full-replace like every other field here (NcrUpdateForm javadoc).
-			n.customerVisible = form.customerVisible();
+			if (ModuleAccess.canApprove(me.role(), Module.QUALITY)) {
+				n.customerVisible = form.customerVisible(); // external exposure: Quality approvers only
+			}
 			// Security review M5 precedent: an NPD/OFP-linked NCR's companies come only from applyLinkedCompanies at
 			// creation, never a later edit.
 			if (n.linkedModule != LinkedModule.NPD && n.linkedModule != LinkedModule.OFP) {
@@ -542,11 +549,11 @@ public class NcrService {
 		if (a.status == CapaActionStatus.CLOSED) {
 			throw ApiException.conflict("This CAPA action is closed and can no longer be edited");
 		}
-		Visibility visibility = me.role() == SUPPLIER_EDITOR ? Visibility.SUPPLIER : Visibility.INTERNAL;
+		Visibility visibility = SUPPLIER_EDITORS.contains(me.role()) ? Visibility.SUPPLIER : Visibility.INTERNAL;
 		DocumentInfo info = documents.store(CAPA_MODULE, a.id, fileName, content, visibility);
 		a.evidenceDocumentId = info.id();
 		// Evidence is never shown to customers; a supplier's file is for ERGO, ERGO's own is internal.
-		if (me.role() == SUPPLIER_EDITOR) {
+		if (SUPPLIER_EDITORS.contains(me.role())) {
 			notifier.send(NotificationKind.DOCUMENT_UPLOADED, "document", info.id(), n.ncrNumber, info.fileName(),
 					QualityNotices.ergo());
 		}
@@ -609,21 +616,24 @@ public class NcrService {
 	/** Record scope. Out-of-scope NCRs do not exist for the caller (404, not 403). */
 	Ncr visible(CurrentUser me, long id) {
 		Ncr n = ncrs.findById(id).orElse(null);
-		boolean inScope = n != null && switch (me.role()) {
-			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_QUALITY -> true;
-			case ERGO_KAM -> n.customerCompanyId != null && directory.accountsOf(me.userId()).contains(n.customerCompanyId);
-			case ERGO_NPD -> n.linkedModule == LinkedModule.NPD;
-			case ERGO_OFP -> n.linkedModule == LinkedModule.OFP;
-			case SUPPLIER_QUALITY, SUPPLIER_NPD, SUPPLIER_OFP, SUPPLIER_KAM ->
-				n.supplierCompanyId != null && me.companyId() == n.supplierCompanyId;
-			case CUSTOMER_QUALITY, CUSTOMER_NPD, CUSTOMER_OFP, CUSTOMER_KAM, CUSTOMER_MANAGEMENT ->
-				n.customerVisible && n.customerCompanyId != null && me.companyId() == n.customerCompanyId;
-			default -> false; // ERGO_RFQ, CUSTOMER_RFQ, SUPPLIER_RFQ: SRS §10.8 X
-		};
-		if (!inScope) {
+		if (!inScope(me, n)) {
 			throw ApiException.notFound("NCR");
 		}
 		return n;
+	}
+
+	private boolean inScope(CurrentUser me, Ncr n) {
+		return n != null && switch (QualityScope.of(me.role())) {
+			case FULL -> true;
+			case KAM -> n.customerCompanyId != null && directory.accountsOf(me.userId()).contains(n.customerCompanyId);
+			case NPD_LINKED -> n.linkedModule == LinkedModule.NPD;
+			case OFP_LINKED -> n.linkedModule == LinkedModule.OFP;
+			case SUPPLIER ->
+				n.supplierCompanyId != null && me.companyId() == n.supplierCompanyId;
+			case CUSTOMER ->
+				n.customerVisible && n.customerCompanyId != null && me.companyId() == n.customerCompanyId;
+			default -> false; // roles with no Quality access
+		};
 	}
 
 	private boolean ergoEditor(CurrentUser me) {
@@ -636,7 +646,7 @@ public class NcrService {
 	 * fills in root cause/CAPA), not only one it filed itself. Company reassignment/{@code effectivenessStatus}/
 	 * {@code ownerUserId} stay ERGO-only regardless (applyUpdate's own {@code ergoEditor} gate). */
 	private boolean editor(CurrentUser me, Ncr n) {
-		boolean ownSupplier = me.role() == SUPPLIER_EDITOR && n.supplierCompanyId != null
+		boolean ownSupplier = SUPPLIER_EDITORS.contains(me.role()) && n.supplierCompanyId != null
 				&& me.companyId() == n.supplierCompanyId;
 		return ergoEditor(me) || ownSupplier;
 	}
@@ -716,7 +726,7 @@ public class NcrService {
 		if (!ownerIsErgo && !ownerIsNcrSupplier) {
 			throw ApiException.unprocessable("CAPA action owner must belong to ERGO or this NCR's supplier company");
 		}
-		if (me.role() == SUPPLIER_EDITOR && owner.companyId() != me.companyId()) {
+		if (SUPPLIER_EDITORS.contains(me.role()) && owner.companyId() != me.companyId()) {
 			throw ApiException.unprocessable("CAPA action owner must belong to your own company");
 		}
 		return ownerUserId;

@@ -44,15 +44,14 @@ import jakarta.validation.Valid;
 @RequestMapping("/api/rfqs")
 class RfqController {
 
-	private static final String VIEWERS = "hasAnyRole('ERGO_ADMIN', 'ERGO_MANAGEMENT', 'ERGO_RFQ', 'ERGO_KAM', "
-			+ "'ERGO_NPD', 'CUSTOMER_RFQ', 'CUSTOMER_KAM', 'CUSTOMER_MANAGEMENT')";
+	// The role sheet (ModuleAccess) decides; suppliers reach RFQs only through their own quote endpoints.
+	private static final String VIEWERS = "@access.view('RFQ', 'ERGO') or @access.view('RFQ', 'CUSTOMER')";
 
-	private static final String CREATORS = "hasAnyRole('ERGO_ADMIN', 'ERGO_MANAGEMENT', 'ERGO_RFQ', 'ERGO_KAM', "
-			+ "'CUSTOMER_RFQ', 'CUSTOMER_KAM', 'CUSTOMER_MANAGEMENT')";
+	private static final String CREATORS = "@access.act('RFQ', 'ERGO') or @access.act('RFQ', 'CUSTOMER')";
 
-	private static final String ERGO_EDITORS = "hasAnyRole('ERGO_ADMIN', 'ERGO_MANAGEMENT', 'ERGO_RFQ', 'ERGO_KAM')";
+	private static final String ERGO_EDITORS = "@access.act('RFQ', 'ERGO')";
 
-	private static final String REVIEWERS = "hasAnyRole('ERGO_ADMIN', 'ERGO_MANAGEMENT', 'ERGO_RFQ')";
+	private static final String REVIEWERS = "@access.approve('RFQ', 'ERGO')";
 
 	private final RfqService rfqs;
 
@@ -129,7 +128,7 @@ class RfqController {
 	}
 
 	@PostMapping("/{id}/reopen")
-	@PreAuthorize("hasAnyRole('ERGO_ADMIN', 'ERGO_RFQ')")
+	@PreAuthorize(REVIEWERS)
 	RfqView reopen(@PathVariable long id, @Valid @RequestBody CommentForm body) {
 		return rfqs.reopen(id, body.comment());
 	}

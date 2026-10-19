@@ -10,17 +10,14 @@ import {
   NPD_DETAIL_VIEWERS,
   NPD_SUPPLIER_ROLES,
   NPD_VIEWERS,
-  OFP_CUSTOMER_ROLES,
   OFP_DETAIL_VIEWERS,
   OFP_EDITORS,
-  OFP_SUPPLIER_ROLES,
-  OFP_VIEWERS,
   QUALITY_EDITORS,
   QUALITY_VIEWERS,
   QUOTE_VIEWERS,
   RFQ_CREATORS,
   RFQ_VIEWERS,
-  SUPPLIER_QUOTERS,
+  SUPPLIER_RFQ_VIEWERS,
   ChangePasswordPage,
   ForgotPasswordPage,
   LoginPage,
@@ -91,7 +88,7 @@ export const router = createBrowserRouter([
               { path: '/rfqs/:id/edit', element: <RfqEditPage /> },
             ],
           },
-          { element: <RequireRole roles={SUPPLIER_QUOTERS} />, children: [{ path: '/quotes', element: <AssignedRfqsPage /> }] },
+          { element: <RequireRole roles={SUPPLIER_RFQ_VIEWERS} />, children: [{ path: '/quotes', element: <AssignedRfqsPage /> }] },
           { element: <RequireRole roles={QUOTE_VIEWERS} />, children: [{ path: '/quotes/:id', element: <QuotePage /> }] },
           {
             element: <RequireRole roles={NPD_VIEWERS} />,
@@ -111,7 +108,7 @@ export const router = createBrowserRouter([
           {
             // /ofp's own single list/detail endpoints already scope by caller, so one route set serves every
             // audience (ERGO, the four supplier roles and Customer OFP) rather than NPD's separate ERGO/"mine" split.
-            element: <RequireRole roles={[...OFP_VIEWERS, ...OFP_SUPPLIER_ROLES, ...OFP_CUSTOMER_ROLES]} />,
+            element: <RequireRole roles={OFP_DETAIL_VIEWERS} />,
             children: [{ path: '/ofp', element: <OrderListPage /> }],
           },
           {

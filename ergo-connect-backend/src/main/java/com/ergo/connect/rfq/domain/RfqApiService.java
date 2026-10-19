@@ -140,6 +140,15 @@ class RfqApiService implements RfqApi {
 
 	@Override
 	@Transactional(readOnly = true)
+	public String numberOf(long rfqId) {
+		if (CurrentUser.get().companyType() != CompanyType.ERGO) {
+			throw ApiException.notFound("RFQ"); // an external role reads its RFQ number only through forCustomer/forSupplier
+		}
+		return rfqs.findById(rfqId).map(r -> r.number).orElseThrow(() -> ApiException.notFound("RFQ"));
+	}
+
+	@Override
+	@Transactional(readOnly = true)
 	public SupplierRfq forSupplier(long rfqId) {
 		SupplierRfq rfq = forSupplier(List.of(rfqId)).get(rfqId);
 		if (rfq == null) {
@@ -263,7 +272,7 @@ class RfqApiService implements RfqApi {
 				Set<Long> accounts = directory.accountsOf(me.userId());
 				yield accounts.isEmpty() ? List.of() : rfqs.findByCustomerCompanyIdInOrderByIdDesc(accounts);
 			}
-			case CUSTOMER_RFQ, CUSTOMER_KAM, CUSTOMER_MANAGEMENT ->
+			case CUSTOMER_RFQ, CUSTOMER_KAM, CUSTOMER_MANAGEMENT, CUSTOMER_NPD, CUSTOMER_QUALITY ->
 				rfqs.findByCustomerCompanyIdOrderByIdDesc(me.companyId());
 			default -> List.of(); // suppliers (no invitation data here) and ERGO_NPD (dashboard-relevant RFQs are
 									// CUSTOMER_APPROVED only, which DASHBOARD_EXCLUDED drops anyway)

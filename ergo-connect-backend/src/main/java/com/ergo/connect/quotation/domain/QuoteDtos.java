@@ -83,7 +83,7 @@ public final class QuoteDtos {
 			List<StepView> processSteps, String assumptionsDeviations, String remarks) {
 	}
 
-	public sealed interface QuoteView permits ErgoQuoteView, SupplierQuoteView {
+	public sealed interface QuoteView permits ErgoQuoteView, SupplierQuoteView, SupplierAssignedRfqView {
 	}
 
 	/** The supplier's page: its invitation, the supplier-safe RFQ and its own quote (null until first saved). */
@@ -91,6 +91,14 @@ public final class QuoteDtos {
 			SupplierRfq rfq, QuoteData quote, int version, Instant submittedAt, String reopenReason,
 			String clarificationQuestion, String clarificationAnswer, String regretReason, Set<QuoteAction> actions)
 			implements QuoteView {
+	}
+
+	/**
+	 * What a supplier role with RFQ access but none on Quotation (the role sheet) sees of an assignment: the RFQ and its
+	 * due date, never the quote's status, versions or correspondence.
+	 */
+	public record SupplierAssignedRfqView(String audience, long id, LocalDate responseDueDate, SupplierRfq rfq,
+			Set<QuoteAction> actions) implements QuoteView {
 	}
 
 	public record ErgoQuoteView(String audience, long id, QuoteStatus status, LocalDate responseDueDate, long rfqId,
@@ -102,6 +110,11 @@ public final class QuoteDtos {
 	/** Supplier's "Assigned RFQs" list. */
 	public record SupplierQuoteRow(long id, String rfqNumber, String partNumber, String revision, String description,
 			LocalDate responseDueDate, QuoteStatus status, int version, Instant submittedAt, boolean quotingOpen) {
+	}
+
+	/** The "Assigned RFQs" row for a supplier role without Quotation access: no quote status, version or submit time. */
+	public record SupplierAssignedRfqRow(long id, String rfqNumber, String partNumber, String revision,
+			String description, LocalDate responseDueDate, boolean quotingOpen) {
 	}
 
 	/** One supplier on an RFQ's suppliers tab (ERGO). */

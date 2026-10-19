@@ -2,6 +2,7 @@ package com.ergo.connect.rfq;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
@@ -166,8 +167,16 @@ class RfqTests {
 			.andExpect(status().isNotFound());
 		mvc.perform(get("/api/rfqs/{id}", rfqA).header(HttpHeaders.AUTHORIZATION, ergoNpd.bearer()))
 			.andExpect(status().isNotFound()); // NPD sees approved work only
+		// role sheet: Customer NPD has "V" on RFQ - its own company's RFQs, read-only
 		mvc.perform(get("/api/rfqs").header(HttpHeaders.AUTHORIZATION, customerNpd.bearer()))
-			.andExpect(status().isForbidden()); // SRS §10.4: no RFQ access
+			.andExpect(jsonPath("$[*].id", hasItem((int) rfqA)))
+			.andExpect(jsonPath("$[*].id", not(hasItem((int) rfqB))));
+		mvc.perform(get("/api/rfqs/{id}", rfqA).header(HttpHeaders.AUTHORIZATION, customerNpd.bearer()))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.actions", empty()));
+		mvc.perform(post("/api/rfqs").header(HttpHeaders.AUTHORIZATION, customerNpd.bearer())
+			.contentType(MediaType.APPLICATION_JSON).content("{\"partNumber\": \"X\", \"currencyId\": %d}".formatted(inr)))
+			.andExpect(status().isForbidden());
 		mvc.perform(get("/api/rfqs").header(HttpHeaders.AUTHORIZATION, supplier.bearer()))
 			.andExpect(status().isForbidden()); // until RFQs are sent to suppliers (Phase 2b)
 		mvc.perform(get("/api/rfqs").header(HttpHeaders.AUTHORIZATION, ergoRfq.bearer()))

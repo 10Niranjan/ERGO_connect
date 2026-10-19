@@ -31,22 +31,20 @@ import jakarta.validation.Valid;
 @RequestMapping("/api/quality/deviations")
 class DeviationController {
 
-	/** SRS §10.8 View: every role except the three *_RFQ roles (X) - same set as {@link NcrController}. */
-	private static final String VIEWERS = "hasAnyRole('ERGO_ADMIN', 'ERGO_MANAGEMENT', 'ERGO_KAM', 'ERGO_NPD', "
-			+ "'ERGO_OFP', 'ERGO_QUALITY', 'CUSTOMER_NPD', 'CUSTOMER_OFP', 'CUSTOMER_QUALITY', 'CUSTOMER_KAM', "
-			+ "'CUSTOMER_MANAGEMENT', 'SUPPLIER_NPD', 'SUPPLIER_OFP', 'SUPPLIER_QUALITY', 'SUPPLIER_KAM')";
+	// The role sheet (ModuleAccess), Quality column; the service applies the record scope and per-action rules.
+	private static final String VIEWERS = "@access.view('QUALITY')";
 
 	/** SRS §10.8 Create/Edit/Submit: ERGO Admin/Quality, Customer Quality and Supplier Quality. */
-	private static final String EDITORS = "hasAnyRole('ERGO_ADMIN', 'ERGO_QUALITY', 'CUSTOMER_QUALITY', 'SUPPLIER_QUALITY')";
+	private static final String EDITORS = "@access.act('QUALITY')";
 
-	/** REQUESTED -&gt; UNDER_REVIEW and APPROVED/EXPIRED -&gt; CLOSED: ERGO Admin/Quality only. */
-	private static final String ERGO_EDITORS = "hasAnyRole('ERGO_ADMIN', 'ERGO_QUALITY')";
+	/** REQUESTED -&gt; UNDER_REVIEW and APPROVED/EXPIRED -&gt; CLOSED: ERGO's final-approval roles only. */
+	private static final String ERGO_EDITORS = "@access.approve('QUALITY', 'ERGO')";
 
 	/** SRS §10.8 Approve, its own authority separate from edit ("A*" footnote): ERGO Management may decide the
 	 * ERGO_QUALITY row despite having no create/edit/submit right; Customer Quality may decide only its own
 	 * CUSTOMER_QUALITY row (both narrowed to "my own row only" inside {@code DeviationService}). Supplier Quality
 	 * never approves. */
-	private static final String APPROVERS = "hasAnyRole('ERGO_ADMIN', 'ERGO_MANAGEMENT', 'ERGO_QUALITY', 'CUSTOMER_QUALITY')";
+	private static final String APPROVERS = "@access.approve('QUALITY', 'ERGO') or @access.approve('QUALITY', 'CUSTOMER')";
 
 	private final DeviationService deviations;
 

@@ -60,11 +60,11 @@ class OfpTests {
 
 	long inr;
 
-	Login ergoAdmin;
+	Login ergoManagement;
 
 	Login ergoOfp;
 
-	Login ergoManagement;
+	Login ergoAdmin;
 
 	Login ergoKam;
 
@@ -86,9 +86,9 @@ class OfpTests {
 		customerB = users.company("CUSTOMER");
 		supplier = users.company("SUPPLIER");
 		inr = users.currency("INR");
-		ergoAdmin = users.login(ergo, "ERGO_ADMIN");
-		ergoOfp = users.login(ergo, "ERGO_OFP");
 		ergoManagement = users.login(ergo, "ERGO_MANAGEMENT");
+		ergoOfp = users.login(ergo, "ERGO_OFP");
+		ergoAdmin = users.login(ergo, "ERGO_ADMIN");
 		ergoKam = users.login(ergo, "ERGO_KAM");
 		users.assignAccounts(ergoKam.userId(), customerA);
 		ergoNpd = users.login(ergo, "ERGO_NPD");
@@ -101,7 +101,7 @@ class OfpTests {
 	@Test
 	void standaloneCreateGeneratesAnOrderNumberAndOnlyEditorsMayCreate() throws Exception {
 		call(post("/api/ofp/orders"), ergoRfq, orderForm(customerA, supplier)).andExpect(status().isForbidden());
-		call(post("/api/ofp/orders"), ergoManagement, orderForm(customerA, supplier))
+		call(post("/api/ofp/orders"), ergoAdmin, orderForm(customerA, supplier))
 			.andExpect(status().isForbidden());
 
 		String created = call(post("/api/ofp/orders"), ergoOfp, orderForm(customerA, supplier))
@@ -113,8 +113,8 @@ class OfpTests {
 			.getContentAsString();
 		assertThat((String) JsonPath.read(created, "$.orderNumber")).matches("ORD-\\d{4}-\\d{5}");
 
-		// ERGO Admin may also create (SRS §10.7)
-		call(post("/api/ofp/orders"), ergoAdmin, orderForm(customerA, supplier)).andExpect(status().isCreated());
+		// ERGO Management owns OFP too (role sheet "O"); ERGO Admin is view-only
+		call(post("/api/ofp/orders"), ergoManagement, orderForm(customerA, supplier)).andExpect(status().isCreated());
 	}
 
 	@Test
@@ -182,14 +182,21 @@ class OfpTests {
 		call(get("/api/ofp/orders/{id}", orderA), ergoNpd, null).andExpect(status().isNotFound());
 		call(get("/api/ofp/orders/{id}", handoverOrder), ergoNpd, null).andExpect(status().isOk());
 
-		// ERGO RFQ has no access at all (SRS §10.7 X), and nor does any customer/supplier role
-		for (Login outsider : List.of(ergoRfq, buyerA, seller)) {
+		// customer RFQ and supplier RFQ have no OFP access at all (role sheet)
+		for (Login outsider : List.of(buyerA, seller)) {
 			call(get("/api/ofp/orders"), outsider, null).andExpect(status().isForbidden());
 			call(get("/api/ofp/orders/{id}", orderA), outsider, null).andExpect(status().isForbidden());
 		}
+		// ERGO RFQ and ERGO Quality view every order but write nothing
+		for (Login viewer : List.of(ergoRfq, ergoQuality)) {
+			call(get("/api/ofp/orders"), viewer, null).andExpect(jsonPath("$[*].id", hasItem((int) orderB)));
+			call(get("/api/ofp/orders/{id}", orderA), viewer, null).andExpect(status().isOk());
+		}
+		call(post("/api/ofp/orders/{id}/advance", orderA), ergoRfq, "{}").andExpect(status().isForbidden());
+		call(post("/api/ofp/orders/{id}/advance", orderA), ergoQuality, "{}").andExpect(status().isForbidden());
 
-		// ERGO Management sees everything but cannot write
-		call(get("/api/ofp/orders"), ergoManagement, null).andExpect(jsonPath("$[*].id", hasItem((int) orderA)))
+		// ERGO Admin sees everything but cannot write (role sheet "V")
+		call(get("/api/ofp/orders"), ergoAdmin, null).andExpect(jsonPath("$[*].id", hasItem((int) orderA)))
 			.andExpect(jsonPath("$[*].id", hasItem((int) orderB)));
 	}
 
@@ -213,7 +220,7 @@ class OfpTests {
 
 		// only ERGO OFP/Admin may advance
 		long other = createStandalone(customerA);
-		call(post("/api/ofp/orders/{id}/advance", other), ergoManagement, "{}").andExpect(status().isForbidden());
+		call(post("/api/ofp/orders/{id}/advance", other), ergoAdmin, "{}").andExpect(status().isForbidden());
 	}
 
 	@Test
@@ -251,7 +258,7 @@ class OfpTests {
 	void materialStatusAndProductionProgressAreErgoOfpAndAdminOnly() throws Exception {
 		long orderId = createStandalone(customerA);
 
-		call(post("/api/ofp/orders/{id}/material-status", orderId), ergoManagement, materialStatusForm("PENDING"))
+		call(post("/api/ofp/orders/{id}/material-status", orderId), ergoAdmin, materialStatusForm("PENDING"))
 			.andExpect(status().isForbidden());
 
 		String withMaterial = call(post("/api/ofp/orders/{id}/material-status", orderId), ergoOfp,
@@ -283,6 +290,14 @@ class OfpTests {
 
 		call(put("/api/ofp/production-progress/{id}", progressId), ergoKam, productionProgressForm("DONE", null))
 			.andExpect(status().isForbidden());
+		// ERGO Quality ("A" on OFP) records material inspection status and may hold / release, nothing else
+		call(post("/api/ofp/orders/{id}/material-status", orderId), ergoQuality, materialStatusForm("PENDING"))
+			.andExpect(status().isCreated());
+		call(post("/api/ofp/orders/{id}/hold", orderId), ergoQuality, "{\"comment\": \"Inspection pending\"}")
+			.andExpect(jsonPath("$.currentStatus").value("ON_HOLD"));
+		call(post("/api/ofp/orders/{id}/release", orderId), ergoQuality, "{}").andExpect(status().isOk());
+		call(post("/api/ofp/orders/{id}/production-progress", orderId), ergoQuality,
+				productionProgressForm("IN_PROGRESS", null)).andExpect(status().isForbidden());
 	}
 
 	@Test
@@ -372,16 +387,21 @@ class OfpTests {
 	}
 
 	@Test
-	void everySupplierEditorRoleNotJustSupplierOfpCanEditItsOwnOrder() throws Exception {
+	void everySupplierRoleWithOfpAccessNotJustSupplierOfpCanEditItsOwnOrderButSupplierNpdHasNone() throws Exception {
 		long orderId = createStandalone(customerA);
-		// SRS §10.7 "E**" names all four supplier roles; confirm the grant isn't accidentally SUPPLIER_OFP-only
-		Login supplierNpd = users.login(supplier, "SUPPLIER_NPD");
-		call(post("/api/ofp/orders/{id}/production-progress", orderId), supplierNpd,
+		// role sheet: Supplier OFP, Quality and KAM are "A" on OFP; confirm the grant isn't accidentally OFP-only
+		Login supplierQuality = users.login(supplier, "SUPPLIER_QUALITY");
+		call(post("/api/ofp/orders/{id}/production-progress", orderId), supplierQuality,
 				productionProgressForm("IN_PROGRESS", null)).andExpect(status().isCreated())
 			.andExpect(jsonPath("$.productionProgress[0].status").value("IN_PROGRESS"));
-		call(post("/api/ofp/orders/{id}/packaging-dispatch", orderId), supplierNpd,
+		call(post("/api/ofp/orders/{id}/packaging-dispatch", orderId), supplierQuality,
 				packagingDispatchForm("IN_PROGRESS", false)).andExpect(status().isCreated())
 			.andExpect(jsonPath("$.packagingDispatch[0].packagingStatus").value("IN_PROGRESS"));
+		// Supplier NPD has no OFP access
+		Login supplierNpd = users.login(supplier, "SUPPLIER_NPD");
+		call(get("/api/ofp/orders/{id}", orderId), supplierNpd, null).andExpect(status().isForbidden());
+		call(post("/api/ofp/orders/{id}/production-progress", orderId), supplierNpd,
+				productionProgressForm("DONE", null)).andExpect(status().isForbidden());
 	}
 
 	@Test
@@ -493,7 +513,7 @@ class OfpTests {
 		Login supplierOfp = users.login(supplier, "SUPPLIER_OFP");
 		call(post("/api/ofp/orders/{id}/dispatch-ready", orderId), supplierOfp, "{}")
 			.andExpect(status().isForbidden());
-		call(post("/api/ofp/orders/{id}/dispatch-ready", orderId), ergoManagement, "{}")
+		call(post("/api/ofp/orders/{id}/dispatch-ready", orderId), ergoAdmin, "{}")
 			.andExpect(status().isForbidden());
 
 		// REJECTED: still not dispatch-ready
@@ -741,7 +761,7 @@ class OfpTests {
 		// only ERGO OFP/Admin may attempt it
 		Login supplierOfp = users.login(supplier, "SUPPLIER_OFP");
 		call(post("/api/ofp/orders/{id}/dispatch", orderId), supplierOfp, "{}").andExpect(status().isForbidden());
-		call(post("/api/ofp/orders/{id}/dispatch", orderId), ergoManagement, "{}").andExpect(status().isForbidden());
+		call(post("/api/ofp/orders/{id}/dispatch", orderId), ergoAdmin, "{}").andExpect(status().isForbidden());
 
 		// fix it and dispatch succeeds
 		passInspection(secondInspection);
@@ -765,7 +785,7 @@ class OfpTests {
 
 		// Close Order is refused before Delivered, ERGO-only
 		call(post("/api/ofp/orders/{id}/close", orderId), ergoOfp, "{}").andExpect(status().isConflict());
-		call(post("/api/ofp/orders/{id}/close", orderId), ergoManagement, "{}").andExpect(status().isForbidden());
+		call(post("/api/ofp/orders/{id}/close", orderId), ergoAdmin, "{}").andExpect(status().isForbidden());
 
 		String withShipment = call(post("/api/ofp/orders/{id}/shipments", orderId), ergoOfp,
 				shipmentForm("DISPATCHED")).andExpect(status().isCreated())
@@ -1047,29 +1067,29 @@ class OfpTests {
 	/** IN_INSPECTION -> PASSED, by ERGO Admin (a different user than whoever submitted, since the submitter may not
 	 * decide its own inspection's outcome). */
 	private void passInspection(long inspectionId) throws Exception {
-		call(post("/api/quality/inspections/{id}/pass", inspectionId), ergoAdmin, "{}").andExpect(status().isOk());
+		call(post("/api/quality/inspections/{id}/pass", inspectionId), ergoManagement, "{}").andExpect(status().isOk());
 	}
 
 	/** IN_INSPECTION -> REJECTED, reason required. */
 	private void rejectInspection(long inspectionId) throws Exception {
-		call(post("/api/quality/inspections/{id}/reject", inspectionId), ergoAdmin,
+		call(post("/api/quality/inspections/{id}/reject", inspectionId), ergoManagement,
 				"{\"reason\": \"Dimensional defect found\"}").andExpect(status().isOk());
 	}
 
 	/** IN_INSPECTION -> RELEASED_WITH_DEVIATION, reason required. */
 	private void releaseInspectionWithDeviation(long inspectionId) throws Exception {
-		call(post("/api/quality/inspections/{id}/release-with-deviation", inspectionId), ergoAdmin,
+		call(post("/api/quality/inspections/{id}/release-with-deviation", inspectionId), ergoManagement,
 				"{\"reason\": \"Minor deviation, customer concession granted\"}").andExpect(status().isOk());
 	}
 
 	/** (PASSED | REJECTED | RELEASED_WITH_DEVIATION) -> CLOSED. */
 	private void closeInspection(long inspectionId) throws Exception {
-		call(post("/api/quality/inspections/{id}/close", inspectionId), ergoAdmin, "{}").andExpect(status().isOk());
+		call(post("/api/quality/inspections/{id}/close", inspectionId), ergoManagement, "{}").andExpect(status().isOk());
 	}
 
 	/** CLOSED -> OPEN, reason required. */
 	private void reopenInspection(long inspectionId) throws Exception {
-		call(post("/api/quality/inspections/{id}/reopen", inspectionId), ergoAdmin,
+		call(post("/api/quality/inspections/{id}/reopen", inspectionId), ergoManagement,
 				"{\"reason\": \"Re-inspecting after rework\"}").andExpect(status().isOk());
 	}
 
@@ -1142,7 +1162,7 @@ class OfpTests {
 		call(post("/api/quality/inspections/{id}/submit", inspectionId), ergoQuality, """
 				{"partNumber": "PN-STD", "quantityChecked": 5, "quantityRejected": 0, "inspectionDate": "%s",
 				 "customerVisible": false}""".formatted(LocalDate.now())).andExpect(status().isOk());
-		call(post("/api/quality/inspections/{id}/pass", inspectionId), ergoAdmin, "{}").andExpect(status().isOk());
+		call(post("/api/quality/inspections/{id}/pass", inspectionId), ergoManagement, "{}").andExpect(status().isOk());
 	}
 
 	/** Full RFQ->quotation flow up to CUSTOMER_APPROVED with one supplier's quote approved (SRS §14.2-14.4),

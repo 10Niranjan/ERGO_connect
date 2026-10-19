@@ -107,12 +107,18 @@ class NcrTests {
 	// ---------------------------------------------------------------- create / role check
 
 	@Test
-	void onlyErgoAdminErgoQualityAndSupplierQualityMayCreate() throws Exception {
-		call(post("/api/quality/ncrs"), ergoAdmin, ncrForm(1)).andExpect(status().isCreated());
+	void rolesThatActOnQualityMayCreateAndTheViewOnlyOnesMayNot() throws Exception {
+		// role sheet: ERGO Management / Quality ("O"), Supplier Quality / KAM ("A") create
+		call(post("/api/quality/ncrs"), ergoManagement, ncrForm(1)).andExpect(status().isCreated());
 		call(post("/api/quality/ncrs"), ergoQuality, ncrForm(2)).andExpect(status().isCreated());
 		call(post("/api/quality/ncrs"), supplierXQuality, ncrForm(3)).andExpect(status().isCreated());
+		Login supplierKam = users.login(supplierX, "SUPPLIER_KAM");
+		call(post("/api/quality/ncrs"), supplierKam, ncrForm(5)).andExpect(status().isCreated());
 
-		for (Login denied : List.of(ergoManagement, ergoKam, ergoNpd, ergoOfp, ergoRfq, customerAQuality)) {
+		// ERGO OFP ("A") may only raise NCRs within its own area: OFP-linked ones, never a free-standing one
+		call(post("/api/quality/ncrs"), ergoOfp, ncrForm(6)).andExpect(status().isUnprocessableContent());
+
+		for (Login denied : List.of(ergoAdmin, ergoKam, ergoNpd, ergoRfq, customerAQuality)) {
 			call(post("/api/quality/ncrs"), denied, ncrForm(4)).andExpect(status().isForbidden());
 		}
 	}
@@ -203,8 +209,11 @@ class NcrTests {
 		call(get("/api/quality/ncrs"), ergoOfp, null).andExpect(jsonPath("$[*].id", hasItem((int) ofpOne)))
 			.andExpect(jsonPath("$[*].id", not(hasItem((int) npdOne))));
 
-		call(get("/api/quality/ncrs"), ergoRfq, null).andExpect(status().isForbidden());
-		call(get("/api/quality/ncrs/{id}", forA), ergoRfq, null).andExpect(status().isForbidden());
+		// ERGO RFQ and Admin view every NCR (role sheet "V")
+		for (Login viewer : List.of(ergoRfq, ergoAdmin)) {
+			call(get("/api/quality/ncrs"), viewer, null).andExpect(jsonPath("$[*].id", hasItem((int) forB)));
+			call(get("/api/quality/ncrs/{id}", forA), viewer, null).andExpect(status().isOk());
+		}
 	}
 
 	/** Security review M5 precedent: an NCR linked to a real OFP order always derives its companies from that order,
@@ -478,7 +487,7 @@ class NcrTests {
 			.andExpect(jsonPath("$.actions", not(hasItem("CLOSE"))));
 
 		// a different approver still may
-		call(post("/api/quality/ncrs/{id}/close", id), ergoAdmin, "{}")
+		call(post("/api/quality/ncrs/{id}/close", id), ergoManagement, "{}")
 			.andExpect(jsonPath("$.currentStatus").value("CLOSED"));
 	}
 
@@ -528,7 +537,7 @@ class NcrTests {
 		call(post("/api/quality/ncrs/{id}/close", id), ergoQuality, "{}").andExpect(status().isConflict());
 
 		// a different approver still may
-		call(post("/api/quality/ncrs/{id}/close", id), ergoAdmin, "{}")
+		call(post("/api/quality/ncrs/{id}/close", id), ergoManagement, "{}")
 			.andExpect(jsonPath("$.currentStatus").value("CLOSED"));
 	}
 

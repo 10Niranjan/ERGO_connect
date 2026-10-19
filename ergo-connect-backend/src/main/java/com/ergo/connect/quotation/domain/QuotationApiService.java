@@ -9,6 +9,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
+import com.ergo.connect.common.security.ModuleAccess;
+import com.ergo.connect.common.security.ModuleAccess.Module;
 import com.ergo.connect.common.security.Role;
 import com.ergo.connect.masterdata.api.Directory;
 import com.ergo.connect.masterdata.api.Directory.CompanyRef;
@@ -53,13 +55,17 @@ class QuotationApiService implements QuotationApi {
 	@Override
 	@Transactional(readOnly = true)
 	public boolean visibleToCaller(long invitationId) {
-		return quoteService.inScope(CurrentUser.get(), invitationId);
+		// The documents / communication probes concern the quote itself: a supplier role that only has RFQ access
+		// (view of the assigned RFQ) is not in its scope.
+		CurrentUser me = CurrentUser.get();
+		return ModuleAccess.canView(me.role(), Module.QUOTATION) && quoteService.inScope(me, invitationId);
 	}
 
 	@Override
 	@Transactional(readOnly = true)
 	public java.util.Optional<com.ergo.connect.common.record.RecordParties> partiesVisibleToCaller(long invitationId) {
-		if (!quoteService.inScope(CurrentUser.get(), invitationId)) {
+		CurrentUser me = CurrentUser.get();
+		if (!ModuleAccess.canView(me.role(), Module.QUOTATION) || !quoteService.inScope(me, invitationId)) {
 			return java.util.Optional.empty();
 		}
 		return invitations.findById(invitationId).map(i -> new com.ergo.connect.common.record.RecordParties(null, i.supplierCompanyId));
@@ -87,8 +93,8 @@ class QuotationApiService implements QuotationApi {
 	@Transactional(readOnly = true)
 	public boolean supplierInvitedToRfq(long rfqId) {
 		CurrentUser me = CurrentUser.get();
-		// M3: only the supplier roles that actually work quotes (same set as QuoteService), not every supplier role.
-		if (me.companyType() != CompanyType.SUPPLIER || !QuoteService.SUPPLIER_QUOTERS.contains(me.role())) {
+		// Same set as QuoteService.SUPPLIER_RFQ_VIEWERS: the supplier roles with RFQ access see the ERGO-shared RFQ files.
+		if (me.companyType() != CompanyType.SUPPLIER || !ModuleAccess.canView(me.role(), ModuleAccess.Module.RFQ)) {
 			return false;
 		}
 		return invitations.findByRfqIdOrderById(rfqId).stream().anyMatch(i -> i.supplierCompanyId == me.companyId());
@@ -102,7 +108,7 @@ class QuotationApiService implements QuotationApi {
 			return List.of();
 		}
 		LocalDate today = LocalDate.now();
-		return quoteService.mine().stream()
+		return quoteService.quoteRows().stream()
 			.map(r -> new SupplierQuoteItem(r.id(), r.rfqNumber(), r.partNumber(), r.status().name(),
 					r.responseDueDate(), r.quotingOpen() && r.responseDueDate() != null
 							&& r.responseDueDate().isBefore(today) && QuoteStatus.EDITABLE.contains(r.status())))

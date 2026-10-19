@@ -27,6 +27,8 @@ import com.ergo.connect.common.event.Recipients;
 import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
+import com.ergo.connect.common.security.ModuleAccess;
+import com.ergo.connect.common.security.ModuleAccess.Module;
 import com.ergo.connect.common.security.Role;
 import com.ergo.connect.masterdata.api.Directory;
 import com.ergo.connect.masterdata.api.Directory.CompanyRef;
@@ -68,8 +70,8 @@ import tools.jackson.databind.json.JsonMapper;
 @Transactional
 public class CustomerQuoteService {
 
-	/** SRS §10.5 RV** / S***: these customer roles see ERGO's quotes and answer them. */
-	private static final Set<Role> CUSTOMER_RESPONDERS = EnumSet.of(CUSTOMER_RFQ, CUSTOMER_KAM, CUSTOMER_MANAGEMENT);
+	/** The role sheet (ModuleAccess), Quotation column: these customer roles see ERGO's quotes and answer them. */
+	private static final Set<Role> CUSTOMER_RESPONDERS = ModuleAccess.actors(Module.QUOTATION, CompanyType.CUSTOMER);
 
 	private final CustomerQuoteRepository customerQuotes;
 
@@ -209,6 +211,11 @@ public class CustomerQuoteService {
 		if (quote.responseStatus != ResponseStatus.WAITING) {
 			throw ApiException.conflict("This quote has already been answered");
 		}
+		if (form.response() != CustomerResponse.REVISION_REQUESTED
+				&& !ModuleAccess.canApprove(me.role(), Module.QUOTATION)) {
+			throw ApiException.forbidden("Only the customer's approving role can approve or decline a quote; "
+					+ "you can request a revision");
+		}
 		String comment = QuoteService.text(form.comment());
 		if (form.response() != CustomerResponse.APPROVED && comment == null) {
 			throw ApiException.unprocessable(form.response() == CustomerResponse.DECLINED
@@ -274,9 +281,13 @@ public class CustomerQuoteService {
 	}
 
 	private Set<CustomerQuoteAction> actions(CurrentUser me, CustomerQuote quote, CustomerRfqRef rfq) {
-		return CUSTOMER_RESPONDERS.contains(me.role()) && quote.responseStatus == ResponseStatus.WAITING
-				&& rfq.awaitingAnswer() ? EnumSet.allOf(CustomerQuoteAction.class)
-						: EnumSet.noneOf(CustomerQuoteAction.class);
+		if (!CUSTOMER_RESPONDERS.contains(me.role()) || quote.responseStatus != ResponseStatus.WAITING
+				|| !rfq.awaitingAnswer()) {
+			return EnumSet.noneOf(CustomerQuoteAction.class);
+		}
+		// "A" roles may only ask for a revision; approving or declining is the "CO" role's final decision.
+		return ModuleAccess.canApprove(me.role(), Module.QUOTATION) ? EnumSet.allOf(CustomerQuoteAction.class)
+				: EnumSet.of(CustomerQuoteAction.REQUEST_REVISION);
 	}
 
 	private CustomerQuoteContent content(CustomerQuote quote) {

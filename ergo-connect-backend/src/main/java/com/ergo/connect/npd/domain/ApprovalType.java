@@ -11,10 +11,10 @@ import com.ergo.connect.common.security.Role;
  */
 public enum ApprovalType {
 
-	STAGE_GATE(Role.ERGO_NPD, true), QUALITY_GATE(Role.ERGO_QUALITY, true),
+	STAGE_GATE(Role.ERGO_NPD, true), QUALITY_GATE(Role.ERGO_NPD, true),
 	CUSTOMER_SAMPLE_APPROVAL(Role.CUSTOMER_NPD, false),
 	CUSTOMER_MILESTONE_ACKNOWLEDGMENT(Role.CUSTOMER_NPD, false),
-	CUSTOMER_QUALITY_ACCEPTANCE(Role.CUSTOMER_QUALITY, false);
+	CUSTOMER_QUALITY_ACCEPTANCE(Role.CUSTOMER_NPD, false);
 
 	private final Role approverRole;
 

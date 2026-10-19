@@ -17,7 +17,7 @@ final class QualityNotices {
 
 	static Recipients customer(Long companyId) {
 		return companyId == null ? Recipients.none()
-				: Recipients.company(companyId, Role.CUSTOMER_QUALITY, Role.CUSTOMER_KAM);
+				: Recipients.company(companyId, Role.CUSTOMER_QUALITY, Role.CUSTOMER_NPD, Role.CUSTOMER_KAM);
 	}
 
 	static Recipients supplier(Long companyId) {

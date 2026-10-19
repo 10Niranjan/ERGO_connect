@@ -58,7 +58,7 @@ class NpdTests {
 
 	Login ergoRfq;
 
-	Login ergoAdmin;
+	Login ergoManagement;
 
 	Login ergoNpd;
 
@@ -89,7 +89,7 @@ class NpdTests {
 		supplierB = users.company("SUPPLIER");
 		inr = users.currency("INR");
 		ergoRfq = users.login(ergo, "ERGO_RFQ");
-		ergoAdmin = users.login(ergo, "ERGO_ADMIN");
+		ergoManagement = users.login(ergo, "ERGO_MANAGEMENT");
 		ergoNpd = users.login(ergo, "ERGO_NPD");
 		ergoQuality = users.login(ergo, "ERGO_QUALITY");
 		buyerA = users.login(customerA, "CUSTOMER_RFQ");
@@ -101,7 +101,7 @@ class NpdTests {
 	}
 
 	@Test
-	void onlyAdminAndNpdConvertAndTheSameRfqCannotBeConvertedTwice() throws Exception {
+	void onlyNpdAndManagementConvertAndTheSameRfqCannotBeConvertedTwice() throws Exception {
 		long rfqId = approvedRfq(buyerA, "90");
 
 		List<List<String>> actionsForRfq = JsonPath.read(
@@ -129,7 +129,7 @@ class NpdTests {
 		// the queue no longer offers an already-converted RFQ, and converting it again is a conflict
 		call(get("/api/npd/conversion-queue"), ergoNpd, null)
 			.andExpect(jsonPath("$[*].rfqId", not(hasItem((int) rfqId))));
-		call(post("/api/npd/convert/{id}", rfqId), ergoAdmin, "{}").andExpect(status().isConflict());
+		call(post("/api/npd/convert/{id}", rfqId), ergoManagement, "{}").andExpect(status().isConflict());
 
 		// the very first stage_history row: PLANNING with no previous stage
 		List<String> stages = jdbc.queryForList("""
@@ -160,12 +160,12 @@ class NpdTests {
 
 		// ERGO_ADMIN (unrestricted RFQ scope), not ERGO_NPD: RfqApi.forErgo only lets ERGO_NPD see RFQs that are
 		// already CUSTOMER_APPROVED, so ERGO_NPD would get 404 here rather than reach the "no approved quote" check.
-		call(post("/api/npd/convert/{id}", id), ergoAdmin, "{}").andExpect(status().isUnprocessableContent())
+		call(post("/api/npd/convert/{id}", id), ergoManagement, "{}").andExpect(status().isUnprocessableContent())
 			.andExpect(jsonPath("$.detail", containsString("approved customer quote")));
 	}
 
 	@Test
-	void keyAccountManagersSeeOnlyTheirAssignedCustomersProjectsAndOfpQualityGetNothing() throws Exception {
+	void keyAccountManagersSeeOnlyTheirAssignedCustomersProjectsAndOfpQualityViewEverythingButConvertNothing() throws Exception {
 		long projectA = convert(approvedRfq(buyerA, "90"));
 		long projectB = convert(approvedRfq(buyerB, "95"));
 		Login kam = users.login(users.company("ERGO"), "ERGO_KAM");
@@ -178,10 +178,16 @@ class NpdTests {
 		call(get("/api/npd/{id}", projectA), kam, null).andExpect(status().isOk());
 		call(get("/api/npd/{id}", projectB), kam, null).andExpect(status().isNotFound());
 
-		call(get("/api/npd"), ofp, null).andExpect(status().isForbidden());
-		call(get("/api/npd"), quality, null).andExpect(status().isForbidden());
-		call(get("/api/npd/conversion-queue"), ofp, null).andExpect(status().isForbidden());
+		// role sheet: ERGO OFP (V) and ERGO Quality (A) see every project, but only the O roles convert
+		for (Login viewer : List.of(ofp, quality)) {
+			call(get("/api/npd"), viewer, null).andExpect(jsonPath("$[*].id", hasItem((int) projectA)))
+				.andExpect(jsonPath("$[*].id", hasItem((int) projectB)));
+			call(get("/api/npd/{id}", projectB), viewer, null).andExpect(status().isOk());
+		}
+		call(get("/api/npd/conversion-queue"), ofp, null).andExpect(status().isOk())
+			.andExpect(jsonPath("$", org.hamcrest.Matchers.empty())); // no RFQ access, so nothing to convert
 		call(post("/api/npd/convert/{id}", projectA), quality, "{}").andExpect(status().isForbidden());
+		call(post("/api/npd/convert/{id}", projectA), ofp, "{}").andExpect(status().isForbidden());
 
 		// ERGO sees the supplier (its own internal view, SRS §12.8.1's own list column); no customer/supplier
 		// role ever reaches this endpoint at all, checked above and in the RFQ-side anonymity tests
@@ -277,16 +283,20 @@ class NpdTests {
 	}
 
 	@Test
-	void nonNpdCustomerAndSupplierRolesReachNothing() throws Exception {
-		// SRS §10.6 gives CUSTOMER_RFQ and SUPPLIER_RFQ view-only (RV) NPD access, not none; deferred here (same
-		// under-provisioning precedent as 3a's ERGO OFP/Quality). 3b's own NPD-facing customer/supplier roles
-		// (CUSTOMER_NPD/QUALITY, SUPPLIER_NPD/OFP/QUALITY/KAM) are covered by their own tests below.
+	void customerRfqIsViewOnlyAndSupplierRfqReachesNothing() throws Exception {
+		// role sheet: CUSTOMER_RFQ has V on NPD (its own company's projects, read-only); SUPPLIER_RFQ has no NPD access
 		long projectId = convert(approvedRfq(buyerA, "90"));
+
+		call(get("/api/npd/{id}", projectId), buyerA, null).andExpect(status().isOk())
+			.andExpect(jsonPath("$.audience").value("CUSTOMER"))
+			.andExpect(jsonPath("$.actions", org.hamcrest.Matchers.empty()));
+		call(get("/api/npd/{id}", projectId), buyerB, null).andExpect(status().isNotFound()); // another company's
+		call(get("/api/npd/{id}", projectId), seller, null).andExpect(status().isForbidden());
+		call(get("/api/npd/mine"), seller, null).andExpect(status().isForbidden());
 
 		for (Login outsider : List.of(buyerA, seller)) {
 			call(get("/api/npd/conversion-queue"), outsider, null).andExpect(status().isForbidden());
 			call(get("/api/npd"), outsider, null).andExpect(status().isForbidden());
-			call(get("/api/npd/{id}", projectId), outsider, null).andExpect(status().isForbidden());
 			call(put("/api/npd/{id}", projectId), outsider, "{}").andExpect(status().isForbidden());
 			call(post("/api/npd/{id}/close-stage", projectId), outsider, "{}").andExpect(status().isForbidden());
 			call(post("/api/npd/{id}/activities", projectId), outsider, activityForm("Sneak in", true))
@@ -510,24 +520,24 @@ class NpdTests {
 			.andExpect(jsonPath("$.approvals[?(@.id == " + milestoneApprovalId + ")].approvalStatus",
 					contains("REJECTED")));
 
-		// ERGO Admin may decide an ERGO-owned type on top of the named approver role (requested by ergoNpd, decided
-		// by a different user: ergoAdmin, so this isn't also exercising the self-decide guard)
+		// ERGO Management may decide an ERGO-owned type on top of the named approver role (requested by ergoNpd, decided
+		// by a different user: ergoManagement, so this isn't also exercising the self-decide guard)
 		long stageGateApprovalId = approvalId(projectId, "STAGE_GATE");
-		call(post("/api/npd/approvals/{id}/decide", stageGateApprovalId), ergoAdmin, "{\"approved\": true}")
+		call(post("/api/npd/approvals/{id}/decide", stageGateApprovalId), ergoManagement, "{\"approved\": true}")
 			.andExpect(status().isOk());
 	}
 
 	@Test
-	void ergoAdminsBlanketOverrideNeverExtendsToACustomerFacingApprovalType() throws Exception {
+	void ergoManagementsBlanketOverrideNeverExtendsToACustomerFacingApprovalType() throws Exception {
 		long projectId = convert(approvedRfq(buyerA, "90"));
 		long sampleApprovalId = approvalId(projectId, "CUSTOMER_SAMPLE_APPROVAL");
 		long qualityApprovalId = approvalId(projectId, "CUSTOMER_QUALITY_ACCEPTANCE");
 
 		// CUSTOMER_* stays the customer's own gate (SRS §10.6 E**/A**); ERGO Admin gets 404, same as any other
 		// role that could never decide this type
-		call(post("/api/npd/approvals/{id}/decide", sampleApprovalId), ergoAdmin, "{\"approved\": true}")
+		call(post("/api/npd/approvals/{id}/decide", sampleApprovalId), ergoManagement, "{\"approved\": true}")
 			.andExpect(status().isNotFound());
-		call(post("/api/npd/approvals/{id}/decide", qualityApprovalId), ergoAdmin, "{\"approved\": true}")
+		call(post("/api/npd/approvals/{id}/decide", qualityApprovalId), ergoManagement, "{\"approved\": true}")
 			.andExpect(status().isNotFound());
 	}
 
@@ -540,8 +550,8 @@ class NpdTests {
 		call(post("/api/npd/approvals/{id}/decide", stageGateApprovalId), ergoNpd, "{\"approved\": true}")
 			.andExpect(status().isConflict());
 
-		// a different person, ERGO Admin (an ERGO-owned type), can still decide it
-		call(post("/api/npd/approvals/{id}/decide", stageGateApprovalId), ergoAdmin, "{\"approved\": true}")
+		// a different person, ERGO Management (an ERGO-owned type), can still decide it
+		call(post("/api/npd/approvals/{id}/decide", stageGateApprovalId), ergoManagement, "{\"approved\": true}")
 			.andExpect(status().isOk());
 	}
 
@@ -569,7 +579,7 @@ class NpdTests {
 
 		// M2 bypass attempt: this activity requires CUSTOMER_SAMPLE_APPROVAL, but ERGO requests and approves an
 		// unrelated STAGE_GATE approval linked to the very same activity instead. Must NOT satisfy the gate.
-		// Decided by ergoAdmin rather than ergoNpd (the requester) since the M-1 self-approval rule (ARCHITECTURE.md
+		// Decided by ergoManagement rather than ergoNpd (the requester) since the M-1 self-approval rule (ARCHITECTURE.md
 		// §8 2026-09-27) forbids the same user from both requesting and deciding any approval, STAGE_GATE included.
 		long wrongTypeApprovalId = JsonPath
 			.<List<Number>>read(
@@ -582,7 +592,7 @@ class NpdTests {
 					"$.approvals[?(@.linkedActivityId == " + activityId + " && @.approvalType == 'STAGE_GATE')].id")
 			.getFirst()
 			.longValue();
-		call(post("/api/npd/approvals/{id}/decide", wrongTypeApprovalId), ergoAdmin, "{\"approved\": true}")
+		call(post("/api/npd/approvals/{id}/decide", wrongTypeApprovalId), ergoManagement, "{\"approved\": true}")
 			.andExpect(status().isOk());
 		call(post("/api/npd/{id}/close-stage", projectId), ergoNpd, "{}").andExpect(status().isConflict())
 			.andExpect(jsonPath("$.detail", containsString("pending approval")));
@@ -643,21 +653,21 @@ class NpdTests {
 		call(post("/api/npd/{id}/close-stage", projectId), ergoNpd, "{}").andExpect(status().isConflict());
 
 		// REJECTED: still blocked
-		call(post("/api/quality/inspections/{id}/reject", inspectionId), ergoAdmin,
+		call(post("/api/quality/inspections/{id}/reject", inspectionId), ergoManagement,
 				"{\"reason\": \"Sample out of tolerance\"}").andExpect(status().isOk());
 		call(post("/api/npd/{id}/close-stage", projectId), ergoNpd, "{}").andExpect(status().isConflict());
 
 		// CLOSED with REJECTED as its last pre-close disposition: still blocked
-		call(post("/api/quality/inspections/{id}/close", inspectionId), ergoAdmin, "{}").andExpect(status().isOk());
+		call(post("/api/quality/inspections/{id}/close", inspectionId), ergoManagement, "{}").andExpect(status().isOk());
 		call(post("/api/npd/{id}/close-stage", projectId), ergoNpd, "{}").andExpect(status().isConflict());
 
 		// reopen, resubmit and pass it: gate now met
-		call(post("/api/quality/inspections/{id}/reopen", inspectionId), ergoAdmin,
+		call(post("/api/quality/inspections/{id}/reopen", inspectionId), ergoManagement,
 				"{\"reason\": \"Re-inspecting after rework\"}").andExpect(status().isOk());
 		call(post("/api/quality/inspections/{id}/submit", inspectionId), ergoQuality, """
 				{"partNumber": "PN-STD", "quantityChecked": 5, "quantityRejected": 0, "inspectionDate": "%s",
 				 "customerVisible": false}""".formatted(LocalDate.now())).andExpect(status().isOk());
-		call(post("/api/quality/inspections/{id}/pass", inspectionId), ergoAdmin, "{}").andExpect(status().isOk());
+		call(post("/api/quality/inspections/{id}/pass", inspectionId), ergoManagement, "{}").andExpect(status().isOk());
 		call(post("/api/npd/{id}/close-stage", projectId), ergoNpd, "{}")
 			.andExpect(jsonPath("$.stage").value("CUSTOMER_FEEDBACK"));
 	}
@@ -675,7 +685,7 @@ class NpdTests {
 		call(post("/api/quality/inspections/{id}/submit", inspectionId), ergoQuality, """
 				{"partNumber": "PN-STD", "quantityChecked": 5, "quantityRejected": 0, "inspectionDate": "%s",
 				 "customerVisible": false}""".formatted(LocalDate.now())).andExpect(status().isOk());
-		call(post("/api/quality/inspections/{id}/release-with-deviation", inspectionId), ergoAdmin,
+		call(post("/api/quality/inspections/{id}/release-with-deviation", inspectionId), ergoManagement,
 				"{\"reason\": \"Minor deviation, customer concession granted\"}").andExpect(status().isOk());
 		call(post("/api/npd/{id}/close-stage", projectId), ergoNpd, "{}")
 			.andExpect(jsonPath("$.stage").value("CUSTOMER_FEEDBACK"));
@@ -689,7 +699,7 @@ class NpdTests {
 		long inspectionId = jdbc.queryForObject("""
 				SELECT inspection_id FROM inspections WHERE linked_module = 'NPD' AND linked_record_id = ?""",
 				Long.class, projectId);
-		call(post("/api/quality/inspections/{id}/close", inspectionId), ergoAdmin, "{}").andExpect(status().isOk());
+		call(post("/api/quality/inspections/{id}/close", inspectionId), ergoManagement, "{}").andExpect(status().isOk());
 		call(post("/api/npd/{id}/close-stage", projectId), ergoNpd, "{}")
 			.andExpect(jsonPath("$.stage").value("CUSTOMER_FEEDBACK"));
 	}
@@ -923,24 +933,21 @@ class NpdTests {
 	}
 
 	@Test
-	void customerNpdAndCustomerQualityHaveDistinctApprovalTypeGrants() throws Exception {
+	void onlyCustomerNpdGivesTheCustomersFinalApprovalAndCustomerQualityOnlyActs() throws Exception {
 		long projectId = convert(approvedRfq(buyerA, "90"));
 		Login qualityCustomerA = users.login(customerA, "CUSTOMER_QUALITY");
 		long sampleApprovalId = approvalId(projectId, "CUSTOMER_SAMPLE_APPROVAL");
 		long milestoneApprovalId = approvalId(projectId, "CUSTOMER_MILESTONE_ACKNOWLEDGMENT");
 		long qualityApprovalId = approvalId(projectId, "CUSTOMER_QUALITY_ACCEPTANCE");
 
-		// CUSTOMER_NPD may not decide CUSTOMER_QUALITY's own type
-		call(post("/api/npd/approvals/{id}/decide", qualityApprovalId), npdCustomerA, "{\"approved\": true}")
-			.andExpect(status().isNotFound());
-		// CUSTOMER_QUALITY may not decide either of CUSTOMER_NPD's own types
-		call(post("/api/npd/approvals/{id}/decide", sampleApprovalId), qualityCustomerA, "{\"approved\": true}")
-			.andExpect(status().isNotFound());
-		call(post("/api/npd/approvals/{id}/decide", milestoneApprovalId), qualityCustomerA, "{\"approved\": true}")
-			.andExpect(status().isNotFound());
+		// role sheet: Customer Quality is "A" on NPD (acts, no final approval), Customer NPD is "CO"
+		for (long approval : List.of(qualityApprovalId, sampleApprovalId, milestoneApprovalId)) {
+			call(post("/api/npd/approvals/{id}/decide", approval), qualityCustomerA, "{\"approved\": true}")
+				.andExpect(status().isForbidden());
+		}
 
-		// each role deciding its own type: fine
-		call(post("/api/npd/approvals/{id}/decide", qualityApprovalId), qualityCustomerA, "{\"approved\": true}")
+		// Customer NPD decides every customer-facing type, quality acceptance included
+		call(post("/api/npd/approvals/{id}/decide", qualityApprovalId), npdCustomerA, "{\"approved\": true}")
 			.andExpect(status().isOk());
 		call(post("/api/npd/approvals/{id}/decide", sampleApprovalId), npdCustomerA, "{\"approved\": true}")
 			.andExpect(status().isOk());
@@ -1034,9 +1041,11 @@ class NpdTests {
 	}
 
 	@Test
-	void supplierOfpNotJustSupplierNpdCanUpdateItsOwnCompanysActivity() throws Exception {
+	void supplierQualityAndKamNotJustSupplierNpdCanUpdateItsOwnCompanysActivityButSupplierOfpHasNoNpdAccess()
+			throws Exception {
 		long projectId = convert(approvedRfq(buyerA, "90"));
 		Login ofpSupplier = users.login(supplier, "SUPPLIER_OFP");
+		Login qualitySupplier = users.login(supplier, "SUPPLIER_QUALITY");
 		long activityId = JsonPath
 			.<List<Number>>read(
 					call(post("/api/npd/{id}/activities", projectId), ergoNpd,
@@ -1048,8 +1057,12 @@ class NpdTests {
 			.getFirst()
 			.longValue();
 
-		call(post("/api/npd/activities/{id}/progress", activityId), ofpSupplier, """
+		call(post("/api/npd/activities/{id}/progress", activityId), qualitySupplier, """
 				{"status": "IN_PROGRESS", "issueFlag": false, "riskFlag": false}""").andExpect(status().isOk());
+		// role sheet: Supplier OFP has no NPD access at all
+		call(post("/api/npd/activities/{id}/progress", activityId), ofpSupplier, """
+				{"status": "DONE", "issueFlag": false, "riskFlag": false}""").andExpect(status().isForbidden());
+		call(get("/api/npd/{id}", projectId), ofpSupplier, null).andExpect(status().isForbidden());
 	}
 
 	@Test
@@ -1152,7 +1165,7 @@ class NpdTests {
 		call(post("/api/quality/inspections/{id}/submit", inspectionId), ergoQuality, """
 				{"partNumber": "PN-STD", "quantityChecked": 5, "quantityRejected": 0, "inspectionDate": "%s",
 				 "customerVisible": false}""".formatted(LocalDate.now())).andExpect(status().isOk());
-		call(post("/api/quality/inspections/{id}/pass", inspectionId), ergoAdmin, "{}").andExpect(status().isOk());
+		call(post("/api/quality/inspections/{id}/pass", inspectionId), ergoManagement, "{}").andExpect(status().isOk());
 	}
 
 	private long invitationOf(long rfqId, Login supplierLogin) throws Exception {

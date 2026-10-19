@@ -138,7 +138,7 @@ class ComparisonTests {
 	}
 
 	@Test
-	void onlyErgoRfqAndAdminEvaluateAndOnlyErgoInScopeSeesTheComparison() throws Exception {
+	void onlyTheQuotationApproversEvaluateAndOnlyErgoInScopeSeesTheComparison() throws Exception {
 		submit(x, sellerX, inr, "90");
 		Login management = users.login(users.company("ERGO"), "ERGO_MANAGEMENT");
 		Login kam = users.login(users.company("ERGO"), "ERGO_KAM");
@@ -146,7 +146,9 @@ class ComparisonTests {
 		Login otherKam = users.login(users.company("ERGO"), "ERGO_KAM");
 		String scores = "{\"scores\": {\"commercial\": 5}}";
 
-		call(get("/api/rfqs/{id}/comparison", rfqId), management, null).andExpect(jsonPath("$.canEdit").value(false));
+		call(get("/api/rfqs/{id}/comparison", rfqId), management, null).andExpect(jsonPath("$.canEdit").value(true)); // O on Quotation
+		call(get("/api/rfqs/{id}/comparison", rfqId), users.login(users.company("ERGO"), "ERGO_ADMIN"), null)
+			.andExpect(jsonPath("$.canEdit").value(false));
 		call(get("/api/rfqs/{id}/comparison", rfqId), kam, null)
 			.andExpect(jsonPath("$.lines[0].actions", not(hasItem("SHORTLIST"))));
 		call(get("/api/rfqs/{id}/comparison", rfqId), otherKam, null).andExpect(status().isNotFound());
@@ -162,7 +164,7 @@ class ComparisonTests {
 			call(get("/api/rfqs/{id}/comparison", rfqId), outsider, null).andExpect(status().isForbidden());
 			call(put("/api/quotes/{id}/evaluation", x), outsider, scores).andExpect(status().isForbidden());
 		}
-		for (Login viewer : List.of(management, kam)) {
+		for (Login viewer : List.of(users.login(users.company("ERGO"), "ERGO_ADMIN"), kam)) {
 			call(put("/api/quotes/{id}/evaluation", x), viewer, scores).andExpect(status().isForbidden());
 			call(post("/api/quotes/{id}/decision", x), viewer, "{\"decision\": \"SHORTLIST\"}")
 				.andExpect(status().isForbidden());
@@ -240,6 +242,56 @@ class ComparisonTests {
 		assertThatThrownBy(() -> jdbc.update("DELETE FROM customer_quote_submissions")).hasMessageContaining("deleted");
 	}
 
+
+	@Test
+	void roleSheetNegativesSupplierQualityCustomerSplitAndAdminWrites() throws Exception {
+		submit(x, sellerX, inr, "90");
+		Login supplierQuality = users.login(supplierX, "SUPPLIER_QUALITY");
+		// Supplier Quality has RFQ access but none on Quotation: the assigned RFQ only, never the quote
+		call(get("/api/quotes"), supplierQuality, null)
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$[0].rfqNumber").exists())
+			.andExpect(jsonPath("$[0].status").doesNotExist())
+			.andExpect(jsonPath("$[0].version").doesNotExist())
+			.andExpect(jsonPath("$[0].submittedAt").doesNotExist());
+		call(get("/api/quotes/{id}", x), supplierQuality, null)
+			.andExpect(jsonPath("$.audience").value("SUPPLIER_RFQ"))
+			.andExpect(jsonPath("$.quote").doesNotExist())
+			.andExpect(jsonPath("$.status").doesNotExist())
+			.andExpect(jsonPath("$.clarificationQuestion").doesNotExist())
+			.andExpect(jsonPath("$.regretReason").doesNotExist())
+			.andExpect(jsonPath("$.actions", hasSize(0)));
+		call(get("/api/quotes/{id}/versions", x), supplierQuality, null).andExpect(status().isForbidden());
+
+		// ERGO Admin has no write right anywhere in quotation
+		Login admin = users.login(users.company("ERGO"), "ERGO_ADMIN");
+		call(post("/api/rfqs/{id}/quotes", rfqId), admin, "{\"supplierIds\": [%d]}".formatted(supplierX))
+			.andExpect(status().isForbidden());
+		call(post("/api/quotes/{id}/decision", x), admin, "{\"decision\": \"SHORTLIST\"}")
+			.andExpect(status().isForbidden());
+		call(post("/api/rfqs/{id}/customer-quotes", rfqId), admin, sendAsIs(x)).andExpect(status().isForbidden());
+
+		// customer side: only CUSTOMER_RFQ approves or declines; KAM and Management may only ask for a revision
+		call(post("/api/quotes/{id}/decision", x), ergoRfq, "{\"decision\": \"SELECT_FOR_CUSTOMER\"}")
+			.andExpect(status().isOk());
+		call(post("/api/rfqs/{id}/customer-quotes", rfqId), ergoRfq, sendAsIs(x)).andExpect(status().isOk());
+		long sent = JsonPath.<Number>read(call(get("/api/rfqs/{id}/customer-quotes", rfqId), buyer, null)
+			.andReturn().getResponse().getContentAsString(), "$.quotes[0].id").longValue();
+		for (String role : List.of("CUSTOMER_NPD", "CUSTOMER_QUALITY")) {
+			call(get("/api/rfqs/{id}/customer-quotes", rfqId), users.login(customer, role), null)
+				.andExpect(status().isForbidden());
+		}
+		for (String role : List.of("CUSTOMER_KAM", "CUSTOMER_MANAGEMENT")) {
+			Login limited = users.login(customer, role);
+			call(post("/api/customer-quotes/{id}/respond", sent), limited, "{\"response\": \"APPROVED\"}")
+				.andExpect(status().isForbidden());
+			call(post("/api/customer-quotes/{id}/respond", sent), limited,
+					"{\"response\": \"DECLINED\", \"comment\": \"x\"}")
+				.andExpect(status().isForbidden());
+		}
+		call(get("/api/rfqs/{id}/customer-quotes", rfqId), buyer, null)
+			.andExpect(jsonPath("$.quotes[0].actions", hasItem("APPROVE")));
+	}
 	@Test
 	void anErgoQuoteHidesSupplierAndMarginAndARevisionStartsANewRound() throws Exception {
 		submit(x, sellerX, inr, "90");

@@ -579,8 +579,8 @@ class DocumentsTests {
 			.<List<Number>>read(response, "$.shipments[?(@.id == " + shipmentId + ")].podDocumentId").get(0))
 			.longValue();
 
-		// ERGO Quality is not a POD reader at all; ERGO OFP/Admin (OFP's own UPDATE_SHIPMENT rule) may replace.
-		replace(v1, ergoQuality, "pod2.pdf").andExpect(status().isNotFound());
+		// Suppliers never see the POD; ERGO OFP (an "O" role, OFP's own UPDATE_SHIPMENT rule) may replace.
+		replace(v1, supplierXOfp, "pod2.pdf").andExpect(status().isNotFound()); // a role with no POD access (suppliers never see it)
 		long v2 = idOf(replace(v1, ergoOfp, "pod2.pdf").andExpect(status().isOk()));
 		// H4: OFP's own POD download now serves the new version.
 		call(get("/api/ofp/shipments/{id}/pod", shipmentId), ergoOfp, null).andExpect(status().isOk())
