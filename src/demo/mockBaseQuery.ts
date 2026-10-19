@@ -70,24 +70,44 @@ function lookup(fixture: Fixture, path: string, q: Record<string, string>): unkn
   return page && Array.isArray(page.items) ? filterPage(page, q) : fixture[path]
 }
 
+// Notifications are the one write the demo remembers (until reload): read state is layered over the recorded list.
+const readIds = new Map<string, Set<number>>()
+const withReadState = (key: string, fixture: Fixture): Fixture => {
+  const page = Object.entries(fixture).find(([k, v]) => k.startsWith('/notifications?') && (v as Page)?.items)?.[1] as Page | undefined
+  if (!page) return fixture
+  const done = readIds.get(key)
+  const items = page.items.map((n) => (done?.has(n.id as number) ? { ...n, read: true, readAt: n.readAt ?? new Date().toISOString() } : n))
+  const unreadCount = items.filter((n) => n.read === false).length
+  return { ...fixture, '/notifications?size=500': { ...page, items, unreadCount }, '/notifications/unread-count': { count: unreadCount } }
+}
+
 export const mockBaseQuery: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError> = async (args, api) => {
   const req = typeof args === 'string' ? { url: args } : args
   const method = (req.method ?? 'GET').toUpperCase()
   const [path, inline = ''] = req.url.split('?')
   await new Promise((r) => setTimeout(r, 120)) // feels like a network call, not a flash
 
+  const session = (api.getState() as { auth: AuthState }).auth.session
+  const key = session ? `${session.user.id}-${session.activeRole}` : ''
+
   if (method !== 'GET') {
-    if (path.startsWith('/auth/')) return { data: undefined }
-    return { data: {} }
+    const mark = /^\/notifications\/(\d+|read-all)\/?(read)?$/.exec(path)
+    if (session && mark) {
+      const fx = withReadState(key, await load(session.user.id, session.activeRole))
+      const unread = ((fx['/notifications?size=500'] as Page | undefined)?.items ?? []).filter((n) => n.read === false)
+      const ids = path === '/notifications/read-all' ? unread.map((n) => n.id as number) : [Number(mark[1])]
+      readIds.set(key, new Set([...(readIds.get(key) ?? []), ...ids]))
+      return { data: path === '/notifications/read-all' ? { marked: ids.length } : { id: ids[0], read: true } }
+    }
+    return { data: path.startsWith('/auth/') ? undefined : {} }
   }
   if (isDownload(path)) return { data: URL.createObjectURL(new Blob([PLACEHOLDER_PDF], { type: 'application/pdf' })) }
 
-  const session = (api.getState() as { auth: AuthState }).auth.session
   if (!session) return { error: { status: 401, data: { message: 'Not signed in' } } }
   const q: Record<string, string> = Object.fromEntries(new URLSearchParams(inline))
   for (const [k, v] of Object.entries(req.params ?? {})) if (v !== undefined && v !== '') q[k] = String(v)
 
-  const found = lookup(await load(session.user.id, session.activeRole), path, q)
+  const found = lookup(withReadState(key, await load(session.user.id, session.activeRole)), path, q)
   if (found === undefined) return { error: { status: 404, data: { message: 'Not part of the demo data' } } }
   if (found && typeof found === 'object' && '__status' in found) {
     return { error: { status: (found as { __status: number }).__status, data: { message: 'Not permitted for this role' } } }
