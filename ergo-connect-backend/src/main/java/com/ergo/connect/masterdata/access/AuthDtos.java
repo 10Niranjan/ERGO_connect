@@ -2,6 +2,7 @@ package com.ergo.connect.masterdata.access;
 
 import java.util.List;
 
+import com.ergo.connect.common.security.AccessPolicy.AccessView;
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.Role;
 
@@ -55,7 +56,7 @@ public final class AuthDtos {
 
 	/** Everything the client needs for the current session. The access token lives in memory only. */
 	public record SessionResponse(String accessToken, long expiresIn, SessionUser user, Role activeRole,
-			List<RoleOption> roles, boolean mustChangePassword) {
+			List<RoleOption> roles, boolean mustChangePassword, AccessView access) {
 	}
 
 }

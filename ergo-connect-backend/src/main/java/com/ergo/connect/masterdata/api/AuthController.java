@@ -6,6 +6,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CookieValue;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -13,6 +14,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.ergo.connect.common.audit.AuditLogService;
 import com.ergo.connect.common.exception.ApiException;
+import com.ergo.connect.common.security.AccessPolicy;
+import com.ergo.connect.common.security.AccessPolicy.AccessView;
+import com.ergo.connect.common.security.CurrentUser;
 import com.ergo.connect.masterdata.access.AuthDtos.ChangePasswordRequest;
 import com.ergo.connect.masterdata.access.AuthDtos.ForgotPasswordRequest;
 import com.ergo.connect.masterdata.access.AuthDtos.LoginRequest;
@@ -80,6 +84,13 @@ class AuthController {
 			auth.logout(sessionToken);
 		}
 		return ResponseEntity.noContent().header(HttpHeaders.SET_COOKIE, sessionCookie("", Duration.ZERO)).build();
+	}
+
+	/** The caller's permissions and sidebar, fresh from the live policy (the client refetches when the version changes). */
+	@GetMapping("/access")
+	AccessView access() {
+		CurrentUser me = CurrentUser.get();
+		return AccessPolicy.view(me.role(), me.companyType());
 	}
 
 	@PostMapping("/switch-role")

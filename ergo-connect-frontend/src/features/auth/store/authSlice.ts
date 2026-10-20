@@ -29,6 +29,30 @@ export interface RoleOption {
   companyType: CompanyType
 }
 
+/** Stored access level codes: NV no access, V view, A create/edit/submit, O final approval. */
+export type AccessLevel = 'NV' | 'V' | 'A' | 'O'
+
+export interface MenuItem {
+  key: string
+  label: string
+  path: string
+  /** Icon key; the sidebar maps it to a component. */
+  icon: string
+}
+
+export interface MenuSection {
+  title: string | null
+  items: MenuItem[]
+}
+
+/** What the backend says the signed-in role may do and see. Never computed in the browser. */
+export interface AccessView {
+  /** Changes whenever ERGO Admin edits permissions; compared with the X-Permissions-Version response header. */
+  version: number
+  permissions: Record<string, AccessLevel>
+  menu: MenuSection[]
+}
+
 export interface Session {
   /** Kept in memory only. The long-lived session is an HttpOnly cookie that scripts cannot read. */
   accessToken: string
@@ -47,6 +71,8 @@ export interface Session {
   activeRole: Role
   roles: RoleOption[]
   mustChangePassword: boolean
+  /** Absent only on a stored demo session; the app shell then fetches it. */
+  access?: AccessView
 }
 
 export interface AuthState {
@@ -69,7 +95,10 @@ export const authSlice = createSlice({
       state.session = null
       state.checked = true
     },
+    accessUpdated(state, action: PayloadAction<AccessView>) {
+      if (state.session) state.session.access = action.payload
+    },
   },
 })
 
-export const { sessionStarted, sessionEnded } = authSlice.actions
+export const { sessionStarted, sessionEnded, accessUpdated } = authSlice.actions

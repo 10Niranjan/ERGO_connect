@@ -194,6 +194,9 @@ public class OrderService {
 						o.orderedQuantity, o.dueDate, o.currentStatus))
 				.toList();
 		}
+		if (me.companyType() != CompanyType.ERGO) {
+			return List.of(); // only ERGO roles reach the unrestricted branches below
+		}
 		List<Order> visible = !ModuleAccess.canView(me.role(), Module.OFP) ? List.<Order>of() : switch (me.role()) {
 			case ERGO_KAM -> {
 				Set<Long> accounts = directory.accountsOf(me.userId());

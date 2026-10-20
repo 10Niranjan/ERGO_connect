@@ -21,8 +21,7 @@ import {
 } from '@mui/material'
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
-import { useAppSelector } from '../../../app/store'
-import { QUOTATION_CUSTOMER_VIEWERS } from '../../../auth/access'
+import { QUOTATION_CUSTOMER_VIEW, useCan } from '@/features/permissions'
 import { AuditTrail } from '../../../shared/components/AuditTrail'
 import { CommentsPanel } from '../../communication/components/CommentsPanel'
 import { CommentDialog } from '../../../shared/components/CommentDialog'
@@ -70,7 +69,7 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
   const [actionError, setActionError] = useState<unknown>(null)
   const isErgo = rfq.audience === 'ERGO'
   // The role sheet: a customer role with RFQ access but none on Quotation (e.g. Customer NPD) never sees the quotes ERGO sends.
-  const canSeeQuotes = useAppSelector((state) => QUOTATION_CUSTOMER_VIEWERS.includes(state.auth.session?.activeRole ?? 'ERGO_ADMIN'))
+  const canSeeQuotes = useCan(QUOTATION_CUSTOMER_VIEW)
   const can = (action: RfqView['actions'][number]) => rfq.actions.includes(action)
   const answering = rfq.status === 'CLARIFICATION_REQUIRED' && can('SUBMIT')
 

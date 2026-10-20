@@ -113,9 +113,7 @@ public class NpdService {
 			ApprovalType.CUSTOMER_MILESTONE_ACKNOWLEDGMENT, ApprovalType.CUSTOMER_QUALITY_ACCEPTANCE);
 
 	/** The "full, unrestricted view" grouping: every ERGO role with NPD access except the account-scoped KAM. */
-	private static final Set<Role> FULL_VIEWERS = ModuleAccess.viewers(Module.NPD, CompanyType.ERGO).stream()
-		.filter(r -> r != ERGO_KAM)
-		.collect(Collectors.toCollection(() -> EnumSet.noneOf(Role.class)));
+	private static final Set<Role> FULL_VIEWERS = ModuleAccess.viewersExcept(Module.NPD, CompanyType.ERGO, ERGO_KAM);
 
 	private final NpdProjectRepository projects;
 
@@ -249,7 +247,7 @@ public class NpdService {
 		if (FULL_VIEWERS.contains(me.role())) {
 			visible = projects.findAllByOrderByIdDesc();
 		}
-		else if (me.role() == ERGO_KAM) {
+		else if (me.role() == ERGO_KAM && ModuleAccess.canView(me.role(), Module.NPD)) {
 			Set<Long> accounts = directory.accountsOf(me.userId());
 			visible = accounts.isEmpty() ? List.of() : projects.findByCustomerCompanyIdInOrderByIdDesc(accounts);
 		}
@@ -698,7 +696,7 @@ public class NpdService {
 	}
 
 	private boolean inScope(CurrentUser me, NpdProject project) {
-		return project != null && (FULL_VIEWERS.contains(me.role())
+		return project != null && ModuleAccess.canView(me.role(), Module.NPD) && (FULL_VIEWERS.contains(me.role())
 				|| me.role() == ERGO_KAM && directory.accountsOf(me.userId()).contains(project.customerCompanyId)
 				|| CUSTOMER_VIEWERS.contains(me.role()) && me.companyId() == project.customerCompanyId
 				|| SUPPLIER_VIEWERS.contains(me.role()) && me.companyId() == project.supplierCompanyId);
@@ -795,8 +793,8 @@ public class NpdService {
 	}
 
 	/** Approval decisions, for the actions list only (the service method above enforces the real gate via
-	 * {@link #requireCanDecideApproval}, which tells a not-my-type 404 apart from an already-decided 409): ERGO
-	 * Admin always, plus whoever the row's own approver_role names; only while still PENDING and the project isn't
+	 * {@link #requireCanDecideApproval}, which tells a not-my-type 404 apart from an already-decided 409): the
+	 * final-approval role of the approval's own side (see {@link #mayDecide}); only while still PENDING and the project isn't
 	 * CLOSED. */
 	private static boolean allowed(NpdAction action, CurrentUser me, NpdProject project, NpdApproval approval) {
 		return action == NpdAction.DECIDE_APPROVAL && project.stage != NpdStage.CLOSED
@@ -1011,6 +1009,10 @@ public class NpdService {
 					new Named(customer.id(), customer.code(), customer.name()), p.partNumber, p.revision, p.description,
 					p.stage, p.targetSampleDate, p.actualSampleSubmissionDate, delay, activityViews,
 					issueViews, approvalViews, externalHistoryViews, actions, p.createdAt, p.updatedAt);
+		}
+		if (me.companyType() != CompanyType.ERGO) {
+			// the ERGO view carries both companies: only ever for an ERGO caller, whatever the role sets say
+			throw ApiException.forbidden("You do not have access to this NPD project");
 		}
 		CompanyRef customer = directory.company(p.customerCompanyId).orElseThrow();
 		CompanyRef supplier = directory.company(p.supplierCompanyId).orElseThrow();

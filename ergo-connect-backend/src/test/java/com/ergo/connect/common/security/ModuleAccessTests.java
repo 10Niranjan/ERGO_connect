@@ -12,12 +12,14 @@ import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
+import com.ergo.connect.IntegrationTest;
 import com.ergo.connect.admin.service.PermissionMatrix;
 import com.ergo.connect.admin.service.PermissionMatrix.Grant;
 import com.ergo.connect.common.security.ModuleAccess.Level;
 import com.ergo.connect.common.security.ModuleAccess.Module;
 
-/** The role access sheet (client's "role access.xlsx", 2026-10-19), transcribed independently of {@link ModuleAccess}. */
+/** The seeded role access sheet (V25) must equal the signed-off sheet (client's "role access.xlsx", 2026-10-19), transcribed independently of {@link ModuleAccess}. */
+@IntegrationTest
 class ModuleAccessTests {
 
 	/** RFQ, QUOTATION, NPD, OFP, QUALITY - read straight off the spreadsheet, row by row. */

@@ -1,8 +1,7 @@
 import { Alert, Box, Button, Chip, LinearProgress, Link, Stack, Tab, Tabs, Typography } from '@mui/material'
 import { useState } from 'react'
 import { Link as RouterLink, useParams } from 'react-router'
-import { useAppSelector } from '../../../app/store'
-import { canViewModule } from '../../../auth/access'
+import { QUOTATION_VIEW, useCan } from '@/features/permissions'
 import { CommentsPanel } from '../../communication/components/CommentsPanel'
 import { CommentDialog } from '../../../shared/components/CommentDialog'
 import { Facts } from '../../../shared/components/Facts'
@@ -43,7 +42,7 @@ export function QuotePage() {
 function Quote({ view }: { view: Exclude<QuoteView, SupplierAssignedRfqView> }) {
   const isSupplier = view.audience === 'SUPPLIER'
   // A supplier role with RFQ access but none on Quotation (the role sheet) sees the assigned RFQ only, never the quote.
-  const canSeeQuote = useAppSelector((state) => canViewModule(state.auth.session?.activeRole, 'QUOTATION'))
+  const canSeeQuote = useCan(QUOTATION_VIEW)
   const [tab, setTab] = useState(canSeeQuote ? 'quote' : 'rfq')
   const [dialog, setDialog] = useState<DialogCommand | null>(null)
   const [run, running] = useQuoteCommandMutation()

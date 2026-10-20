@@ -38,6 +38,9 @@ spring:
           timeout: 5000
           writetimeout: 5000
   task:
+    scheduling:
+      pool:
+        size: 3 # the access-policy refresh must not queue behind the daily jobs
     execution:
       mode: force # AsyncConfig's passwordResetExecutor is the only Executor bean today - force keeps it that
                   # way rather than letting it silently satisfy Boot's own unrelated applicationTaskExecutor too

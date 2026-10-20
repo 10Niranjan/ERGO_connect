@@ -1,33 +1,28 @@
 package com.ergo.connect.common.security;
 
+import java.util.AbstractSet;
 import java.util.Arrays;
-import java.util.EnumMap;
 import java.util.EnumSet;
-import java.util.Map;
+import java.util.Iterator;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
-import static com.ergo.connect.common.security.ModuleAccess.Level.A;
-import static com.ergo.connect.common.security.ModuleAccess.Level.CO;
-import static com.ergo.connect.common.security.ModuleAccess.Level.NONE;
-import static com.ergo.connect.common.security.ModuleAccess.Level.O;
-import static com.ergo.connect.common.security.ModuleAccess.Level.V;
-import static com.ergo.connect.common.security.ModuleAccess.Module.NPD;
-import static com.ergo.connect.common.security.ModuleAccess.Module.OFP;
-import static com.ergo.connect.common.security.ModuleAccess.Module.QUALITY;
-import static com.ergo.connect.common.security.ModuleAccess.Module.QUOTATION;
-import static com.ergo.connect.common.security.ModuleAccess.Module.RFQ;
-
 /**
- * The one role-by-module access sheet ("role access.xlsx", client decision 2026-10-19, ARCHITECTURE.md §8): for each
- * of the 18 roles and the five workflow modules, how far the role may go. Layer 1 of access control (the role check)
- * reads this and nothing else; layer 2 (record scope: own company, assigned records) stays in each module's service.
- * It deliberately replaces the per-module role lists the controllers and services used to hardcode.
+ * The role-by-module access sheet for the five workflow modules: for each of the 18 roles, how far the role may go.
+ * Layer 1 of access control (the role check) reads this and nothing else; layer 2 (record scope: own company, assigned
+ * records) stays in each module's service.
  * <p>
- * The legend, literally: {@code V} view only; {@code A} acts (create, edit, submit) but gives no final approval;
- * {@code O} owns and gives the final approval; {@code CO} the customer's final approval (the customer-side {@code O}:
- * it also acts); blank = no access, so the page, its endpoints and its notifications are closed to that role.
- * Which workflow step counts as "final approval" in a module is that module's own rule book (SRS §14).
+ * The values are not here any more: ERGO Admin edits them at runtime (Permission Management) and they live in the
+ * database ({@link AccessPolicy}; the shipped defaults are {@link DefaultAccessSheet}). This class keeps its original
+ * methods so every {@code @access.*} check and service rule reads the live sheet. The role sets it returns are live
+ * views, so a constant such as {@code private static final Set<Role> EDITORS = ModuleAccess.actors(...)} still
+ * reflects an edit made after class loading.
+ * <p>
+ * The legend: {@code V} view only; {@code A} acts (create, edit, submit) but gives no final approval; {@code O} owns and
+ * gives the final approval; {@code CO} the customer's final approval (the customer-side {@code O}: it also acts);
+ * {@code NONE} = no access, so the page, its endpoints and its notifications are closed to that role. Which workflow
+ * step counts as "final approval" in a module is that module's own rule book (SRS §14).
  */
 public final class ModuleAccess {
 
@@ -48,52 +43,18 @@ public final class ModuleAccess {
 			return this == A || this == O || this == CO;
 		}
 
-		/** Final approval: ERGO's {@code O} or the customer's {@code CO}. */
+		/** Final approval: {@code O} or the customer's {@code CO}. */
 		public boolean canApprove() {
 			return this == O || this == CO;
 		}
 
 	}
 
-	private static final Map<Role, Level[]> SHEET = new EnumMap<>(Role.class);
-
-	// Columns, in order: RFQ, QUOTATION, NPD, OFP, QUALITY.
-	static {
-		row(Role.ERGO_ADMIN, V, V, V, V, V);
-		row(Role.ERGO_MANAGEMENT, O, O, O, O, O);
-		row(Role.ERGO_KAM, A, V, V, V, V);
-		row(Role.ERGO_RFQ, O, O, V, V, V);
-		row(Role.ERGO_NPD, V, V, O, V, V);
-		row(Role.ERGO_OFP, NONE, NONE, V, O, A);
-		row(Role.ERGO_QUALITY, NONE, NONE, A, A, O);
-		row(Role.CUSTOMER_RFQ, CO, CO, V, NONE, V);
-		row(Role.CUSTOMER_NPD, V, NONE, CO, NONE, CO);
-		row(Role.CUSTOMER_OFP, NONE, NONE, NONE, CO, V);
-		row(Role.CUSTOMER_QUALITY, V, NONE, A, V, CO);
-		row(Role.CUSTOMER_KAM, A, A, V, V, V);
-		row(Role.CUSTOMER_MANAGEMENT, A, A, A, A, A);
-		row(Role.SUPPLIER_RFQ, A, A, NONE, NONE, NONE);
-		row(Role.SUPPLIER_NPD, NONE, NONE, A, NONE, V);
-		row(Role.SUPPLIER_OFP, NONE, NONE, NONE, A, V);
-		row(Role.SUPPLIER_QUALITY, V, NONE, A, A, A);
-		row(Role.SUPPLIER_KAM, A, A, A, A, A);
-	}
-
 	private ModuleAccess() {
 	}
 
-	private static void row(Role role, Level rfq, Level quotation, Level npd, Level ofp, Level quality) {
-		Level[] levels = new Level[Module.values().length];
-		levels[RFQ.ordinal()] = rfq;
-		levels[QUOTATION.ordinal()] = quotation;
-		levels[NPD.ordinal()] = npd;
-		levels[OFP.ordinal()] = ofp;
-		levels[QUALITY.ordinal()] = quality;
-		SHEET.put(role, levels);
-	}
-
 	public static Level level(Role role, Module module) {
-		return SHEET.get(role)[module.ordinal()];
+		return AccessPolicy.level(role, module.name());
 	}
 
 	public static boolean canView(Role role, Module module) {
@@ -135,10 +96,45 @@ public final class ModuleAccess {
 		return rolesWhere(module, Level::canApprove, side);
 	}
 
-	private static Set<Role> rolesWhere(Module module, java.util.function.Predicate<Level> test, CompanyType side) {
-		return Arrays.stream(Role.values())
-			.filter(r -> (side == null || r.companyType() == side) && test.test(level(r, module)))
-			.collect(Collectors.toCollection(() -> EnumSet.noneOf(Role.class)));
+	/** {@link #viewers(Module, CompanyType)} without the given roles (still live). */
+	public static Set<Role> viewersExcept(Module module, CompanyType side, Role... except) {
+		Set<Role> viewers = viewers(module, side);
+		Set<Role> excluded = EnumSet.noneOf(Role.class);
+		excluded.addAll(Arrays.asList(except));
+		return new LiveRoleSet(r -> viewers.contains(r) && !excluded.contains(r));
+	}
+
+	private static Set<Role> rolesWhere(Module module, Predicate<Level> test, CompanyType side) {
+		return new LiveRoleSet(r -> (side == null || r.companyType() == side) && test.test(level(r, module)));
+	}
+
+	/** Read-only set of roles recomputed from the live sheet on every use. */
+	private static final class LiveRoleSet extends AbstractSet<Role> {
+
+		private final Predicate<Role> member;
+
+		LiveRoleSet(Predicate<Role> member) {
+			this.member = member;
+		}
+
+		@Override
+		public boolean contains(Object o) {
+			return o instanceof Role r && member.test(r);
+		}
+
+		@Override
+		public Iterator<Role> iterator() {
+			return Arrays.stream(Role.values())
+				.filter(member)
+				.collect(Collectors.toCollection(() -> EnumSet.noneOf(Role.class)))
+				.iterator();
+		}
+
+		@Override
+		public int size() {
+			return (int) Arrays.stream(Role.values()).filter(member).count();
+		}
+
 	}
 
 }

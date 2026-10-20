@@ -15,7 +15,7 @@ import {
 } from '@mui/material'
 import { useState } from 'react'
 import { useAppSelector } from '../../../app/store'
-import { COMPANY_CREATORS } from '../../../auth/access'
+import { COMPANY_CREATORS } from '@/features/auth/utils/access'
 import { problemMessage } from '../../../shared/problem'
 import {
   STATUS_LABELS,

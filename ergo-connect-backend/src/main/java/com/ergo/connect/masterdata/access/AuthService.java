@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.ergo.connect.common.audit.AuditLogService;
 import com.ergo.connect.common.exception.ApiException;
+import com.ergo.connect.common.security.AccessPolicy;
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
 import com.ergo.connect.common.security.Role;
@@ -392,7 +393,7 @@ public class AuthService {
 		return new SessionResponse(token, accessTokens.ttl().toSeconds(),
 				new SessionUser(user.id, user.firstName, user.lastName, user.email, company.id, company.name,
 						company.type, user.twoFactorEnabled),
-				role, roles, user.mustChangePassword);
+				role, roles, user.mustChangePassword, AccessPolicy.view(role, company.type));
 	}
 
 }

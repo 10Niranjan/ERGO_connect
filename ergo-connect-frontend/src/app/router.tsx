@@ -1,23 +1,5 @@
 import { createBrowserRouter, Navigate } from 'react-router'
 import {
-  COMMUNICATION_VIEWERS,
-  COMPANY_MANAGERS,
-  DEVIATION_EDITORS,
-  DOCUMENT_VIEWERS,
-  EXTERNAL_ROLES,
-  MASTER_DATA_VIEWERS,
-  NPD_CUSTOMER_ROLES,
-  NPD_DETAIL_VIEWERS,
-  NPD_SUPPLIER_ROLES,
-  NPD_VIEWERS,
-  OFP_DETAIL_VIEWERS,
-  OFP_EDITORS,
-  QUALITY_EDITORS,
-  QUALITY_VIEWERS,
-  QUOTE_VIEWERS,
-  RFQ_CREATORS,
-  RFQ_VIEWERS,
-  SUPPLIER_RFQ_VIEWERS,
   ChangePasswordPage,
   ForgotPasswordPage,
   LoginPage,
@@ -25,10 +7,31 @@ import {
   RoleSelectPage,
   VerifyOtpPage,
   RequireAuth,
-  RequireRole,
 } from '@/features/auth'
+import {
+  ASSIGNED_RFQ_VIEW,
+  COMMUNICATION_VIEW,
+  COMPANIES_VIEW,
+  COMPANY_PROFILE_VIEW,
+  DEVIATION_CREATE,
+  DOCUMENTS_VIEW,
+  MASTER_DATA_VIEW,
+  NPD_ERGO_VIEW,
+  NPD_MINE_VIEW,
+  NPD_VIEW,
+  OFP_CREATE,
+  OFP_VIEW,
+  PERMISSIONS_VIEW,
+  QUALITY_CREATE,
+  QUALITY_VIEW,
+  QUOTE_VIEW,
+  RFQ_CREATE,
+  RFQ_VIEW,
+  RequirePermission,
+  USERS_VIEW,
+} from '@/features/permissions'
 import { MasterDataPage } from '@/features/admin/pages/MasterDataPage'
-import { PermissionMatrixPage } from '@/features/admin/pages/PermissionMatrixPage'
+import { PermissionManagementPage } from '@/features/admin/pages/PermissionManagementPage'
 import { UsersPage } from '@/features/admin/pages/UsersPage'
 import { CompaniesPage } from '@/features/companies/pages/CompaniesPage'
 import { MyCompanyPage } from '@/features/companies/pages/MyCompanyPage'
@@ -59,7 +62,8 @@ import { RfqEditPage } from '@/features/rfq/pages/RfqEditPage'
 import { RfqListPage } from '@/features/rfq/pages/RfqListPage'
 import { MainLayout as AppShell } from '@/layouts'
 
-// Route guards only hide screens; the backend enforces every permission and record scope itself.
+// Route guards only hide screens (from the permissions the backend sends for the active role); the backend enforces
+// every permission and record scope itself.
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
   { path: '/verify-otp', element: <VerifyOtpPage /> },
@@ -75,105 +79,103 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <DashboardPage /> },
           {
-            element: <RequireRole roles={RFQ_VIEWERS} />,
+            element: <RequirePermission rules={RFQ_VIEW} />,
             children: [
               { path: '/rfqs', element: <RfqListPage /> },
               { path: '/rfqs/:id', element: <RfqDetailPage /> },
             ],
           },
           {
-            element: <RequireRole roles={RFQ_CREATORS} />,
+            element: <RequirePermission rules={RFQ_CREATE} />,
             children: [
               { path: '/rfqs/new', element: <RfqEditPage /> },
               { path: '/rfqs/:id/edit', element: <RfqEditPage /> },
             ],
           },
-          { element: <RequireRole roles={SUPPLIER_RFQ_VIEWERS} />, children: [{ path: '/quotes', element: <AssignedRfqsPage /> }] },
-          { element: <RequireRole roles={QUOTE_VIEWERS} />, children: [{ path: '/quotes/:id', element: <QuotePage /> }] },
+          { element: <RequirePermission rules={ASSIGNED_RFQ_VIEW} />, children: [{ path: '/quotes', element: <AssignedRfqsPage /> }] },
+          { element: <RequirePermission rules={QUOTE_VIEW} />, children: [{ path: '/quotes/:id', element: <QuotePage /> }] },
           {
-            element: <RequireRole roles={NPD_VIEWERS} />,
+            element: <RequirePermission rules={NPD_ERGO_VIEW} />,
             children: [
               { path: '/npd', element: <NpdListPage /> },
               { path: '/npd/conversion-queue', element: <ConversionQueuePage /> },
             ],
           },
           {
-            element: <RequireRole roles={[...NPD_CUSTOMER_ROLES, ...NPD_SUPPLIER_ROLES]} />,
+            element: <RequirePermission rules={NPD_MINE_VIEW} />,
             children: [{ path: '/npd/mine', element: <MyNpdProjectsPage /> }],
           },
           {
-            element: <RequireRole roles={NPD_DETAIL_VIEWERS} />,
+            element: <RequirePermission rules={NPD_VIEW} />,
             children: [{ path: '/npd/:id', element: <NpdDetailPage /> }],
           },
           {
             // /ofp's own single list/detail endpoints already scope by caller, so one route set serves every
             // audience (ERGO, the four supplier roles and Customer OFP) rather than NPD's separate ERGO/"mine" split.
-            element: <RequireRole roles={OFP_DETAIL_VIEWERS} />,
+            element: <RequirePermission rules={OFP_VIEW} />,
             children: [{ path: '/ofp', element: <OrderListPage /> }],
           },
           {
-            element: <RequireRole roles={OFP_EDITORS} />,
+            element: <RequirePermission rules={OFP_CREATE} />,
             children: [{ path: '/ofp/new', element: <OrderCreatePage /> }],
           },
           {
-            element: <RequireRole roles={OFP_DETAIL_VIEWERS} />,
+            element: <RequirePermission rules={OFP_VIEW} />,
             children: [{ path: '/ofp/:id', element: <OrderDetailPage /> }],
           },
           {
             // /quality's own single list/detail endpoints already scope by caller (InspectionService.list()/get()),
             // same pattern as /ofp above.
-            element: <RequireRole roles={QUALITY_VIEWERS} />,
+            element: <RequirePermission rules={QUALITY_VIEW} />,
             children: [{ path: '/quality', element: <InspectionListPage /> }, { path: '/quality/:id', element: <InspectionDetailPage /> }],
           },
           {
-            element: <RequireRole roles={QUALITY_EDITORS} />,
+            element: <RequirePermission rules={QUALITY_CREATE} />,
             children: [{ path: '/quality/new', element: <InspectionCreatePage /> }],
           },
           {
             // NCR/CAPA: same per-caller-scoped list/detail endpoints and role sets as Inspection above (NcrController's
             // VIEWERS/EDITORS are identical to InspectionController's).
-            element: <RequireRole roles={QUALITY_VIEWERS} />,
+            element: <RequirePermission rules={QUALITY_VIEW} />,
             children: [{ path: '/quality/ncrs', element: <NcrListPage /> }, { path: '/quality/ncrs/:id', element: <NcrDetailPage /> }],
           },
           {
-            element: <RequireRole roles={QUALITY_EDITORS} />,
+            element: <RequirePermission rules={QUALITY_CREATE} />,
             children: [{ path: '/quality/ncrs/new', element: <NcrCreatePage /> }],
           },
           {
             // Deviations: same per-caller-scoped list/detail endpoints and VIEWERS role set as Inspection/NCR above
             // (DeviationController's VIEWERS is identical); create is its own DEVIATION_EDITORS, which also admits
             // Customer Quality (SRS §10.8 - unlike Inspection/NCR, a customer may raise its own deviation).
-            element: <RequireRole roles={QUALITY_VIEWERS} />,
+            element: <RequirePermission rules={QUALITY_VIEW} />,
             children: [{ path: '/quality/deviations', element: <DeviationListPage /> }, { path: '/quality/deviations/:id', element: <DeviationDetailPage /> }],
           },
           {
-            element: <RequireRole roles={DEVIATION_EDITORS} />,
+            element: <RequirePermission rules={DEVIATION_CREATE} />,
             children: [{ path: '/quality/deviations/new', element: <DeviationCreatePage /> }],
           },
           {
             // SRS §10.10: every role may open the Communication Center; the backend returns only the threads it may read.
-            element: <RequireRole roles={COMMUNICATION_VIEWERS} />,
+            element: <RequirePermission rules={COMMUNICATION_VIEW} />,
             children: [{ path: '/communication', element: <CommunicationCenterPage /> }],
           },
           {
             // SRS §10.9: every role may open the Document Library; the backend scopes which documents it returns.
-            element: <RequireRole roles={DOCUMENT_VIEWERS} />,
+            element: <RequirePermission rules={DOCUMENTS_VIEW} />,
             children: [{ path: '/documents', element: <DocumentLibraryPage /> }, { path: '/documents/:id', element: <DocumentDetailPage /> }],
           },
           {
-            element: <RequireRole roles={COMPANY_MANAGERS} />,
+            element: <RequirePermission rules={COMPANIES_VIEW} />,
             children: [{ path: '/companies', element: <CompaniesPage /> }],
           },
-          { element: <RequireRole roles={EXTERNAL_ROLES} />, children: [{ path: '/company', element: <MyCompanyPage /> }] },
+          { element: <RequirePermission rules={COMPANY_PROFILE_VIEW} />, children: [{ path: '/company', element: <MyCompanyPage /> }] },
+          { element: <RequirePermission rules={USERS_VIEW} />, children: [{ path: '/admin/users', element: <UsersPage /> }] },
           {
-            element: <RequireRole roles={['ERGO_ADMIN']} />,
-            children: [
-              { path: '/admin/users', element: <UsersPage /> },
-              { path: '/admin/permissions', element: <PermissionMatrixPage /> },
-            ],
+            element: <RequirePermission rules={PERMISSIONS_VIEW} />,
+            children: [{ path: '/admin/permissions', element: <PermissionManagementPage /> }],
           },
           {
-            element: <RequireRole roles={MASTER_DATA_VIEWERS} />,
+            element: <RequirePermission rules={MASTER_DATA_VIEW} />,
             children: [{ path: '/admin/master-data', element: <MasterDataPage /> }],
           },
           { path: '*', element: <Navigate to="/" replace /> },

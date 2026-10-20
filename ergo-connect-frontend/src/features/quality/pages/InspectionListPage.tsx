@@ -2,7 +2,7 @@ import { Alert, Button, Chip, LinearProgress, MenuItem, Paper, Stack, Table, Tab
 import { useState } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router'
 import { useAppSelector } from '../../../app/store'
-import { QUALITY_EDITORS } from '../../../auth/access'
+import { QUALITY_CREATE, useCan } from '@/features/permissions'
 import { problemMessage } from '../../../shared/problem'
 import { formatDate } from '../../rfq/labels'
 import { LINKED_MODULE, RESULT_STATUS } from '../labels'
@@ -16,7 +16,7 @@ export function InspectionListPage() {
   const [status, setStatus] = useState('')
   const [linkedModule, setLinkedModule] = useState('')
   const [search, setSearch] = useState('')
-  const canCreate = useAppSelector((state) => QUALITY_EDITORS.includes(state.auth.session?.activeRole ?? 'CUSTOMER_RFQ'))
+  const canCreate = useCan(QUALITY_CREATE)
   const navigate = useNavigate()
 
   const needle = search.trim().toLowerCase()

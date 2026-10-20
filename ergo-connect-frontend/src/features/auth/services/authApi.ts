@@ -1,6 +1,6 @@
 import type { UnknownAction } from '@reduxjs/toolkit'
 import { api } from '@/services/baseApi'
-import { sessionEnded, sessionStarted, type Role, type Session } from '../store/authSlice'
+import { accessUpdated, sessionEnded, sessionStarted, type AccessView, type Role, type Session } from '../store/authSlice'
 
 /** What {@code /login} returns when the account has 2FA enabled, instead of a session (Phase 8g). */
 export interface OtpChallenge {
@@ -71,6 +71,17 @@ export const authApi = api.injectEndpoints({
         }
       },
     }),
+    /** The caller's permissions and sidebar, fresh from the server. */
+    access: build.query<AccessView, void>({
+      query: () => '/auth/access',
+      async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
+        try {
+          dispatch(accessUpdated((await queryFulfilled).data))
+        } catch {
+          // a 401 is handled by the base query; the shell keeps showing its loading state
+        }
+      },
+    }),
     logout: build.mutation<void, void>({
       query: () => ({ url: '/auth/logout', method: 'POST' }),
       async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
@@ -91,5 +102,6 @@ export const {
   useForgotPasswordMutation,
   useResetPasswordMutation,
   useRefreshMutation,
+  useAccessQuery,
   useLogoutMutation,
 } = authApi

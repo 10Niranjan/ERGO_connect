@@ -542,8 +542,8 @@ public class RfqService {
 	}
 
 	private long customerFor(CurrentUser me, Long requested) {
-		if (CUSTOMER_EDITORS.contains(me.role())) {
-			return me.companyId(); // customers always create for their own company
+		if (me.companyType() == CompanyType.CUSTOMER) {
+			return me.companyId(); // customers always create for their own company, never a client-sent id
 		}
 		if (requested == null) {
 			throw ApiException.unprocessable("Choose the customer");

@@ -2,7 +2,7 @@ import { Alert, Button, Chip, LinearProgress, MenuItem, Paper, Stack, Table, Tab
 import { useState } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router'
 import { useAppSelector } from '../../../app/store'
-import { DEVIATION_EDITORS } from '../../../auth/access'
+import { DEVIATION_CREATE, useCan } from '@/features/permissions'
 import { problemMessage } from '../../../shared/problem'
 import { formatDate } from '../../rfq/labels'
 import { useDeviationsQuery, type DeviationRow, type DeviationStatus } from '../deviationApi'
@@ -15,7 +15,7 @@ export function DeviationListPage() {
   const { data: rows = [], isLoading, error } = useDeviationsQuery()
   const [status, setStatus] = useState('')
   const [search, setSearch] = useState('')
-  const canCreate = useAppSelector((state) => DEVIATION_EDITORS.includes(state.auth.session?.activeRole ?? 'CUSTOMER_RFQ'))
+  const canCreate = useCan(DEVIATION_CREATE)
   const navigate = useNavigate()
 
   const needle = search.trim().toLowerCase()

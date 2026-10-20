@@ -28,83 +28,28 @@ import {
 } from '@mui/material'
 import type { ElementType } from 'react'
 import { NavLink } from 'react-router'
-import {
-  COMMUNICATION_VIEWERS,
-  COMPANY_MANAGERS,
-  DOCUMENT_VIEWERS,
-  EXTERNAL_ROLES,
-  MASTER_DATA_VIEWERS,
-  NPD_CUSTOMER_ROLES,
-  NPD_SUPPLIER_ROLES,
-  NPD_VIEWERS,
-  QUALITY_VIEWERS,
-  OFP_DETAIL_VIEWERS,
-  RFQ_VIEWERS,
-  SUPPLIER_RFQ_VIEWERS,
-} from '@/features/auth/utils/access'
-import type { Role, Session } from '@/features/auth/store/authSlice'
+import type { Session } from '@/features/auth/store/authSlice'
 
 export const DRAWER_WIDTH = 260
 
-interface NavItem {
-  label: string
-  to: string
-  icon: ElementType
-  roles?: Role[]
+// Icon keys the backend menu (nav_items.icon) may name. An unknown key falls back to the dashboard icon.
+const ICONS: Record<string, ElementType> = {
+  dashboard: DashboardIcon,
+  rfq: RequestQuoteIcon,
+  assignment: AssignmentIcon,
+  engineering: EngineeringIcon,
+  shipping: LocalShippingIcon,
+  inspection: FactCheckIcon,
+  ncr: ReportProblemIcon,
+  deviation: AltRouteIcon,
+  folder: FolderIcon,
+  chat: ChatIcon,
+  business: BusinessIcon,
+  account: AccountBoxIcon,
+  tune: TuneIcon,
+  people: PeopleIcon,
+  security: SecurityIcon,
 }
-
-interface NavSection {
-  title?: string
-  items: NavItem[]
-}
-
-// Grouped navigation menu entries per active role (SRS 12.15).
-const NAV_SECTIONS: NavSection[] = [
-  {
-    items: [{ label: 'Dashboard', to: '/', icon: DashboardIcon }],
-  },
-  {
-    title: 'Sourcing & Workflow',
-    items: [
-      { label: 'RFQs', to: '/rfqs', icon: RequestQuoteIcon, roles: RFQ_VIEWERS },
-      { label: 'Assigned RFQs', to: '/quotes', icon: AssignmentIcon, roles: SUPPLIER_RFQ_VIEWERS },
-      { label: 'NPD', to: '/npd', icon: EngineeringIcon, roles: NPD_VIEWERS },
-      { label: 'NPD', to: '/npd/mine', icon: EngineeringIcon, roles: NPD_CUSTOMER_ROLES },
-      { label: 'NPD Tasks', to: '/npd/mine', icon: EngineeringIcon, roles: NPD_SUPPLIER_ROLES },
-      {
-        label: 'Orders',
-        to: '/ofp',
-        icon: LocalShippingIcon,
-        roles: OFP_DETAIL_VIEWERS,
-      },
-    ],
-  },
-  {
-    title: 'Quality',
-    items: [
-      { label: 'Inspections', to: '/quality', icon: FactCheckIcon, roles: QUALITY_VIEWERS },
-      { label: 'NCR / CAPA', to: '/quality/ncrs', icon: ReportProblemIcon, roles: QUALITY_VIEWERS },
-      { label: 'Deviation Approvals', to: '/quality/deviations', icon: AltRouteIcon, roles: QUALITY_VIEWERS },
-    ],
-  },
-  {
-    title: 'Workspace',
-    items: [
-      { label: 'Documents', to: '/documents', icon: FolderIcon, roles: DOCUMENT_VIEWERS },
-      { label: 'Communication', to: '/communication', icon: ChatIcon, roles: COMMUNICATION_VIEWERS },
-    ],
-  },
-  {
-    title: 'Administration',
-    items: [
-      { label: 'Customers & suppliers', to: '/companies', icon: BusinessIcon, roles: COMPANY_MANAGERS },
-      { label: 'Company profile', to: '/company', icon: AccountBoxIcon, roles: EXTERNAL_ROLES },
-      { label: 'Users', to: '/admin/users', icon: PeopleIcon, roles: ['ERGO_ADMIN'] },
-      { label: 'Permissions', to: '/admin/permissions', icon: SecurityIcon, roles: ['ERGO_ADMIN'] },
-      { label: 'Master data', to: '/admin/master-data', icon: TuneIcon, roles: MASTER_DATA_VIEWERS },
-    ],
-  },
-]
 
 interface SidebarProps {
   session: Session
@@ -159,10 +104,9 @@ export function Sidebar({ session, mobileOpen, onCloseMobile }: SidebarProps) {
 
       {/* Navigation items list */}
       <Box sx={{ flexGrow: 1, overflowY: 'auto', py: 1 }}>
-        {NAV_SECTIONS.map((section, sIndex) => {
-          const visibleItems = section.items.filter(
-            (item) => !item.roles || item.roles.includes(session.activeRole),
-          )
+        {/* The menu is built by the server from the role's permissions: what is not sent is not allowed. */}
+        {(session.access?.menu ?? []).map((section, sIndex) => {
+          const visibleItems = section.items
           if (!visibleItems.length) return null
 
           return (
@@ -192,12 +136,14 @@ export function Sidebar({ session, mobileOpen, onCloseMobile }: SidebarProps) {
                 ) : undefined
               }
             >
-              {visibleItems.map((item) => (
-                <ListItem key={item.to + item.label} disablePadding sx={{ display: 'block', mb: 0.3 }}>
+              {visibleItems.map((item) => {
+                const Icon = ICONS[item.icon] ?? DashboardIcon
+                return (
+                <ListItem key={item.key} disablePadding sx={{ display: 'block', mb: 0.3 }}>
                   <ListItemButton
                     component={NavLink}
-                    to={item.to}
-                    end={item.to === '/'}
+                    to={item.path}
+                    end={item.path === '/'}
                     onClick={onCloseMobile}
                     sx={{
                       mx: 1.5,
@@ -222,7 +168,7 @@ export function Sidebar({ session, mobileOpen, onCloseMobile }: SidebarProps) {
                     }}
                   >
                     <ListItemIcon sx={{ minWidth: 34, color: 'inherit' }}>
-                      <item.icon sx={{ fontSize: 20 }} />
+                      <Icon sx={{ fontSize: 20 }} />
                     </ListItemIcon>
                     <ListItemText
                       primary={
@@ -233,7 +179,8 @@ export function Sidebar({ session, mobileOpen, onCloseMobile }: SidebarProps) {
                     />
                   </ListItemButton>
                 </ListItem>
-              ))}
+                )
+              })}
             </List>
           )
         })}

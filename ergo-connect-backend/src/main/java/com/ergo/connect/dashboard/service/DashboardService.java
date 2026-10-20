@@ -2,6 +2,8 @@ package com.ergo.connect.dashboard.service;
 
 import java.util.List;
 import java.util.function.Function;
+import java.util.function.IntSupplier;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 import org.springframework.stereotype.Service;
@@ -9,6 +11,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.ergo.connect.common.record.Awaiting;
 import com.ergo.connect.common.security.CurrentUser;
+import com.ergo.connect.common.security.ModuleAccess;
+import com.ergo.connect.common.security.ModuleAccess.Module;
 import com.ergo.connect.dashboard.service.DashboardView.CustomerDashboard;
 import com.ergo.connect.dashboard.service.DashboardView.FunctionalDashboard;
 import com.ergo.connect.dashboard.service.DashboardView.ManagementDashboard;
@@ -70,35 +74,45 @@ public class DashboardService {
 		};
 	}
 
+	/** A module's widgets are built only for a role that can open that module (Permission Management can set any role to
+	 * NV on it): an NV role gets no counts, rows or titles from it. */
+	private static <T> List<T> items(Module module, Supplier<List<T>> source) {
+		return ModuleAccess.canView(CurrentUser.get().role(), module) ? source.get() : List.of();
+	}
+
+	private static int count(Module module, IntSupplier source) {
+		return ModuleAccess.canView(CurrentUser.get().role(), module) ? source.getAsInt() : 0;
+	}
+
 	private ManagementDashboard management() {
-		List<RfqDashboardItem> rfq = rfqApi.dashboardItems();
-		List<NpdDashboardItem> npd = npdApi.dashboardItems();
-		List<OrderDashboardItem> orders = ofpApi.dashboardItems();
-		List<NcrDashboardItem> ncrs = qualityApi.ncrDashboardItems();
-		List<DeviationDashboardItem> deviations = qualityApi.deviationDashboardItems();
+		List<RfqDashboardItem> rfq = items(Module.RFQ, rfqApi::dashboardItems);
+		List<NpdDashboardItem> npd = items(Module.NPD, npdApi::dashboardItems);
+		List<OrderDashboardItem> orders = items(Module.OFP, ofpApi::dashboardItems);
+		List<NcrDashboardItem> ncrs = items(Module.QUALITY, qualityApi::ncrDashboardItems);
+		List<DeviationDashboardItem> deviations = items(Module.QUALITY, qualityApi::deviationDashboardItems);
 
 		int awaitingCustomerApproval = (int) rfq.stream().filter(r -> "SENT_TO_CUSTOMER".equals(r.status())).count();
 		List<NpdDashboardItem> delayed = npd.stream().filter(p -> p.delayDays() != null && p.delayDays() > 0).toList();
 		List<NpdDashboardItem> highRisk = npd.stream().filter(p -> "HIGH".equals(p.riskLevel())).toList();
 		List<OrderDashboardItem> atRisk = orders.stream().filter(OrderDashboardItem::atRisk).toList();
 
-		int pendingApprovals = npdApi.pendingApprovalsCount() + directory.pendingCompanyApprovalsCount()
+		int pendingApprovals = count(Module.NPD, npdApi::pendingApprovalsCount) + directory.pendingCompanyApprovalsCount()
 				+ (int) rfq.stream().filter(r -> "SUBMITTED".equals(r.status()) || "UNDER_REVIEW".equals(r.status())).count()
 				+ (int) ncrs.stream().filter(n -> "PENDING_CLOSURE_APPROVAL".equals(n.status())).count()
 				+ (int) deviations.stream()
 					.filter(d -> "UNDER_REVIEW".equals(d.status()) || "CUSTOMER_APPROVAL_PENDING".equals(d.status()))
 					.count();
 
-		return new ManagementDashboard(rfq.size(), quotationApi.pendingSubmissionCount(), awaitingCustomerApproval,
-				npdApi.unconvertedApprovedRfqCount(), npd.size(), delayed, highRisk, atRisk, ncrs.size(),
+		return new ManagementDashboard(rfq.size(), count(Module.QUOTATION, quotationApi::pendingSubmissionCount), awaitingCustomerApproval,
+				count(Module.NPD, npdApi::unconvertedApprovedRfqCount), npd.size(), delayed, highRisk, atRisk, ncrs.size(),
 				deviations.size(), supplierPerformance(), pendingApprovals);
 	}
 
 	/** Combines OFP's per-supplier dispatch timeliness with Quality's per-supplier open-NCR count. Both facade
 	 * calls already return empty for any caller without unrestricted visibility. */
 	private List<SupplierPerformanceRow> supplierPerformance() {
-		List<SupplierPerformance> ofp = ofpApi.supplierPerformance();
-		java.util.Map<Long, Integer> openNcrBySupplier = qualityApi.openNcrCountsBySupplier().stream()
+		List<SupplierPerformance> ofp = items(Module.OFP, ofpApi::supplierPerformance);
+		java.util.Map<Long, Integer> openNcrBySupplier = items(Module.QUALITY, qualityApi::openNcrCountsBySupplier).stream()
 			.collect(java.util.stream.Collectors.toMap(SupplierNcrCount::supplierCompanyId,
 					SupplierNcrCount::openNcrCount));
 		return ofp.stream()
@@ -109,11 +123,11 @@ public class DashboardService {
 	}
 
 	private FunctionalDashboard functional() {
-		List<RfqDashboardItem> rfq = rfqApi.dashboardItems();
-		List<NpdDashboardItem> npd = npdApi.dashboardItems();
-		List<OrderDashboardItem> orders = ofpApi.dashboardItems();
-		List<NcrDashboardItem> ncrs = qualityApi.ncrDashboardItems();
-		List<DeviationDashboardItem> deviations = qualityApi.deviationDashboardItems();
+		List<RfqDashboardItem> rfq = items(Module.RFQ, rfqApi::dashboardItems);
+		List<NpdDashboardItem> npd = items(Module.NPD, npdApi::dashboardItems);
+		List<OrderDashboardItem> orders = items(Module.OFP, ofpApi::dashboardItems);
+		List<NcrDashboardItem> ncrs = items(Module.QUALITY, qualityApi::ncrDashboardItems);
+		List<DeviationDashboardItem> deviations = items(Module.QUALITY, qualityApi::deviationDashboardItems);
 
 		int overdue = (int) (rfq.stream().filter(RfqDashboardItem::overdue).count()
 				+ npd.stream().filter(p -> p.delayDays() != null && p.delayDays() > 0).count()
@@ -136,13 +150,13 @@ public class DashboardService {
 	}
 
 	private CustomerDashboard customer() {
-		return new CustomerDashboard(rfqApi.dashboardItems(), npdApi.dashboardItems(), ofpApi.dashboardItems(),
-				qualityApi.ncrDashboardItems());
+		return new CustomerDashboard(items(Module.RFQ, rfqApi::dashboardItems), items(Module.NPD, npdApi::dashboardItems), items(Module.OFP, ofpApi::dashboardItems),
+				items(Module.QUALITY, qualityApi::ncrDashboardItems));
 	}
 
 	private SupplierDashboard supplier() {
-		return new SupplierDashboard(quotationApi.dashboardItems(), npdApi.dashboardItems(), ofpApi.dashboardItems(),
-				qualityApi.ncrDashboardItems());
+		return new SupplierDashboard(items(Module.QUOTATION, quotationApi::dashboardItems), items(Module.NPD, npdApi::dashboardItems), items(Module.OFP, ofpApi::dashboardItems),
+				items(Module.QUALITY, qualityApi::ncrDashboardItems));
 	}
 
 }

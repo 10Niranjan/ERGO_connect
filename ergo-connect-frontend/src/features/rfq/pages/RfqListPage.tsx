@@ -18,7 +18,7 @@ import {
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { useAppSelector } from '../../../app/store'
-import { RFQ_CREATORS } from '../../../auth/access'
+import { RFQ_CREATE, useCan } from '@/features/permissions'
 import { problemMessage } from '../../../shared/problem'
 import { PRIORITIES, STATUS, formatDate } from '../labels'
 import { useRfqsQuery } from '../rfqApi'
@@ -32,7 +32,7 @@ export function RfqListPage() {
   const [search, setSearch] = useState('')
   const navigate = useNavigate()
   const isErgo = session?.user.companyType === 'ERGO'
-  const canCreate = session !== null && session !== undefined && RFQ_CREATORS.includes(session.activeRole)
+  const canCreate = useCan(RFQ_CREATE)
 
   const needle = search.trim().toLowerCase()
   const shown = rfqs.filter(

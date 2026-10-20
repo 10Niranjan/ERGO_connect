@@ -2,12 +2,15 @@ import { Box } from '@mui/material'
 import { useState } from 'react'
 import { Outlet } from 'react-router'
 import { useAppSelector } from '@/hooks/useAppSelector'
+import { useAccessQuery } from '@/features/auth/services/authApi'
 import { Navbar } from './Navbar'
 import { Sidebar } from './Sidebar'
 
 export function MainLayout() {
   const session = useAppSelector((state) => state.auth.session)
   const [mobileOpen, setMobileOpen] = useState(false)
+  // A restored demo session carries no permissions; every real session response does. Fetch them once if missing.
+  useAccessQuery(undefined, { skip: !session || session.access !== undefined })
 
   if (!session) return null
 

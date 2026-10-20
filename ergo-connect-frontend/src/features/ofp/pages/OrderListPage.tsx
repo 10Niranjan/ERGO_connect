@@ -20,7 +20,7 @@ import {
 import { useState } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router'
 import { useAppSelector } from '../../../app/store'
-import { OFP_EDITORS } from '../../../auth/access'
+import { OFP_CREATE, useCan } from '@/features/permissions'
 import { problemMessage } from '../../../shared/problem'
 import { formatDate, formatNumber } from '../../rfq/labels'
 import { ORDER_STATUS, isDelayed, statusProgress } from '../labels'
@@ -34,7 +34,7 @@ export function OrderListPage() {
   const [status, setStatus] = useState('')
   const [search, setSearch] = useState('')
   const [delayedOnly, setDelayedOnly] = useState(false)
-  const canCreate = useAppSelector((state) => OFP_EDITORS.includes(state.auth.session?.activeRole ?? 'CUSTOMER_RFQ'))
+  const canCreate = useCan(OFP_CREATE)
   const navigate = useNavigate()
 
   const needle = search.trim().toLowerCase()

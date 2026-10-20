@@ -42,6 +42,7 @@ class SecurityConfig {
 		cors.setAllowedOrigins(allowedOrigins);
 		cors.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
 		cors.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Ergo-Client"));
+		cors.setExposedHeaders(List.of("X-Permissions-Version"));
 		var corsSource = new UrlBasedCorsConfigurationSource();
 		corsSource.registerCorsConfiguration("/**", cors);
 

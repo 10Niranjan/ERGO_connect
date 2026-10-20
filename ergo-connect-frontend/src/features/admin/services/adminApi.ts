@@ -79,6 +79,58 @@ export interface PermissionMatrix {
   modules: PermissionModule[]
 }
 
+/** Permission Management: stored access level codes. */
+export type AccessCode = 'NV' | 'V' | 'A' | 'O'
+
+export interface PermissionCell {
+  level: AccessCode
+  /** The signed-off default; equal to `level` for a module with no shipped default. */
+  defaultLevel: AccessCode
+  /** False for a module whose backend checks are still fixed in code. */
+  editable: boolean
+  /** What the server will accept for this cell. */
+  allowed: AccessCode[]
+}
+
+export interface PermissionRoleRow {
+  code: Role
+  name: string
+  active: boolean
+  cells: Record<string, PermissionCell>
+}
+
+export interface PermissionColumn {
+  code: string
+  label: string
+  configurable: boolean
+}
+
+export interface EditablePermissions {
+  /** Global version; a save must send the one it was based on. */
+  version: number
+  side: CompanyType
+  levels: AccessCode[]
+  modules: PermissionColumn[]
+  roles: PermissionRoleRow[]
+}
+
+export interface PermissionChange {
+  role: Role
+  module: string
+  level: AccessCode
+}
+
+export interface PermissionHistoryEntry {
+  at: string
+  changedBy: string | null
+  changedByRole: Role | null
+  role: Role
+  module: string
+  oldLevel: AccessCode
+  newLevel: AccessCode
+  reason: string | null
+}
+
 /** 1 `from` = `rate` `to`, from `rateDate` on. */
 export interface ExchangeRate {
   id: number
@@ -90,7 +142,7 @@ export interface ExchangeRate {
   createdAt: string
 }
 
-const adminApi = api.enhanceEndpoints({ addTagTypes: ['User', 'MasterData', 'ExchangeRate'] }).injectEndpoints({
+const adminApi = api.enhanceEndpoints({ addTagTypes: ['User', 'MasterData', 'ExchangeRate', 'Permissions'] }).injectEndpoints({
   endpoints: (build) => ({
     users: build.query<User[], void>({ query: () => '/users', providesTags: ['User'] }),
     exchangeRates: build.query<ExchangeRate[], void>({ query: () => '/master-data/exchange-rates', providesTags: ['ExchangeRate'] }),
@@ -132,6 +184,25 @@ const adminApi = api.enhanceEndpoints({ addTagTypes: ['User', 'MasterData', 'Exc
       invalidatesTags: ['User'],
     }),
     permissionMatrix: build.query<PermissionMatrix, void>({ query: () => '/admin/permission-matrix' }),
+    editablePermissions: build.query<EditablePermissions, CompanyType>({
+      query: (side) => `/admin/permissions/${side}`,
+      providesTags: ['Permissions'],
+    }),
+    savePermissions: build.mutation<
+      EditablePermissions,
+      { side: CompanyType; expectedVersion: number; reason: string; changes: PermissionChange[] }
+    >({
+      query: ({ side, ...body }) => ({ url: `/admin/permissions/${side}`, method: 'PUT', body }),
+      invalidatesTags: ['Permissions'],
+    }),
+    resetPermissions: build.mutation<EditablePermissions, { side: CompanyType; expectedVersion: number; reason: string }>({
+      query: ({ side, ...body }) => ({ url: `/admin/permissions/${side}/reset`, method: 'POST', body }),
+      invalidatesTags: ['Permissions'],
+    }),
+    permissionHistory: build.query<PermissionHistoryEntry[], { role?: Role; module?: string } | void>({
+      query: (params) => ({ url: '/admin/permissions/history', params: params ?? undefined }),
+      providesTags: ['Permissions'],
+    }),
     masterLists: build.query<MasterList[], void>({ query: () => '/master-data' }),
     masterEntries: build.query<MasterEntry[], string>({
       query: (list) => `/master-data/${list}`,
@@ -161,6 +232,10 @@ export const {
   useSetUserActiveMutation,
   useResetUserPasswordMutation,
   usePermissionMatrixQuery,
+  useEditablePermissionsQuery,
+  useSavePermissionsMutation,
+  useResetPermissionsMutation,
+  usePermissionHistoryQuery,
   useMasterListsQuery,
   useMasterEntriesQuery,
   useCreateMasterEntryMutation,

@@ -28,8 +28,7 @@ import {
   Typography,
 } from '@mui/material'
 import { useState } from 'react'
-import { useAppSelector } from '../../../app/store'
-import { OFP_EDITORS } from '../../../auth/access'
+import { OFP_CREATE, useCan } from '@/features/permissions'
 import { HandoverDialog } from '../../ofp/components/HandoverDialog'
 import { Link as RouterLink, useParams } from 'react-router'
 import { CommentsPanel } from '../../communication/components/CommentsPanel'
@@ -107,7 +106,7 @@ function NpdDetail({ npd }: { npd: NpdView }) {
   const [closing, setClosing] = useState(false)
   const [handingOver, setHandingOver] = useState(false)
   // Server enforces stage + role + once-only; this only avoids showing the button where it can never work.
-  const canHandover = useAppSelector((state) => OFP_EDITORS.includes(state.auth.session?.activeRole ?? 'CUSTOMER_RFQ')) && npd.audience === 'ERGO' && npd.stage === 'APPROVED_FOR_PRODUCTION_HANDOVER'
+  const canHandover = useCan(OFP_CREATE) && npd.audience === 'ERGO' && npd.stage === 'APPROVED_FOR_PRODUCTION_HANDOVER'
   const [editingProject, setEditingProject] = useState(false)
   const [closeStage, closeState] = useCloseNpdStageMutation()
   // Only ERGO Admin/NPD ever hold UPDATE_PROJECT; skipped otherwise so the users list is never fetched for nothing.

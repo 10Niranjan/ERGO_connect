@@ -108,8 +108,9 @@ class OfpApiService implements OfpApi {
 	public List<OrderDashboardItem> dashboardItems() {
 		CurrentUser me = CurrentUser.get();
 		List<Order> visible;
-		if (SUPPLIER_VIEWERS.contains(me.role())) {
-			visible = orders.findBySupplierCompanyIdOrderByIdDesc(me.companyId());
+		if (me.companyType() == CompanyType.SUPPLIER) {
+			visible = ModuleAccess.canView(me.role(), Module.OFP)
+					? orders.findBySupplierCompanyIdOrderByIdDesc(me.companyId()) : List.of();
 		}
 		else if (me.companyType() == CompanyType.CUSTOMER) {
 			visible = ModuleAccess.canView(me.role(), Module.OFP)

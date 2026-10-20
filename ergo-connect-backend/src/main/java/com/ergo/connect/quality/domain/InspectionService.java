@@ -203,7 +203,8 @@ public class InspectionService {
 			// freely ERGO-editable either (see applyUpdate's own NPD/OFP guard below).
 			applyLinkedCompanies(inspection, form.linkedModule(), form.linkedRecordId(),
 					supplierEditor ? me.companyId() : null);
-			inspection.customerVisible = ModuleAccess.canApprove(me.role(), Module.QUALITY) && form.customerVisible();
+			inspection.customerVisible = me.companyType() == CompanyType.ERGO && ModuleAccess.canApprove(me.role(), Module.QUALITY)
+					&& form.customerVisible(); // ERGO's Quality approvers only, whatever level another side is given
 		}
 		else if (supplierEditor) {
 			// Two-way anonymity: a supplier's own inspection is tagged to its own company only. customerCompanyId
@@ -220,7 +221,7 @@ public class InspectionService {
 					"Customer");
 			inspection.supplierCompanyId = requireCompanyIfGiven(form.supplierCompanyId(), CompanyType.SUPPLIER,
 					"Supplier");
-			inspection.customerVisible = form.customerVisible();
+			inspection.customerVisible = ModuleAccess.canApprove(me.role(), Module.QUALITY) && form.customerVisible();
 		}
 		inspection.resultStatus = ResultStatus.OPEN;
 		inspection.quantityRejected = BigDecimal.ZERO;

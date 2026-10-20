@@ -14,7 +14,6 @@ import static com.ergo.connect.common.security.Role.SUPPLIER_QUALITY;
 
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
-import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -47,9 +46,7 @@ import com.ergo.connect.npd.api.NpdApi;
 class NpdApiService implements NpdApi {
 
 	/** The role sheet (ModuleAccess), NPD column: every ERGO role with access except the account-scoped KAM. */
-	private static final Set<Role> FULL_VIEWERS = ModuleAccess.viewers(Module.NPD, CompanyType.ERGO).stream()
-		.filter(r -> r != ERGO_KAM)
-		.collect(Collectors.toCollection(() -> EnumSet.noneOf(Role.class)));
+	private static final Set<Role> FULL_VIEWERS = ModuleAccess.viewersExcept(Module.NPD, CompanyType.ERGO, ERGO_KAM);
 
 	private static final Set<Role> CUSTOMER_VIEWERS = ModuleAccess.viewers(Module.NPD, CompanyType.CUSTOMER);
 
@@ -120,7 +117,7 @@ class NpdApiService implements NpdApi {
 		if (FULL_VIEWERS.contains(me.role())) {
 			visible = projects.findAllByOrderByIdDesc();
 		}
-		else if (me.role() == ERGO_KAM) {
+		else if (me.role() == ERGO_KAM && ModuleAccess.canView(me.role(), Module.NPD)) {
 			Set<Long> accounts = directory.accountsOf(me.userId());
 			visible = accounts.isEmpty() ? List.of() : projects.findByCustomerCompanyIdInOrderByIdDesc(accounts);
 		}
