@@ -33,9 +33,11 @@ import {
   usePermissionHistoryQuery,
   useResetPermissionsMutation,
   useSavePermissionsMutation,
+  useSwitchModuleMutation,
   type AccessCode,
   type EditablePermissions,
   type PermissionChange,
+  type PermissionColumn,
 } from '../services/adminApi'
 import { PermissionMatrixPage } from './PermissionMatrixPage'
 
@@ -57,6 +59,20 @@ const LEVEL_COLOR: Record<AccessCode, 'default' | 'info' | 'success' | 'warning'
   V: 'info',
   A: 'success',
   O: 'warning',
+}
+
+// The module switch uses the same four levels, read as a platform-wide ceiling over every role.
+const SWITCH_LABEL: Record<AccessCode, string> = {
+  O: 'On',
+  A: 'No final approvals',
+  V: 'Read-only',
+  NV: 'Hidden',
+}
+const SWITCH_MEANING: Record<AccessCode, string> = {
+  O: 'The module works as the role sheet says.',
+  A: 'Nobody can give this module’s final approval. Roles that need approval rights for their own steps (e.g. ERGO creating OFP orders) lose those too.',
+  V: 'Nobody can create, edit, submit or approve; records stay readable.',
+  NV: 'The module is closed for every role (menu, pages, API, dashboard). Data is kept.',
 }
 
 const keyOf = (role: Role, module: string) => `${role}|${module}`
@@ -113,6 +129,7 @@ function Grid({ side, data, refreshing }: { side: CompanyType; data: EditablePer
   const [confirming, setConfirming] = useState(false)
   const [resetting, setResetting] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [switching, setSwitching] = useState<{ module: PermissionColumn; level: AccessCode } | null>(null)
 
   const changes = useMemo<(PermissionChange & { from: AccessCode; roleName: string })[]>(
     () =>
@@ -141,6 +158,37 @@ function Grid({ side, data, refreshing }: { side: CompanyType; data: EditablePer
   return (
     <Stack spacing={2}>
       {refreshing && <LinearProgress />}
+      <Paper variant="outlined" sx={{ p: 2 }}>
+        <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+          Module switches (every role, every company)
+        </Typography>
+        <Typography variant="caption" color="text.secondary" component="p" sx={{ mb: 1.5 }}>
+          A switch caps what every role can do in a module, whatever the grid below says: On = as the grid, No final
+          approvals, Read-only, or Hidden. Switching back to On restores exactly the grid.
+        </Typography>
+        <Stack direction="row" spacing={2} useFlexGap sx={{ flexWrap: 'wrap' }}>
+          {configurable.map((m) => (
+            <Tooltip key={m.code} title={SWITCH_MEANING[m.cap]}>
+              <TextField
+                select
+                size="small"
+                label={m.label}
+                value={m.cap}
+                onChange={(event) => setSwitching({ module: m, level: event.target.value as AccessCode })}
+                sx={{ minWidth: 190 }}
+                color={m.cap === 'O' ? 'primary' : 'warning'}
+                focused={m.cap !== 'O'}
+              >
+                {data.levels.map((level) => (
+                  <MenuItem key={level} value={level}>
+                    {level} — {SWITCH_LABEL[level]}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </Tooltip>
+          ))}
+        </Stack>
+      </Paper>
       <TableContainer component={Paper} variant="outlined">
         <Table size="small" stickyHeader>
           <TableHead>
@@ -217,6 +265,13 @@ function Grid({ side, data, refreshing }: { side: CompanyType; data: EditablePer
                           </MenuItem>
                         ))}
                       </Select>
+                      {cell.effective !== cell.level && (
+                        <Tooltip title={`The ${m.label} module switch (${SWITCH_LABEL[m.cap]}) lowers this role to ${cell.effective}.`}>
+                          <Typography variant="caption" color="warning.main" component="div">
+                            capped → {cell.effective}
+                          </Typography>
+                        </Tooltip>
+                      )}
                     </TableCell>
                   )
                 })}
@@ -254,6 +309,15 @@ function Grid({ side, data, refreshing }: { side: CompanyType; data: EditablePer
       )}
       {resetting && <ResetDialog side={side} version={data.version} onClose={() => setResetting(false)} />}
       {historyOpen && <HistoryDialog onClose={() => setHistoryOpen(false)} />}
+      {switching && (
+        <SwitchDialog
+          side={side}
+          version={data.version}
+          module={switching.module}
+          level={switching.level}
+          onClose={() => setSwitching(null)}
+        />
+      )}
     </Stack>
   )
 }
@@ -318,6 +382,62 @@ function SaveDialog({
         <Button onClick={onClose}>Cancel</Button>
         <Button variant="contained" disabled={reason.trim().length < 3 || isLoading} onClick={submit}>
           Save
+        </Button>
+      </DialogActions>
+    </Dialog>
+  )
+}
+
+function SwitchDialog({
+  side,
+  version,
+  module,
+  level,
+  onClose,
+}: {
+  side: CompanyType
+  version: number
+  module: PermissionColumn
+  level: AccessCode
+  onClose: () => void
+}) {
+  const [reason, setReason] = useState('')
+  const [switchModule, { isLoading, error }] = useSwitchModuleMutation()
+  const submit = async () => {
+    try {
+      await switchModule({ side, module: module.code, expectedVersion: version, reason: reason.trim(), level }).unwrap()
+      onClose()
+    } catch {
+      // shown below
+    }
+  }
+  return (
+    <Dialog open onClose={onClose} fullWidth maxWidth="sm">
+      <DialogTitle>
+        Switch {module.label}: {SWITCH_LABEL[module.cap]} → {SWITCH_LABEL[level]}?
+      </DialogTitle>
+      <DialogContent>
+        <Stack spacing={2} sx={{ pt: 1 }}>
+          <Alert severity={level === 'O' ? 'info' : 'warning'}>
+            {SWITCH_MEANING[level]} This applies to every role of every company on their next request. Open records are
+            kept as they are and stay waiting.
+          </Alert>
+          <TextField
+            label="Reason"
+            required
+            multiline
+            minRows={2}
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            slotProps={{ htmlInput: { maxLength: 500 } }}
+          />
+          {error && <Alert severity="error">{problemMessage(error)}</Alert>}
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Cancel</Button>
+        <Button variant="contained" disabled={reason.trim().length < 3 || isLoading} onClick={submit}>
+          Apply switch
         </Button>
       </DialogActions>
     </Dialog>
@@ -392,7 +512,7 @@ function HistoryDialog({ onClose }: { onClose: () => void }) {
                 <TableRow key={i}>
                   <TableCell>{new Date(e.at).toLocaleString()}</TableCell>
                   <TableCell>{e.changedBy ?? '—'}</TableCell>
-                  <TableCell>{e.role}</TableCell>
+                  <TableCell>{e.role ?? 'Module switch'}</TableCell>
                   <TableCell>{e.module}</TableCell>
                   <TableCell>
                     {e.oldLevel} → <strong>{e.newLevel}</strong>

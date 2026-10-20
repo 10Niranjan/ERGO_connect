@@ -36,6 +36,8 @@ import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.common.record.Awaiting;
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
+import com.ergo.connect.common.security.ModuleAccess;
+import com.ergo.connect.common.security.ModuleAccess.Module;
 import com.ergo.connect.documents.api.DocumentStore;
 import com.ergo.connect.documents.api.DocumentStore.DocumentInfo;
 import com.ergo.connect.documents.api.DocumentStore.Visibility;
@@ -240,6 +242,9 @@ class RfqApiService implements RfqApi {
 	@Transactional(readOnly = true)
 	public List<ApprovedRfq> customerApproved() {
 		CurrentUser me = CurrentUser.get();
+		if (!ModuleAccess.canView(me.role(), Module.RFQ)) {
+			return List.of(); // a hidden RFQ module (switch or sheet) is closed here too
+		}
 		List<Rfq> approved = switch (me.role()) {
 			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_RFQ, ERGO_NPD ->
 				rfqs.findByStatusInOrderByIdDesc(Set.of(CUSTOMER_APPROVED));

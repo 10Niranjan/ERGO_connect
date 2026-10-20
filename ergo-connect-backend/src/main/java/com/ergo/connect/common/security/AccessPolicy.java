@@ -35,7 +35,8 @@ public class AccessPolicy {
 
 	private static final Logger log = LoggerFactory.getLogger(AccessPolicy.class);
 
-	public record ModuleInfo(String code, String label, boolean configurable) {
+	/** {@code cap} is the module switch (NV hidden, V read-only, A no final approvals, O on). */
+	public record ModuleInfo(String code, String label, boolean configurable, String cap) {
 	}
 
 	public record NavItem(String key, String section, int sectionOrder, String label, String path, String icon,
@@ -124,14 +125,18 @@ public class AccessPolicy {
 	}
 
 	private Snapshot readOnce(long version) {
-		List<ModuleInfo> modules = jdbc.query("SELECT module_code, label, configurable FROM app_modules ORDER BY sort_order",
-				(rs, n) -> new ModuleInfo(rs.getString(1), rs.getString(2), rs.getBoolean(3)));
+		List<ModuleInfo> modules = jdbc.query(
+				"SELECT module_code, label, configurable, access_cap FROM app_modules ORDER BY sort_order",
+				(rs, n) -> new ModuleInfo(rs.getString(1), rs.getString(2), rs.getBoolean(3), rs.getString(4)));
+		Map<String, String> caps = new LinkedHashMap<>();
+		modules.forEach(m -> caps.put(m.code(), m.cap()));
 		Map<String, Map<Role, String>> levels = new LinkedHashMap<>();
 		modules.forEach(m -> levels.put(m.code(), new EnumMap<>(Role.class)));
+		// the effective level: a role's own level, lowered to the module's switch
 		jdbc.query("SELECT role_code, module_code, access_level FROM role_module_permissions", rs -> {
 			Map<Role, String> byRole = levels.get(rs.getString(2));
 			if (byRole != null) {
-				byRole.put(Role.valueOf(rs.getString(1)), rs.getString(3));
+				byRole.put(Role.valueOf(rs.getString(1)), lower(rs.getString(3), caps.get(rs.getString(2))));
 			}
 		});
 		for (ModuleInfo m : modules) {
@@ -173,7 +178,7 @@ public class AccessPolicy {
 		return snapshot().modules();
 	}
 
-	/** The stored level code (NV/V/A/O) of a role on a module. */
+	/** The effective level code (NV/V/A/O) of a role on a module: its own level lowered to the module switch. */
 	public static String code(Role role, String module) {
 		Map<Role, String> byRole = snapshot().levels().get(module);
 		if (byRole == null) {
@@ -213,6 +218,11 @@ public class AccessPolicy {
 			.map(e -> new MenuSection(e.getKey().isEmpty() ? null : e.getKey(), List.copyOf(e.getValue())))
 			.toList();
 		return new AccessView(s.version(), permissions, menu);
+	}
+
+	/** The lower of two level codes (NV &lt; V &lt; A &lt; O). */
+	public static String lower(String a, String b) {
+		return rank(a) <= rank(b) ? a : b;
 	}
 
 	private static int rank(String code) {

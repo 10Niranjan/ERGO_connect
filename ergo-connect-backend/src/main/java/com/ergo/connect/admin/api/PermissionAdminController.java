@@ -16,6 +16,7 @@ import com.ergo.connect.admin.service.PermissionAdminDtos.HistoryEntry;
 import com.ergo.connect.admin.service.PermissionAdminDtos.Matrix;
 import com.ergo.connect.admin.service.PermissionAdminDtos.ResetRequest;
 import com.ergo.connect.admin.service.PermissionAdminDtos.SaveRequest;
+import com.ergo.connect.admin.service.PermissionAdminDtos.SwitchRequest;
 import com.ergo.connect.admin.service.PermissionAdminService;
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.Role;
@@ -54,6 +55,15 @@ class PermissionAdminController {
 	@PreAuthorize(SUPER_ADMIN)
 	Matrix reset(@PathVariable CompanyType side, @Valid @RequestBody ResetRequest body) {
 		return permissions.reset(side, body.expectedVersion(), body.reason());
+	}
+
+	/** The module switch: O on, A no final approvals, V read-only, NV hidden for every role. {@code side} only picks
+	 * which side's matrix is returned afterwards (the switch itself is platform-wide). */
+	@PutMapping("/{side}/modules/{module}")
+	@PreAuthorize(SUPER_ADMIN)
+	Matrix switchModule(@PathVariable CompanyType side, @PathVariable String module,
+			@Valid @RequestBody SwitchRequest body) {
+		return permissions.switchModule(side, module, body.expectedVersion(), body.reason(), body.level());
 	}
 
 	@GetMapping("/history")

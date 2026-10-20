@@ -83,7 +83,10 @@ export interface PermissionMatrix {
 export type AccessCode = 'NV' | 'V' | 'A' | 'O'
 
 export interface PermissionCell {
+  /** The role's own level. */
   level: AccessCode
+  /** What the role really gets: its level lowered to the module switch. */
+  effective: AccessCode
   /** The signed-off default; equal to `level` for a module with no shipped default. */
   defaultLevel: AccessCode
   /** False for a module whose backend checks are still fixed in code. */
@@ -103,6 +106,8 @@ export interface PermissionColumn {
   code: string
   label: string
   configurable: boolean
+  /** The module switch, for every role: O on, A no final approvals, V read-only, NV hidden. */
+  cap: AccessCode
 }
 
 export interface EditablePermissions {
@@ -124,7 +129,8 @@ export interface PermissionHistoryEntry {
   at: string
   changedBy: string | null
   changedByRole: Role | null
-  role: Role
+  /** Null for a module-switch change. */
+  role: Role | null
   module: string
   oldLevel: AccessCode
   newLevel: AccessCode
@@ -199,6 +205,13 @@ const adminApi = api.enhanceEndpoints({ addTagTypes: ['User', 'MasterData', 'Exc
       query: ({ side, ...body }) => ({ url: `/admin/permissions/${side}/reset`, method: 'POST', body }),
       invalidatesTags: ['Permissions'],
     }),
+    switchModule: build.mutation<
+      EditablePermissions,
+      { side: CompanyType; module: string; expectedVersion: number; reason: string; level: AccessCode }
+    >({
+      query: ({ side, module, ...body }) => ({ url: `/admin/permissions/${side}/modules/${module}`, method: 'PUT', body }),
+      invalidatesTags: ['Permissions'],
+    }),
     permissionHistory: build.query<PermissionHistoryEntry[], { role?: Role; module?: string } | void>({
       query: (params) => ({ url: '/admin/permissions/history', params: params ?? undefined }),
       providesTags: ['Permissions'],
@@ -235,6 +248,7 @@ export const {
   useEditablePermissionsQuery,
   useSavePermissionsMutation,
   useResetPermissionsMutation,
+  useSwitchModuleMutation,
   usePermissionHistoryQuery,
   useMasterListsQuery,
   useMasterEntriesQuery,

@@ -640,20 +640,25 @@ public class NpdService {
 		return items;
 	}
 
+	/** An empty role set (module read-only or hidden) must notify nobody; Recipients.company with no roles means "anyone". */
+	private static Recipients editors(long companyId, java.util.Set<Role> roles) {
+		return roles.isEmpty() ? Recipients.none() : Recipients.company(companyId, roles.toArray(Role[]::new));
+	}
+
 	private static Recipients ownerSide(NpdActivity activity) {
 		return switch (activity.ownerOrganizationType) {
 			case ERGO -> activity.responsibleUserId != null ? Recipients.users(java.util.Set.of(activity.responsibleUserId))
 					: Recipients.ergo(Role.ERGO_NPD);
-			case CUSTOMER -> Recipients.company(activity.ownerCompanyId, CUSTOMER_EDITORS.toArray(Role[]::new));
-			case SUPPLIER -> Recipients.company(activity.ownerCompanyId, SUPPLIER_EDITORS.toArray(Role[]::new));
+			case CUSTOMER -> editors(activity.ownerCompanyId, CUSTOMER_EDITORS);
+			case SUPPLIER -> editors(activity.ownerCompanyId, SUPPLIER_EDITORS);
 		};
 	}
 
 	/** ERGO's NPD team and each side's NPD editors: everyone who works on this project. */
 	private static Recipients everyone(NpdProject project) {
 		return Recipients.ergo(Role.ERGO_ADMIN, Role.ERGO_NPD)
-			.and(Recipients.company(project.customerCompanyId, CUSTOMER_EDITORS.toArray(Role[]::new)))
-			.and(Recipients.company(project.supplierCompanyId, SUPPLIER_EDITORS.toArray(Role[]::new)));
+			.and(editors(project.customerCompanyId, CUSTOMER_EDITORS))
+			.and(editors(project.supplierCompanyId, SUPPLIER_EDITORS));
 	}
 
 	/** The side the approval's role belongs to: an ERGO role (plus Admin, who may decide ERGO-owned types) or the
