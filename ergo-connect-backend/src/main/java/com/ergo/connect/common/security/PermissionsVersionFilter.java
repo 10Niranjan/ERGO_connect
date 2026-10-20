@@ -19,9 +19,20 @@ class PermissionsVersionFilter extends OncePerRequestFilter {
 
 	static final String HEADER = "X-Permissions-Version";
 
+	private final AccessPolicy policy;
+
+	PermissionsVersionFilter(AccessPolicy policy) {
+		this.policy = policy;
+	}
+
 	@Override
 	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
 			throws ServletException, IOException {
+		if (request.getRequestURI().startsWith(request.getContextPath() + "/api/")) {
+			// One single-row query: a permission or module-switch change saved on any instance applies to this very
+			// request on this one, instead of up to the polling interval later (module switches must hold everywhere).
+			policy.refreshIfChanged();
+		}
 		try {
 			AccessPolicy.pin(); // one consistent access sheet for the whole request
 			response.setHeader(HEADER, String.valueOf(AccessPolicy.version()));

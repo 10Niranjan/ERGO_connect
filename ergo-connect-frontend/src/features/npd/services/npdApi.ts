@@ -64,7 +64,7 @@ export interface ConversionQueueRow {
 export interface NpdListRow {
   id: number
   npdNumber: string
-  rfqNumber: string
+  rfqNumber: string | null
   customerName: string
   supplierName: string
   partNumber: string
@@ -271,7 +271,7 @@ interface NpdViewBase {
   id: number
   npdNumber: string
   rfqId: number
-  rfqNumber: string
+  rfqNumber: string | null
   partNumber: string
   revision: string | null
   description: string | null

@@ -19,6 +19,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.common.security.CurrentUser;
+import com.ergo.connect.common.security.ModuleAccess.Module;
+import com.ergo.connect.common.security.ModuleSwitch;
 import com.ergo.connect.masterdata.api.Directory;
 import com.ergo.connect.masterdata.api.Directory.CompanyRef;
 import com.ergo.connect.masterdata.api.Directory.UserRef;
@@ -127,6 +129,7 @@ public class ComparisonService {
 		c.preparedByUserId = me.userId();
 		c.preparedAt = Instant.now();
 		comparisons.save(c);
+		ModuleSwitch.requireWritable(Module.QUOTATION, Module.RFQ); // both locked until commit: no switch change mid-operation
 		rfqs.comparing(rfqId);
 		return comparison(rfqId);
 	}
@@ -151,6 +154,7 @@ public class ComparisonService {
 		e.riskScore = scores.risk();
 		e.internalRemarks = QuoteService.text(form.internalRemarks());
 		evaluations.save(e);
+		ModuleSwitch.requireWritable(Module.QUOTATION, Module.RFQ); // both locked until commit: no switch change mid-operation
 		rfqs.comparing(invitation.rfqId);
 		return comparison(invitation.rfqId);
 	}

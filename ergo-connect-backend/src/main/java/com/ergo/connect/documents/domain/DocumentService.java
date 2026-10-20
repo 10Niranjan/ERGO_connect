@@ -8,6 +8,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -22,6 +23,8 @@ import com.ergo.connect.common.event.Recipients;
 import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
+import com.ergo.connect.common.security.ModuleAccess.Module;
+import com.ergo.connect.common.security.ModuleSwitch;
 import com.ergo.connect.common.security.Role;
 import com.ergo.connect.documents.api.ApprovalStatus;
 import com.ergo.connect.documents.api.DocumentStore;
@@ -200,6 +203,7 @@ public class DocumentService {
 	public DocumentDetail edit(long id, DocumentEditForm form) {
 		CurrentUser me = CurrentUser.get();
 		Document d = visibleOrThrow(me, id);
+		requireOwnerWritable(d);
 		requireEditable(me, d);
 		requireModuleReplaceOpen(me, d);
 		requireLatest(d);
@@ -231,6 +235,7 @@ public class DocumentService {
 	public DocumentDetail replace(long id, String fileName, byte[] content, Long newCategoryId) {
 		CurrentUser me = CurrentUser.get();
 		Document d = visibleOrThrow(me, id);
+		requireOwnerWritable(d);
 		requireEditable(me, d);
 		requireModuleReplaceOpen(me, d);
 		documents.findByIdForReplace(d.id);
@@ -299,6 +304,7 @@ public class DocumentService {
 		CurrentUser me = CurrentUser.get();
 		requireAdmin(me);
 		Document d = visibleOrThrow(me, id);
+		requireOwnerWritable(d);
 		requireLatest(d);
 		if (d.lockStatus == LockStatus.LOCKED) {
 			throw ApiException.conflict("This document is already locked");
@@ -313,6 +319,7 @@ public class DocumentService {
 		CurrentUser me = CurrentUser.get();
 		requireAdmin(me);
 		Document d = visibleOrThrow(me, id);
+		requireOwnerWritable(d);
 		if (d.lockStatus == LockStatus.UNLOCKED) {
 			throw ApiException.conflict("This document is already unlocked");
 		}
@@ -330,6 +337,7 @@ public class DocumentService {
 		CurrentUser me = CurrentUser.get();
 		requireAdmin(me);
 		Document d = visibleOrThrow(me, id);
+		requireOwnerWritable(d);
 		requireLatest(d);
 		if (d.approvalStatus != ApprovalStatus.PENDING) {
 			throw ApiException.conflict("This document is not pending approval");
@@ -347,6 +355,7 @@ public class DocumentService {
 		CurrentUser me = CurrentUser.get();
 		requireAdmin(me);
 		Document d = visibleOrThrow(me, id);
+		requireOwnerWritable(d);
 		requireLatest(d);
 		if (d.approvalStatus != ApprovalStatus.PENDING) {
 			throw ApiException.conflict("This document is not pending approval");
@@ -372,6 +381,12 @@ public class DocumentService {
 		CurrentUser me = CurrentUser.get();
 		Document d = documents.findById(id).orElse(null);
 		return d != null && documentVisible(me, d) && recordVisible(d);
+	}
+
+	/** The workflow module that owns a document's record, for the notification delivery that must hide a hidden
+	 * module's notifications; no scope check of its own (the publisher already acted on the document). */
+	Optional<Module> owningModule(long id) {
+		return documents.findById(id).flatMap(this::ownerOf);
 	}
 
 	private Document visibleOrThrow(CurrentUser me, long id) {
@@ -405,6 +420,11 @@ public class DocumentService {
 	 * per row. */
 	private boolean recordVisible(Document d) {
 		long linkedRecordId = d.linkedRecordId;
+		// A hidden module's files are not listed, opened or downloaded by anyone (comment attachments follow their
+		// comment's record, resolved by the communication module below).
+		if (ModuleSwitch.ownerOf(d.linkedModule).map(m -> !ModuleSwitch.readable(m)).orElse(false)) {
+			return false;
+		}
 		return switch (d.linkedModule) {
 			case "rfq" -> rfqApi.visibleToCaller(linkedRecordId) || quotationApi.supplierInvitedToRfq(linkedRecordId);
 			// M2: per file, not per invitation - a supplier's unsubmitted draft files stay private from ERGO.
@@ -436,6 +456,20 @@ public class DocumentService {
 		return d.uploadedByCompanyId.equals(me.companyId());
 	}
 
+	/** The workflow module that owns the record a document hangs off: its own for RFQ/quotation/shipment/CAPA files,
+	 * the comment's record's for comment attachments. Empty when the document belongs to no switchable module. */
+	private Optional<Module> ownerOf(Document d) {
+		return "comment".equals(d.linkedModule) ? communicationApi.recordModuleOfComment(d.linkedRecordId)
+				: ModuleSwitch.ownerOf(d.linkedModule);
+	}
+
+	/** Every change to a document - edit, replace, lock, unlock, approve, reject - is a change to its record's module:
+	 * refused (409) while that module is read-only or hidden. Run after the visibility check, so a hidden module's
+	 * files are 404 and never confirm they exist. */
+	private void requireOwnerWritable(Document d) {
+		ownerOf(d).ifPresent(ModuleSwitch::requireWritable);
+	}
+
 	private static void requireEditable(CurrentUser me, Document d) {
 		if (!editable(me, d)) {
 			throw ApiException.conflict("This document cannot be edited right now");
@@ -460,6 +494,9 @@ public class DocumentService {
 
 	private Set<DocumentAction> actions(CurrentUser me, Document d, boolean hasLaterVersion) {
 		Set<DocumentAction> result = EnumSet.noneOf(DocumentAction.class);
+		if (!ownerOf(d).map(ModuleSwitch::writable).orElse(true)) {
+			return result; // the record's module is read-only: no button on this file does anything
+		}
 		if (editable(me, d) && !hasLaterVersion && moduleWindowOpen(d)) {
 			result.add(DocumentAction.EDIT);
 			result.add(DocumentAction.REPLACE);
@@ -537,6 +574,7 @@ public class DocumentService {
 			return List.of();
 		}
 		return links.findByDocumentId(documentId).stream()
+			.filter(l -> ModuleSwitch.ownerOf(l.linkedModule).map(ModuleSwitch::readable).orElse(true)) // no ids of a hidden module
 			.map(l -> new SecondaryLink(l.linkedModule, l.linkedRecordId))
 			.toList();
 	}

@@ -47,6 +47,7 @@ import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
 import com.ergo.connect.common.security.ModuleAccess;
 import com.ergo.connect.common.security.ModuleAccess.Module;
+import com.ergo.connect.common.security.ModuleSwitch;
 import com.ergo.connect.common.security.Role;
 import com.ergo.connect.documents.api.DocumentStore;
 import com.ergo.connect.documents.api.DocumentStore.DocumentInfo;
@@ -185,6 +186,8 @@ public class QuoteService {
 	/** SRS §5.3 "supplier assignment and RFQ float". Only active supplier companies; each once per RFQ. */
 	public RfqSuppliers invite(long rfqId, Set<Long> supplierIds, LocalDate responseDueDate) {
 		CurrentUser me = CurrentUser.get();
+		// Inviting writes quotations and moves the RFQ: both modules must accept changes before anything is saved.
+		ModuleSwitch.requireWritable(Module.QUOTATION, Module.RFQ);
 		RfqRef rfq = rfqs.forErgo(rfqId);
 		if (!rfq.acceptsInvitations()) {
 			throw ApiException.conflict("Suppliers can be invited once ERGO has validated the RFQ");
@@ -232,7 +235,7 @@ public class QuoteService {
 		CurrentUser me = CurrentUser.get();
 		List<Invitation> mine = invitations.findBySupplierCompanyIdOrderByIdDesc(me.companyId());
 		Map<Long, SupplierRfq> rfqInfo = rfqs.forSupplier(mine.stream().map(i -> i.rfqId).collect(Collectors.toSet()));
-		return mine.stream().map(i -> {
+		return mine.stream().filter(i -> rfqInfo.containsKey(i.rfqId)).map(i -> { // none while the RFQ module is hidden
 			SupplierRfq r = rfqInfo.get(i.rfqId);
 			return new SupplierAssignedRfqRow(i.id, r.number(), r.partNumber(), r.revision(), r.description(),
 					i.responseDueDate, r.quotingOpen());
@@ -246,7 +249,7 @@ public class QuoteService {
 		List<Invitation> mine = invitations.findBySupplierCompanyIdOrderByIdDesc(me.companyId());
 		Map<Long, SupplierRfq> rfqInfo = rfqs.forSupplier(mine.stream().map(i -> i.rfqId).collect(Collectors.toSet()));
 		Map<Long, SupplierQuote> byInvitation = reader.byInvitation(mine);
-		return mine.stream().map(i -> {
+		return mine.stream().filter(i -> rfqInfo.containsKey(i.rfqId)).map(i -> { // none while the RFQ module is hidden
 			SupplierRfq r = rfqInfo.get(i.rfqId);
 			SupplierQuote q = byInvitation.get(i.id);
 			int version = q == null ? 0 : q.currentVersion;
@@ -401,6 +404,7 @@ public class QuoteService {
 			case CLEAR_DECISION -> quotes.findByAssignmentId(invitation.id).orElseThrow().currentVersion > 1 ? RESUBMITTED
 					: SUBMITTED;
 		};
+		ModuleSwitch.requireWritable(Module.QUOTATION, Module.RFQ); // both locked until commit: no switch change mid-operation
 		rfqs.comparing(invitation.rfqId);
 		return view(me, invitation);
 	}
@@ -500,6 +504,9 @@ public class QuoteService {
 	 * same {@code quotingOpen} filter {@link #overdue} already uses, so an invitation on a cancelled/closed RFQ
 	 * doesn't inflate the count forever. */
 	int pendingSubmissionCount() {
+		if (!ModuleSwitch.readable(Module.RFQ)) {
+			return 0;
+		}
 		return (int) invitations.findByStatusIn(QuoteStatus.EDITABLE).stream()
 			.filter(i -> rfqs.forSupplier(i.rfqId).quotingOpen())
 			.count();
@@ -510,6 +517,9 @@ public class QuoteService {
 	/** The daily reminder scan: invitations past their response date whose supplier can still quote and whose RFQ is
 	 * still open for quotes. The supplier and ERGO's RFQ team are reminded; the customer never is. */
 	List<com.ergo.connect.common.event.OverdueItem> overdue(LocalDate today) {
+		if (!ModuleSwitch.readable(Module.RFQ)) {
+			return List.of();
+		}
 		return invitations.findByResponseDueDateBeforeAndStatusIn(today, QuoteStatus.EDITABLE).stream()
 			.filter(i -> rfqs.forSupplier(i.rfqId).quotingOpen())
 			.map(i -> new com.ergo.connect.common.event.OverdueItem(NotificationKind.OVERDUE_QUOTE, "quotation", i.id, quoteLabel(i),
@@ -723,6 +733,7 @@ public class QuoteService {
 				&& byInvitation.get(i.id).currentVersion > 0).count();
 		int awaited = (int) all.stream()
 			.filter(i -> i.status != REGRETTED && !QuoteStatus.SUBMITTED_STATES.contains(i.status)).count();
+		ModuleSwitch.requireWritable(Module.QUOTATION, Module.RFQ); // both locked until commit: no switch change mid-operation
 		rfqs.quoteProgress(rfqId, received, awaited);
 	}
 

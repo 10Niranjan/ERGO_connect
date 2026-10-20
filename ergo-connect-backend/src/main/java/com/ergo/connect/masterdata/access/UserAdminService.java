@@ -221,6 +221,16 @@ public class UserAdminService {
 	/** @return the default role to store */
 	private Role checkRoles(Set<Role> roles, Role requestedDefault, CompanyType companyType) {
 		Set<Role> assignable = roleCatalog.activeRoles().keySet();
+		if (roles.contains(Role.ERGO_ADMIN)) {
+			// Super Admin (docs/PERMISSIONS.md §10): held only by an account of the ERGO company, and only an existing
+			// Super Admin can hand it out. (The controller already says so; checked here too so no other caller can.)
+			if (companyType != CompanyType.ERGO) {
+				throw ApiException.unprocessable("The Super Admin role (ERGO Admin) can only be held by an ERGO account");
+			}
+			if (CurrentUser.find().map(me -> me.role() != Role.ERGO_ADMIN).orElse(true)) {
+				throw ApiException.forbidden("Only a Super Admin can give or keep the Super Admin role");
+			}
+		}
 		for (Role role : roles) {
 			if (role.companyType() != companyType) {
 				throw ApiException.unprocessable(role + " cannot be given to a " + companyType + " user");

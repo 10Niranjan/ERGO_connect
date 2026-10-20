@@ -11,6 +11,7 @@ import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
 import com.ergo.connect.common.security.ModuleAccess;
 import com.ergo.connect.common.security.ModuleAccess.Module;
+import com.ergo.connect.common.security.ModuleSwitch;
 import com.ergo.connect.common.security.Role;
 import com.ergo.connect.masterdata.api.Directory;
 import com.ergo.connect.masterdata.api.Directory.CompanyRef;
@@ -42,6 +43,9 @@ class QuotationApiService implements QuotationApi {
 	@Override
 	@Transactional(readOnly = true)
 	public Optional<SelectedQuote> selectedQuoteFor(long rfqId) {
+		if (!ModuleSwitch.readable(Module.QUOTATION)) {
+			return Optional.empty(); // a hidden Quotation module reveals no quote, so NPD cannot convert from it
+		}
 		return customerQuotes
 			.findFirstByRfqIdAndResponseStatusOrderByIdDesc(rfqId, ComparisonDtos.ResponseStatus.APPROVED)
 			.map(approved -> {
@@ -58,14 +62,16 @@ class QuotationApiService implements QuotationApi {
 		// The documents / communication probes concern the quote itself: a supplier role that only has RFQ access
 		// (view of the assigned RFQ) is not in its scope.
 		CurrentUser me = CurrentUser.get();
-		return ModuleAccess.canView(me.role(), Module.QUOTATION) && quoteService.inScope(me, invitationId);
+		return ModuleSwitch.readable(Module.QUOTATION) && ModuleAccess.canView(me.role(), Module.QUOTATION)
+				&& quoteService.inScope(me, invitationId);
 	}
 
 	@Override
 	@Transactional(readOnly = true)
 	public java.util.Optional<com.ergo.connect.common.record.RecordParties> partiesVisibleToCaller(long invitationId) {
 		CurrentUser me = CurrentUser.get();
-		if (!ModuleAccess.canView(me.role(), Module.QUOTATION) || !quoteService.inScope(me, invitationId)) {
+		if (!ModuleSwitch.readable(Module.QUOTATION) || !ModuleAccess.canView(me.role(), Module.QUOTATION)
+				|| !quoteService.inScope(me, invitationId)) {
 			return java.util.Optional.empty();
 		}
 		return invitations.findById(invitationId).map(i -> new com.ergo.connect.common.record.RecordParties(null, i.supplierCompanyId));
@@ -74,19 +80,26 @@ class QuotationApiService implements QuotationApi {
 	@Override
 	@Transactional(readOnly = true)
 	public java.util.List<com.ergo.connect.common.event.OverdueItem> overdueItems(java.time.LocalDate today) {
+		// A reminder asks someone to act: with either module read-only or hidden nobody can, and a hidden module's
+		// items must not be reported at all. The scan is stateless, so it resumes by itself once both accept changes.
+		if (!ModuleSwitch.writableNow(Module.QUOTATION, Module.RFQ)) {
+			return List.of();
+		}
 		return quoteService.overdue(today);
 	}
 
 	@Override
 	@Transactional(readOnly = true)
 	public boolean fileVisibleToCaller(long invitationId, long documentId) {
-		return quoteService.fileVisible(CurrentUser.get(), invitationId, documentId);
+		return ModuleSwitch.readable(Module.QUOTATION)
+				&& quoteService.fileVisible(CurrentUser.get(), invitationId, documentId);
 	}
 
 	@Override
 	@Transactional(readOnly = true)
 	public boolean replaceOpenForCaller(long invitationId) {
-		return quoteService.uploadOpenForCaller(CurrentUser.get(), invitationId);
+		return ModuleSwitch.writable(Module.QUOTATION)
+				&& quoteService.uploadOpenForCaller(CurrentUser.get(), invitationId);
 	}
 
 	@Override
@@ -94,7 +107,8 @@ class QuotationApiService implements QuotationApi {
 	public boolean supplierInvitedToRfq(long rfqId) {
 		CurrentUser me = CurrentUser.get();
 		// Same set as QuoteService.SUPPLIER_RFQ_VIEWERS: the supplier roles with RFQ access see the ERGO-shared RFQ files.
-		if (me.companyType() != CompanyType.SUPPLIER || !ModuleAccess.canView(me.role(), ModuleAccess.Module.RFQ)) {
+		if (me.companyType() != CompanyType.SUPPLIER || !ModuleSwitch.readable(Module.QUOTATION)
+				|| !ModuleAccess.canView(me.role(), ModuleAccess.Module.RFQ)) {
 			return false;
 		}
 		return invitations.findByRfqIdOrderById(rfqId).stream().anyMatch(i -> i.supplierCompanyId == me.companyId());
@@ -104,7 +118,8 @@ class QuotationApiService implements QuotationApi {
 	@Transactional(readOnly = true)
 	public List<SupplierQuoteItem> dashboardItems() {
 		CurrentUser me = CurrentUser.get();
-		if (me.companyType() != CompanyType.SUPPLIER || !QuoteService.SUPPLIER_QUOTERS.contains(me.role())) {
+		if (me.companyType() != CompanyType.SUPPLIER || !QuoteService.SUPPLIER_QUOTERS.contains(me.role())
+				|| !ModuleSwitch.readable(Module.QUOTATION)) {
 			return List.of();
 		}
 		LocalDate today = LocalDate.now();
@@ -119,7 +134,8 @@ class QuotationApiService implements QuotationApi {
 	@Transactional(readOnly = true)
 	public int pendingSubmissionCount() {
 		Role role = CurrentUser.get().role();
-		if (role != Role.ERGO_ADMIN && role != Role.ERGO_MANAGEMENT && role != Role.ERGO_RFQ) {
+		if (role != Role.ERGO_ADMIN && role != Role.ERGO_MANAGEMENT && role != Role.ERGO_RFQ
+				|| !ModuleSwitch.readable(Module.QUOTATION) || !ModuleSwitch.readable(Module.RFQ)) {
 			return 0;
 		}
 		return quoteService.pendingSubmissionCount();

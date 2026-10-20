@@ -35,7 +35,7 @@ export function NpdListPage() {
     (r) =>
       (!stage || r.stage === stage) &&
       (!risk || r.riskLevel === risk) &&
-      (!needle || [r.npdNumber, r.rfqNumber, r.customerName, r.supplierName, r.partNumber].some((v) => v.toLowerCase().includes(needle))),
+      (!needle || [r.npdNumber, r.rfqNumber, r.customerName, r.supplierName, r.partNumber].some((v) => v?.toLowerCase().includes(needle))),
   )
   const stages = [...new Set(rows.map((r) => r.stage))]
 
@@ -92,7 +92,7 @@ export function NpdListPage() {
               return (
                 <TableRow key={r.id} hover sx={{ cursor: 'pointer' }} onClick={() => navigate(`/npd/${r.id}`)}>
                   <TableCell>{r.npdNumber}</TableCell>
-                  <TableCell>{r.rfqNumber}</TableCell>
+                  <TableCell>{r.rfqNumber ?? '—'}</TableCell>
                   <TableCell>{r.customerName}</TableCell>
                   <TableCell>{r.supplierName}</TableCell>
                   <TableCell>{r.partNumber}</TableCell>

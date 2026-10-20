@@ -38,6 +38,7 @@ import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
 import com.ergo.connect.common.security.ModuleAccess;
 import com.ergo.connect.common.security.ModuleAccess.Module;
+import com.ergo.connect.common.security.ModuleSwitch;
 import com.ergo.connect.documents.api.DocumentStore;
 import com.ergo.connect.documents.api.DocumentStore.DocumentInfo;
 import com.ergo.connect.documents.api.DocumentStore.Visibility;
@@ -96,10 +97,14 @@ class RfqApiService implements RfqApi {
 		if (me.companyType() != CompanyType.ERGO) {
 			throw ApiException.notFound("RFQ");
 		}
+		ModuleSwitch.requireReadable(Module.RFQ);
 		Rfq r = rfqService.visible(me, rfqId);
+		// A read-only RFQ module offers no quoting work: every flag below is what lets the quotation module act.
+		boolean open = ModuleSwitch.writable(Module.RFQ);
 		return new RfqRef(r.id, r.number, r.customerCompanyId, r.partNumber, r.revision, r.description, r.currencyId,
-				INVITING.contains(r.status), QUOTING.contains(r.status), EVALUATING.contains(r.status),
-				OFFERING.contains(r.status), new Targets(r.targetToolingCost, r.targetPpapPiecePrice,
+				open && INVITING.contains(r.status), open && QUOTING.contains(r.status),
+				open && EVALUATING.contains(r.status), open && OFFERING.contains(r.status),
+				new Targets(r.targetToolingCost, r.targetPpapPiecePrice,
 						r.targetProductionPiecePrice, r.paymentTermId, r.moq, r.materialLeadTimeWeeks,
 						r.toolingLeadTimeDays, r.sampleLeadTimeDays, r.productionLeadTimeDays));
 	}
@@ -108,7 +113,7 @@ class RfqApiService implements RfqApi {
 	@Transactional(readOnly = true)
 	public boolean visibleToCaller(long rfqId) {
 		CurrentUser me = CurrentUser.get();
-		if (me.companyType() == CompanyType.SUPPLIER) {
+		if (me.companyType() == CompanyType.SUPPLIER || !ModuleSwitch.readable(Module.RFQ)) {
 			return false;
 		}
 		return rfqService.inScope(me, rfqId);
@@ -126,7 +131,7 @@ class RfqApiService implements RfqApi {
 	@Override
 	@Transactional(readOnly = true)
 	public boolean replaceOpenForCaller(long rfqId) {
-		return rfqService.uploadOpen(CurrentUser.get(), rfqId);
+		return ModuleSwitch.writable(Module.RFQ) && rfqService.uploadOpen(CurrentUser.get(), rfqId);
 	}
 
 	@Override
@@ -136,8 +141,10 @@ class RfqApiService implements RfqApi {
 		if (me.companyType() != CompanyType.CUSTOMER) {
 			throw ApiException.notFound("RFQ");
 		}
+		ModuleSwitch.requireReadable(Module.RFQ);
 		Rfq r = rfqService.visible(me, rfqId);
-		return new CustomerRfqRef(r.id, r.number, r.customerCompanyId, r.status == SENT_TO_CUSTOMER);
+		return new CustomerRfqRef(r.id, r.number, r.customerCompanyId,
+				ModuleSwitch.writable(Module.RFQ) && r.status == SENT_TO_CUSTOMER);
 	}
 
 	@Override
@@ -146,6 +153,7 @@ class RfqApiService implements RfqApi {
 		if (CurrentUser.get().companyType() != CompanyType.ERGO) {
 			throw ApiException.notFound("RFQ"); // an external role reads its RFQ number only through forCustomer/forSupplier
 		}
+		ModuleSwitch.requireReadable(Module.RFQ);
 		return rfqs.findById(rfqId).map(r -> r.number).orElseThrow(() -> ApiException.notFound("RFQ"));
 	}
 
@@ -162,9 +170,10 @@ class RfqApiService implements RfqApi {
 	@Override
 	@Transactional(readOnly = true)
 	public Map<Long, SupplierRfq> forSupplier(Collection<Long> rfqIds) {
-		if (rfqIds.isEmpty()) {
+		if (rfqIds.isEmpty() || !ModuleSwitch.readable(Module.RFQ)) {
 			return Map.of();
 		}
+		boolean open = ModuleSwitch.writable(Module.RFQ);
 		List<Rfq> found = rfqs.findByIdIn(rfqIds);
 		Map<Long, Named> materials = masterData.describe(Ref.MATERIAL, ids(found, r -> r.materialId));
 		Map<Long, Named> coatings = masterData.describe(Ref.COATING, ids(found, r -> r.coatingId));
@@ -177,12 +186,15 @@ class RfqApiService implements RfqApi {
 				r.processSteps.stream()
 					.map(s -> new PlannedStep(s.processId(), name(processes, s.processId()), s.stepName()))
 					.toList(),
-				QUOTING.contains(r.status))));
+				open && QUOTING.contains(r.status))));
 	}
 
 	@Override
 	@Transactional(readOnly = true)
 	public List<DocumentInfo> supplierDocuments(long rfqId) {
+		if (!ModuleSwitch.readable(Module.RFQ)) {
+			return List.of();
+		}
 		return documents.list(RfqService.MODULE, rfqId).stream()
 			.filter(d -> d.visibility() == Visibility.SUPPLIER || d.visibility() == Visibility.ALL)
 			.toList();
@@ -190,6 +202,7 @@ class RfqApiService implements RfqApi {
 
 	@Override
 	public void sentToSuppliers(long rfqId) {
+		ModuleSwitch.requireWritable(Module.RFQ); // a read-only or hidden RFQ module is not changed by another module either
 		Rfq rfq = rfqs.findById(rfqId).orElseThrow();
 		if (rfq.status == VALIDATED) {
 			rfq.status = SENT_TO_SUPPLIERS;
@@ -201,6 +214,7 @@ class RfqApiService implements RfqApi {
 
 	@Override
 	public void quoteProgress(long rfqId, int received, int awaited) {
+		ModuleSwitch.requireWritable(Module.RFQ); // a read-only or hidden RFQ module is not changed by another module either
 		Rfq rfq = rfqs.findById(rfqId).orElseThrow();
 		if (PROGRESS.contains(rfq.status)) {
 			rfq.status = received == 0 ? SENT_TO_SUPPLIERS : awaited == 0 ? QUOTES_COMPLETE : QUOTES_PARTIAL;
@@ -209,6 +223,7 @@ class RfqApiService implements RfqApi {
 
 	@Override
 	public void comparing(long rfqId) {
+		ModuleSwitch.requireWritable(Module.RFQ); // a read-only or hidden RFQ module is not changed by another module either
 		Rfq rfq = rfqs.findById(rfqId).orElseThrow();
 		if (rfq.status == QUOTES_PARTIAL || rfq.status == QUOTES_COMPLETE) {
 			rfq.status = UNDER_COMPARISON;
@@ -217,6 +232,7 @@ class RfqApiService implements RfqApi {
 
 	@Override
 	public void sentToCustomer(long rfqId) {
+		ModuleSwitch.requireWritable(Module.RFQ); // a read-only or hidden RFQ module is not changed by another module either
 		Rfq rfq = rfqs.findById(rfqId).orElseThrow();
 		if (!OFFERING.contains(rfq.status)) {
 			throw ApiException.conflict("A quote can go to the customer once quotes are in, and not while the customer "
@@ -227,6 +243,7 @@ class RfqApiService implements RfqApi {
 
 	@Override
 	public void customerResponded(long rfqId, CustomerResponse response) {
+		ModuleSwitch.requireWritable(Module.RFQ); // a read-only or hidden RFQ module is not changed by another module either
 		Rfq rfq = rfqs.findById(rfqId).orElseThrow();
 		if (rfq.status != SENT_TO_CUSTOMER) {
 			throw ApiException.conflict("This RFQ is no longer waiting for your answer");
@@ -242,7 +259,7 @@ class RfqApiService implements RfqApi {
 	@Transactional(readOnly = true)
 	public List<ApprovedRfq> customerApproved() {
 		CurrentUser me = CurrentUser.get();
-		if (!ModuleAccess.canView(me.role(), Module.RFQ)) {
+		if (!ModuleSwitch.readable(Module.RFQ) || !ModuleAccess.canView(me.role(), Module.RFQ)) {
 			return List.of(); // a hidden RFQ module (switch or sheet) is closed here too
 		}
 		List<Rfq> approved = switch (me.role()) {
@@ -270,6 +287,9 @@ class RfqApiService implements RfqApi {
 	@Override
 	@Transactional(readOnly = true)
 	public List<RfqDashboardItem> dashboardItems() {
+		if (!ModuleSwitch.readable(Module.RFQ)) {
+			return List.of();
+		}
 		CurrentUser me = CurrentUser.get();
 		List<Rfq> visible = switch (me.role()) {
 			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_RFQ -> rfqs.findAllByOrderByIdDesc();

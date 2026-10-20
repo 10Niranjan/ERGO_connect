@@ -30,6 +30,7 @@ import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
 import com.ergo.connect.common.security.ModuleAccess;
 import com.ergo.connect.common.security.ModuleAccess.Module;
+import com.ergo.connect.common.security.ModuleSwitch;
 import com.ergo.connect.common.security.Role;
 import com.ergo.connect.masterdata.api.Directory;
 import com.ergo.connect.masterdata.api.Directory.CompanyRef;
@@ -71,13 +72,18 @@ class NpdApiService implements NpdApi {
 	@Override
 	@Transactional(readOnly = true)
 	public java.util.List<com.ergo.connect.common.event.OverdueItem> overdueItems(java.time.LocalDate today) {
+		// Reminders ask someone to act: not while NPD is read-only, and never from a hidden module. The scan is
+		// stateless, so it simply resumes when NPD accepts changes again.
+		if (!ModuleSwitch.writableNow(Module.NPD)) {
+			return java.util.List.of();
+		}
 		return npdService.overdue(today);
 	}
 
 	@Override
 	@Transactional(readOnly = true)
 	public Optional<com.ergo.connect.common.record.RecordParties> partiesVisibleToCaller(long npdProjectId) {
-		if (!npdService.inScope(CurrentUser.get(), npdProjectId)) {
+		if (!ModuleSwitch.readable(Module.NPD) || !npdService.inScope(CurrentUser.get(), npdProjectId)) {
 			return Optional.empty();
 		}
 		return projects.findById(npdProjectId).map(p -> new com.ergo.connect.common.record.RecordParties(p.customerCompanyId, p.supplierCompanyId));
@@ -85,6 +91,9 @@ class NpdApiService implements NpdApi {
 
 	@Override
 	public HandoverProject handover(long npdProjectId) {
+		// Marking the project handed over is an NPD change made on OFP's behalf: NPD must accept changes (and OFP,
+		// which creates the order in this same transaction), or neither side is touched.
+		ModuleSwitch.requireWritable(Module.NPD, Module.OFP);
 		CurrentUser me = CurrentUser.get();
 		if (me.companyType() != CompanyType.ERGO) {
 			throw ApiException.notFound("NPD project");
@@ -105,6 +114,11 @@ class NpdApiService implements NpdApi {
 
 	@Override
 	public Optional<ProjectRef> projectRef(long npdProjectId) {
+		// A quality record can only be linked to a project while NPD is not hidden. The caller's own NPD level is not
+		// asked: the role grid is unchanged, and Quality's own rules (who creates, company ownership) govern the link.
+		if (!ModuleSwitch.readable(Module.NPD)) {
+			return Optional.empty();
+		}
 		return projects.findById(npdProjectId)
 			.map(p -> new ProjectRef(p.id, p.customerCompanyId, p.supplierCompanyId));
 	}
@@ -112,6 +126,9 @@ class NpdApiService implements NpdApi {
 	@Override
 	@Transactional(readOnly = true)
 	public List<NpdDashboardItem> dashboardItems() {
+		if (!ModuleSwitch.readable(Module.NPD)) {
+			return List.of();
+		}
 		CurrentUser me = CurrentUser.get();
 		List<NpdProject> visible;
 		if (FULL_VIEWERS.contains(me.role())) {
@@ -145,6 +162,9 @@ class NpdApiService implements NpdApi {
 	@Override
 	@Transactional(readOnly = true)
 	public int unconvertedApprovedRfqCount() {
+		if (!ModuleSwitch.readable(Module.NPD)) {
+			return 0;
+		}
 		return npdService.unconvertedApprovedRfqCount();
 	}
 
@@ -152,7 +172,8 @@ class NpdApiService implements NpdApi {
 	@Transactional(readOnly = true)
 	public int pendingApprovalsCount() {
 		CurrentUser me = CurrentUser.get();
-		if (me.companyType() != CompanyType.ERGO || (!ModuleAccess.canApprove(me.role(), Module.NPD) && me.role() != ERGO_ADMIN)) {
+		if (!ModuleSwitch.readable(Module.NPD) || me.companyType() != CompanyType.ERGO
+				|| (!ModuleAccess.canApprove(me.role(), Module.NPD) && me.role() != ERGO_ADMIN)) {
 			return 0; // Management-only widget (ARCHITECTURE.md §8, 2026-10-05): not shown on the KAM dashboard
 		}
 		return (int) approvals.countByApprovalStatus(ApprovalStatus.PENDING);

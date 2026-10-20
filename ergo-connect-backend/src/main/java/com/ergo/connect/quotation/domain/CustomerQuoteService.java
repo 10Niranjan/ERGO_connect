@@ -29,6 +29,7 @@ import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
 import com.ergo.connect.common.security.ModuleAccess;
 import com.ergo.connect.common.security.ModuleAccess.Module;
+import com.ergo.connect.common.security.ModuleSwitch;
 import com.ergo.connect.common.security.Role;
 import com.ergo.connect.masterdata.api.Directory;
 import com.ergo.connect.masterdata.api.Directory.CompanyRef;
@@ -193,6 +194,7 @@ public class CustomerQuoteService {
 			}
 		};
 		sent.customerView = json.writeValueAsString(content);
+		ModuleSwitch.requireWritable(Module.QUOTATION, Module.RFQ); // both locked until commit: no switch change mid-operation
 		rfqs.sentToCustomer(rfqId); // 409 unless the RFQ is ready for a quote to the customer
 		customerQuotes.save(sent);
 		notifier.send(NotificationKind.CUSTOMER_QUOTE_SENT, "rfq", rfqId, rfq.number(), null,
@@ -228,6 +230,7 @@ public class CustomerQuoteService {
 		quote.responseByUserId = me.userId();
 		quote.responseAt = Instant.now();
 		quote.responseComment = comment;
+		ModuleSwitch.requireWritable(Module.QUOTATION, Module.RFQ); // both locked until commit: no switch change mid-operation
 		rfqs.customerResponded(quote.rfqId, form.response()); // 409 when the RFQ no longer waits (e.g. closed)
 		notifier.send(NotificationKind.CUSTOMER_QUOTE_RESPONDED, "rfq", quote.rfqId, rfqRef.number(),
 				switch (form.response()) {

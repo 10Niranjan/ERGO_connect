@@ -30,20 +30,28 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 import com.ergo.connect.common.audit.AuditLogService;
+import com.ergo.connect.common.event.ModuleSwitchChanged;
 import com.ergo.connect.common.event.NotificationKind;
 import com.ergo.connect.common.event.Notifier;
 import com.ergo.connect.common.event.Recipients;
 import com.ergo.connect.common.exception.ApiException;
+import com.ergo.connect.common.security.AccessPolicy;
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
 import com.ergo.connect.common.security.ModuleAccess;
 import com.ergo.connect.common.security.ModuleAccess.Module;
+import com.ergo.connect.common.security.ModuleSwitch;
 import com.ergo.connect.common.security.Role;
 import com.ergo.connect.masterdata.api.Directory;
 import com.ergo.connect.masterdata.api.Directory.CompanyRef;
@@ -130,6 +138,8 @@ public class DeviationService {
 
 	private static final Set<Role> CUSTOMER_VIEWERS = ModuleAccess.viewers(Module.QUALITY, CompanyType.CUSTOMER);
 
+	private static final Logger log = LoggerFactory.getLogger(DeviationService.class);
+
 	private final DeviationRepository deviations;
 
 	private final DeviationApprovalRepository approvals;
@@ -150,9 +160,12 @@ public class DeviationService {
 
 	private final Notifier notifier;
 
+	private final TransactionTemplate transaction;
+
 	DeviationService(DeviationRepository deviations, DeviationApprovalRepository approvals,
 			InspectionRepository inspections, Directory directory, AuditLogService audit, NpdApi npdApi, OfpApi ofpApi,
-			JdbcTemplate jdbc, JsonMapper json, Notifier notifier) {
+			JdbcTemplate jdbc, JsonMapper json, Notifier notifier, PlatformTransactionManager transactionManager) {
+		this.transaction = new TransactionTemplate(transactionManager);
 		this.notifier = notifier;
 		this.deviations = deviations;
 		this.approvals = approvals;
@@ -466,10 +479,36 @@ public class DeviationService {
 	 * channel outside a request); no version snapshot (class comment). */
 	@Scheduled(cron = "${ergo.quality.deviation-expiry-cron:0 0 2 * * *}")
 	public void expireOverdueDeviations() {
+		// Expiry is a status change: not while Quality is read-only or hidden. Nothing is skipped for good - the query
+		// below selects by date, so the first run after Quality accepts changes expires everything that lapsed
+		// meanwhile (and the switch-restore catch-up below triggers that run right away).
+		if (!ModuleSwitch.writableNow(Module.QUALITY)) {
+			log.info("Deviation expiry paused: the Quality module is not accepting changes");
+			return;
+		}
 		LocalDate today = LocalDate.now();
 		for (Deviation d : deviations.findByCurrentStatusAndValidityEndDateBefore(DeviationStatus.APPROVED, today)) {
 			d.currentStatus = DeviationStatus.EXPIRED;
 		}
+	}
+
+	/** Quality was switched back on: run the expiry that was paused, now, instead of at the next 02:00. Its own thread,
+	 * so it acts as the system with the new switch (like the scheduled run), not as the admin who flipped it. */
+	@TransactionalEventListener(fallbackExecution = true)
+	@Transactional(propagation = org.springframework.transaction.annotation.Propagation.NOT_SUPPORTED)
+	public void onSwitchChanged(ModuleSwitchChanged change) {
+		if (!change.reopened() || !"QUALITY".equals(change.module())) {
+			return;
+		}
+		Thread.ofVirtual().name("deviation-expiry-catch-up").start(() -> {
+			try {
+				AccessPolicy.syncNow();
+				transaction.executeWithoutResult(status -> expireOverdueDeviations()); // `this` has no proxy: own transaction
+			}
+			catch (RuntimeException e) {
+				log.error("Catch-up deviation expiry after Quality was switched back on failed", e);
+			}
+		});
 	}
 
 	private static String pretty(DeviationStatus status) {

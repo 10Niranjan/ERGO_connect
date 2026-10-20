@@ -5,6 +5,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -16,6 +17,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import com.ergo.connect.common.security.ModuleAccess.Level;
 
@@ -66,6 +68,9 @@ public class AccessPolicy {
 	 */
 	private static final ThreadLocal<Snapshot> PINNED = new ThreadLocal<>();
 
+	/** The bean, for the static switch checks that must read the database rather than the snapshot. */
+	private static volatile AccessPolicy instance;
+
 	private final JdbcTemplate jdbc;
 
 	AccessPolicy(JdbcTemplate jdbc) {
@@ -74,6 +79,7 @@ public class AccessPolicy {
 
 	@PostConstruct
 	void load() {
+		instance = this;
 		install(read());
 	}
 
@@ -91,7 +97,9 @@ public class AccessPolicy {
 		CURRENT.accumulateAndGet(next, (cur, n) -> cur == null || n.version() >= cur.version() ? n : cur);
 	}
 
-	/** Cheap single-row check; reloads only when another instance (or a save) changed the version. */
+	/** Cheap single-row check; reloads only when another instance (or a save) changed the version. Also run at the
+	 * start of every API request (PermissionsVersionFilter), so a permission or switch change made on one instance
+	 * applies to the next request on every other instance, not only after the polling interval. */
 	@Scheduled(fixedDelayString = "${ergo.access.refresh-ms:5000}")
 	void refreshIfChanged() {
 		try {
@@ -104,6 +112,31 @@ public class AccessPolicy {
 		catch (RuntimeException e) {
 			log.warn("Access policy refresh failed; keeping the last good snapshot", e);
 		}
+	}
+
+	/**
+	 * The switch of each named module straight from the database, never from the snapshot, so a check made right
+	 * before a write is correct on every instance and on every thread (background jobs included). Inside a writable
+	 * transaction the rows are share-locked until it ends: a concurrent switch change then waits for the in-flight
+	 * operation instead of landing in the middle of it, so one operation never straddles a switch change.
+	 */
+	static Map<String, String> capsNow(Collection<String> modules) {
+		AccessPolicy policy = instance;
+		if (policy == null) {
+			throw new IllegalStateException("Access policy not loaded");
+		}
+		boolean lock = TransactionSynchronizationManager.isActualTransactionActive()
+				&& !TransactionSynchronizationManager.isCurrentTransactionReadOnly();
+		Map<String, String> caps = new LinkedHashMap<>();
+		policy.jdbc.query(con -> {
+			var ps = con.prepareStatement("SELECT module_code, access_cap FROM app_modules WHERE module_code = ANY (?)"
+					+ " ORDER BY module_code" + (lock ? " FOR SHARE" : ""));
+			ps.setArray(1, con.createArrayOf("varchar", modules.toArray()));
+			return ps;
+		}, rs -> {
+			caps.put(rs.getString(1), rs.getString(2));
+		});
+		return caps;
 	}
 
 	/** Reload now (called after a permission save commits). */
@@ -176,6 +209,25 @@ public class AccessPolicy {
 
 	public static List<ModuleInfo> modules() {
 		return snapshot().modules();
+	}
+
+	/** Brings this instance's snapshot up to the database now, for background threads that must see a switch change
+	 * that has just committed (their first read would otherwise race the post-commit refresh). */
+	public static void syncNow() {
+		AccessPolicy policy = instance;
+		if (policy != null) {
+			policy.refreshIfChanged();
+		}
+	}
+
+	/** The module's switch (NV hidden, V read-only, A no final approvals, O on) in this request's snapshot. */
+	public static String cap(String module) {
+		for (ModuleInfo m : snapshot().modules()) {
+			if (m.code().equals(module)) {
+				return m.cap();
+			}
+		}
+		throw new IllegalArgumentException("Unknown module " + module);
 	}
 
 	/** The effective level code (NV/V/A/O) of a role on a module: its own level lowered to the module switch. */

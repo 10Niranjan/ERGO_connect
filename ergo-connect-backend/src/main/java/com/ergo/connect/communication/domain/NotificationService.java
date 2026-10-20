@@ -26,6 +26,8 @@ import com.ergo.connect.common.event.Recipients.CompanyRoles;
 import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
+import com.ergo.connect.common.security.ModuleAccess.Module;
+import com.ergo.connect.common.security.ModuleSwitch;
 import com.ergo.connect.common.security.Role;
 import com.ergo.connect.communication.api.NotificationType;
 import com.ergo.connect.communication.domain.NotificationCatalog.Spec;
@@ -116,6 +118,20 @@ public class NotificationService {
 		if (spec == null) {
 			return;
 		}
+		// Module switches: a notification files under the module its record belongs to. A hidden module notifies
+		// nobody (it would expose that module's activity); read-only still delivers, it is information not a change.
+		Module module;
+		try {
+			module = "document".equals(event.linkedModule())
+					? documentsApi.owningModule(event.linkedRecordId()).orElse(null)
+					: ModuleSwitch.ownerOf(event.linkedModule()).orElse(null);
+		}
+		catch (RuntimeException e) {
+			module = null; // unfiled (e.g. the document is gone): delivery's own record-scope check still decides
+		}
+		if (module != null && !ModuleSwitch.readable(module)) {
+			return;
+		}
 		String message = message(event);
 		Map<String, Boolean> scopeCache = new HashMap<>();
 		List<Object[]> rows = new java.util.ArrayList<>();
@@ -128,14 +144,14 @@ public class NotificationService {
 			rows.add(new Object[] { spec.type().name(), event.kind().name(), event.linkedModule(),
 					event.linkedRecordId(), c.user().id(), spec.titleFor(side), message,
 					RecordScope.actionUrl(event.linkedModule(), event.linkedRecordId()), event.dedupeKey(),
-					event.actorUserId() });
+					event.actorUserId(), module == null ? null : module.name() });
 		}
 		if (!rows.isEmpty()) {
 			jdbc.batchUpdate("""
 					INSERT INTO notifications (notification_type, event_kind, linked_module, linked_record_id,
 					                           recipient_user_id, title, message, action_url, dedupe_key,
-					                           triggered_by_user_id)
-					VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING""", rows);
+					                           triggered_by_user_id, module_code)
+					VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING""", rows);
 		}
 	}
 
@@ -225,13 +241,13 @@ public class NotificationService {
 		String typeName = type == null ? null : type.name();
 		Long total = jdbc.queryForObject("""
 				SELECT count(*) FROM notifications WHERE recipient_user_id = ?
-				  AND (? = false OR read_flag = false) AND (?::text IS NULL OR notification_type = ?)""", Long.class,
-				me, unreadOnly, typeName, typeName);
+				  AND (? = false OR read_flag = false) AND (?::text IS NULL OR notification_type = ?)"""
+				+ notHidden(), Long.class, me, unreadOnly, typeName, typeName);
 		List<NotificationView> items = jdbc.query("""
 				SELECT * FROM notifications WHERE recipient_user_id = ?
-				  AND (? = false OR read_flag = false) AND (?::text IS NULL OR notification_type = ?)
-				ORDER BY sent_at DESC, notification_id DESC LIMIT ? OFFSET ?""", VIEW, me, unreadOnly, typeName,
-				typeName, pageSize, (long) pageNo * pageSize);
+				  AND (? = false OR read_flag = false) AND (?::text IS NULL OR notification_type = ?)"""
+				+ notHidden() + " ORDER BY sent_at DESC, notification_id DESC LIMIT ? OFFSET ?", VIEW, me, unreadOnly,
+				typeName, typeName, pageSize, (long) pageNo * pageSize);
 		return new NotificationPage(items, pageNo, pageSize, total == null ? 0 : total, unread(me));
 	}
 
@@ -245,8 +261,9 @@ public class NotificationService {
 		long me = CurrentUser.get().userId();
 		jdbc.update("""
 				UPDATE notifications SET read_flag = true, read_at = now()
-				WHERE notification_id = ? AND recipient_user_id = ? AND read_flag = false""", id, me);
-		return jdbc.query("SELECT * FROM notifications WHERE notification_id = ? AND recipient_user_id = ?", VIEW, id, me)
+				WHERE notification_id = ? AND recipient_user_id = ? AND read_flag = false""" + notHidden(), id, me);
+		return jdbc.query("SELECT * FROM notifications WHERE notification_id = ? AND recipient_user_id = ?" + notHidden(),
+				VIEW, id, me)
 			.stream()
 			.findFirst()
 			.orElseThrow(() -> ApiException.notFound("Notification"));
@@ -256,14 +273,26 @@ public class NotificationService {
 		long me = CurrentUser.get().userId();
 		return new MarkedRead(jdbc.update("""
 				UPDATE notifications SET read_flag = true, read_at = now()
-				WHERE recipient_user_id = ? AND read_flag = false""", me));
+				WHERE recipient_user_id = ? AND read_flag = false""" + notHidden(), me));
 	}
 
 	private long unread(long userId) {
 		Long count = jdbc.queryForObject(
-				"SELECT count(*) FROM notifications WHERE recipient_user_id = ? AND read_flag = false", Long.class,
-				userId);
+				"SELECT count(*) FROM notifications WHERE recipient_user_id = ? AND read_flag = false" + notHidden(),
+				Long.class, userId);
 		return count == null ? 0 : count;
+	}
+
+	/**
+	 * Module switches: notifications of a module switched to NV are kept but invisible - not listed, not counted, not
+	 * markable as read (so their unread state survives) - and reappear unchanged when the module is switched back on.
+	 * The names spliced in are the fixed module codes, never user input.
+	 */
+	private static String notHidden() {
+		List<Module> hidden = ModuleSwitch.hidden();
+		return hidden.isEmpty() ? ""
+				: " AND (module_code IS NULL OR module_code NOT IN ("
+						+ hidden.stream().map(m -> "'" + m.name() + "'").collect(Collectors.joining(",")) + "))";
 	}
 
 }

@@ -71,8 +71,8 @@ const SWITCH_LABEL: Record<AccessCode, string> = {
 const SWITCH_MEANING: Record<AccessCode, string> = {
   O: 'The module works as the role sheet says.',
   A: 'Nobody can give this module’s final approval. Roles that need approval rights for their own steps (e.g. ERGO creating OFP orders) lose those too.',
-  V: 'Nobody can create, edit, submit or approve; records stay readable.',
-  NV: 'The module is closed for every role (menu, pages, API, dashboard). Data is kept.',
+  V: 'Read-only everywhere: nobody and nothing can change this module’s records - not its users, not other modules (a quote cannot move its RFQ, a handover cannot mark its NPD project), not comments, document lock/approval/replace, status changes or scheduled jobs. Records stay readable. Reminders and expiry pause and catch up when it is switched back on.',
+  NV: 'Hidden everywhere: closed for every role and every internal path (menu, pages, API, dashboards, queues, comments, documents, notifications, other modules, scheduled jobs). Data is kept. Quality hidden also stops order dispatch and NPD Final Sample Readiness (their gate cannot be checked).',
 }
 
 const keyOf = (role: Role, module: string) => `${role}|${module}`

@@ -128,7 +128,7 @@ function NpdDetail({ npd }: { npd: NpdView }) {
 
   const projectFacts: [string, string][] = [
     ['NPD number', npd.npdNumber],
-    ['RFQ', npd.rfqNumber],
+    ['RFQ', npd.rfqNumber ?? '—'],
   ]
   if (npd.audience !== 'SUPPLIER') projectFacts.push(['Customer', npd.customer.name])
   if (npd.audience === 'ERGO') projectFacts.push(['Supplier', npd.supplier.name])
@@ -161,9 +161,13 @@ function NpdDetail({ npd }: { npd: NpdView }) {
           </Stack>
           <Typography color="text.secondary">
             RFQ{' '}
-            <Link component={RouterLink} to={`/rfqs/${npd.rfqId}`}>
-              {npd.rfqNumber}
-            </Link>
+            {npd.rfqNumber ? (
+              <Link component={RouterLink} to={`/rfqs/${npd.rfqId}`}>
+                {npd.rfqNumber}
+              </Link>
+            ) : (
+              '—'
+            )}
             {npd.audience === 'ERGO' && ` · ${npd.customer.name} → ${npd.supplier.name}`}
             {npd.audience === 'CUSTOMER' && ` · ${npd.customer.name}`}
             {` · ${npd.partNumber}`}

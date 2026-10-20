@@ -26,6 +26,7 @@ Phase 0 foundation ✅ → 1a access model (login, roles, company scope, audit) 
 - **Every write is audited** (SRS §15) and critical records are versioned (§15.4). `audit_logs` is append-only (DB trigger).
 - **RFQ → NPD is manual.** Approval only puts the RFQ in the "ready for conversion" queue.
 - **Currency is tagged on every money row** (INR/USD/EUR/RMB).
+- **Module switches bind everything** (`docs/PERMISSIONS.md` §9): a module at V refuses every change and at NV shows nothing, from any path - other modules' facades, comments, documents, notifications, scheduled jobs. Use `ModuleSwitch` (`requireWritable` before the first write, `readable` for reads); a new `<module>.api` method must be classified in `ModuleSwitchFacadeTests`.
 - Modules talk only via `<module>.api`. `ModuleBoundaryTest` fails the build otherwise.
 - Record responses list the caller's allowed actions (see `CompanyDtos.CompanyAction`), computed by the same checks that enforce them. The UI renders only those buttons.
 - Flyway migrations are immutable once committed. Add a new `V<n>__<module>_<change>.sql` instead.

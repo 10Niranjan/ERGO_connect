@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 
 import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.common.record.RecordParties;
+import com.ergo.connect.common.security.ModuleSwitch;
 import com.ergo.connect.npd.api.NpdApi;
 import com.ergo.connect.ofp.api.OfpApi;
 import com.ergo.connect.quality.api.QualityApi;
@@ -44,6 +45,10 @@ class RecordScope {
 
 	/** Empty = the record doesn't exist for the current caller. */
 	Optional<RecordParties> parties(String module, long id) {
+		// A hidden module has no records for anyone: comments, the inbox and notification delivery all stop here.
+		if (ModuleSwitch.ownerOf(module).map(m -> !ModuleSwitch.readable(m)).orElse(false)) {
+			return Optional.empty();
+		}
 		return switch (module) {
 			case "rfq" -> rfqApi.partiesVisibleToCaller(id);
 			case "quotation" -> quotationApi.partiesVisibleToCaller(id);
@@ -54,6 +59,16 @@ class RecordScope {
 			case "deviation" -> qualityApi.deviationPartiesVisibleToCaller(id);
 			default -> throw ApiException.unprocessable("Unknown record type: " + module);
 		};
+	}
+
+	/** True while the record's module accepts changes (switch A or O). Non-throwing, for probes and button state. */
+	boolean writable(String module) {
+		return ModuleSwitch.ownerOf(module).map(ModuleSwitch::writable).orElse(true);
+	}
+
+	/** The enforcing check for a change to a record of this kind: 409 while its module is read-only or hidden. */
+	void requireWritable(String module) {
+		ModuleSwitch.ownerOf(module).ifPresent(ModuleSwitch::requireWritable);
 	}
 
 	/** Where the record lives in the UI: the same routes the frontend uses. */

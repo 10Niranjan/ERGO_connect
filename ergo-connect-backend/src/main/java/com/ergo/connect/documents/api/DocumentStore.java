@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.ergo.connect.common.audit.AuditLogService;
 import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.common.security.CurrentUser;
+import com.ergo.connect.common.security.ModuleSwitch;
 import com.ergo.connect.documents.domain.DocumentStorage;
 import com.ergo.connect.documents.domain.InfectedFileException;
 import com.ergo.connect.documents.domain.VirusScanException;
@@ -97,6 +98,7 @@ public class DocumentStore {
 	}
 
 	public DocumentInfo store(String module, long recordId, String fileName, byte[] content, Visibility visibility) {
+		requireWritable(module);
 		CurrentUser me = CurrentUser.get();
 		String name = cleanName(fileName);
 		String extension = name.contains(".") ? name.substring(name.lastIndexOf('.') + 1).toLowerCase(Locale.ROOT) : "";
@@ -134,12 +136,18 @@ public class DocumentStore {
 
 	@Transactional(readOnly = true)
 	public List<DocumentInfo> list(String module, long recordId) {
+		if (hidden(module)) {
+			return List.of();
+		}
 		return jdbc.query("SELECT * FROM documents WHERE linked_module = ? AND linked_record_id = ? ORDER BY created_at",
 				INFO, module, recordId);
 	}
 
 	@Transactional(readOnly = true)
 	public Optional<DocumentInfo> find(String module, long recordId, long documentId) {
+		if (hidden(module)) {
+			return Optional.empty();
+		}
 		return jdbc.query("""
 				SELECT * FROM documents WHERE document_id = ? AND linked_module = ? AND linked_record_id = ?""", INFO,
 				documentId, module, recordId).stream().findFirst();
@@ -151,6 +159,7 @@ public class DocumentStore {
 	}
 
 	public void setVisibility(DocumentInfo document, Visibility visibility) {
+		requireWritable(linkedModuleOf(document));
 		// Second security review N2: a locked/approved document is final for every role (client decision M7), and the
 		// raw update must still bump row_version so it cannot silently race the Library's optimistic lock (H5).
 		if (document.lockStatus() == LockStatus.LOCKED || document.approvalStatus() == ApprovalStatus.APPROVED) {
@@ -172,6 +181,7 @@ public class DocumentStore {
 	 * through any module's own delete path either.
 	 */
 	public void delete(DocumentInfo document) {
+		requireWritable(linkedModuleOf(document));
 		if (document.lockStatus() == LockStatus.LOCKED || document.approvalStatus() == ApprovalStatus.APPROVED
 				|| document.supersedesDocumentId() != null || hasLaterVersion(document.id())) {
 			throw ApiException.conflict("This document can no longer be deleted; it has been locked, approved, or "
@@ -180,6 +190,25 @@ public class DocumentStore {
 		storage.delete(document.id());
 		jdbc.update("DELETE FROM documents WHERE document_id = ?", document.id());
 		audit.record(MODULE, "Document", document.id(), "DELETE", "file", document.fileName(), null);
+	}
+
+	/**
+	 * Module switches: every file written, re-shared or deleted through here belongs to a record of RFQ, Quotation, OFP
+	 * or Quality, so it is refused (409) while that module is read-only or hidden, whoever calls and from whatever
+	 * path. (Comment attachments are checked by the communication module against the comment's own record.)
+	 */
+	private static void requireWritable(String linkedModule) {
+		ModuleSwitch.ownerOf(linkedModule).ifPresent(ModuleSwitch::requireWritable);
+	}
+
+	/** A hidden module's files are not found by that module's own lookups either. */
+	private static boolean hidden(String linkedModule) {
+		return ModuleSwitch.ownerOf(linkedModule).map(m -> !ModuleSwitch.readable(m)).orElse(false);
+	}
+
+	private String linkedModuleOf(DocumentInfo document) {
+		return jdbc.query("SELECT linked_module FROM documents WHERE document_id = ?", rs -> rs.next() ? rs.getString(1) : null,
+				document.id());
 	}
 
 	private boolean hasLaterVersion(long documentId) {

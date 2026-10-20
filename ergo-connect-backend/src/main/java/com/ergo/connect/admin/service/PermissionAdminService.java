@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,6 +25,7 @@ import com.ergo.connect.admin.service.PermissionAdminDtos.Matrix;
 import com.ergo.connect.admin.service.PermissionAdminDtos.ModuleColumn;
 import com.ergo.connect.admin.service.PermissionAdminDtos.RoleRow;
 import com.ergo.connect.common.audit.AuditLogService;
+import com.ergo.connect.common.event.ModuleSwitchChanged;
 import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.common.security.AccessPolicy;
 import com.ergo.connect.common.security.CompanyType;
@@ -60,7 +62,11 @@ public class PermissionAdminService {
 
 	private final AccessPolicy policy;
 
-	PermissionAdminService(JdbcTemplate jdbc, AuditLogService audit, AccessPolicy policy) {
+	private final ApplicationEventPublisher events;
+
+	PermissionAdminService(JdbcTemplate jdbc, AuditLogService audit, AccessPolicy policy,
+			ApplicationEventPublisher events) {
+		this.events = events;
 		this.jdbc = jdbc;
 		this.audit = audit;
 		this.policy = policy;
@@ -164,9 +170,17 @@ public class PermissionAdminService {
 			throw ApiException.unprocessable("Nothing to change: the module already has this switch");
 		}
 		audit.reason(reason.trim());
-		jdbc.update("UPDATE app_modules SET access_cap = ? WHERE module_code = ?", level, module);
+		// In-flight operations hold the switch row (ModuleSwitch.requireWritable); wait for them, but not forever.
+		jdbc.execute("SET LOCAL lock_timeout = '10s'");
+		try {
+			jdbc.update("UPDATE app_modules SET access_cap = ? WHERE module_code = ?", level, module);
+		}
+		catch (org.springframework.dao.CannotAcquireLockException e) {
+			throw ApiException.conflict("Operations on this module are still in progress. Nothing was changed; try again in a moment.");
+		}
 		audit.record("admin", MODULE_ENTITY, (Long) row.get("id"), "MODULE_SWITCH_CHANGED", module, old, level);
 		bumpVersionAfterCommitRefresh();
+		events.publishEvent(new ModuleSwitchChanged(module, old, level)); // delivered after commit: paused jobs catch up
 		return matrix(side);
 	}
 

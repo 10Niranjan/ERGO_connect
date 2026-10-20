@@ -39,6 +39,7 @@ import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
 import com.ergo.connect.common.security.ModuleAccess;
 import com.ergo.connect.common.security.ModuleAccess.Module;
+import com.ergo.connect.common.security.ModuleSwitch;
 import com.ergo.connect.common.security.Role;
 import com.ergo.connect.documents.api.DocumentStore;
 import com.ergo.connect.documents.api.DocumentStore.DocumentInfo;
@@ -327,6 +328,9 @@ public class OrderService {
 		Order order = visible(me, id);
 		require(OrderAction.RELEASE, me, order);
 		OrderStatus previous = statusBeforeHold(order.id);
+		if (previous == OrderStatus.DISPATCH_READY) {
+			requireQualityGateReadable();
+		}
 		if (previous == OrderStatus.DISPATCH_READY && !dispatchReadyGateMet(order.id)) {
 			throw ApiException
 				.conflict("Cannot release back to Dispatch Ready - not every material inspection has passed anymore");
@@ -377,6 +381,7 @@ public class OrderService {
 		if (!EDITORS.contains(me.role()) || order.currentStatus != OrderStatus.PACKAGING_IN_PROGRESS) {
 			throw ApiException.conflict("This action is not available for this order right now");
 		}
+		requireQualityGateReadable();
 		if (!dispatchReadyGateMet(order.id)) {
 			throw ApiException
 				.unprocessable("All material inspections must pass before the order can be marked dispatch ready.");
@@ -397,6 +402,15 @@ public class OrderService {
 		return qualityApi.ofpDispatchGateMet(orderId);
 	}
 
+	/** The gate is Quality's. While that module is hidden it cannot be evaluated, so it fails closed - with this
+	 * reason rather than a misleading "inspections have not passed". Nothing has been changed when this is thrown. */
+	private static void requireQualityGateReadable() {
+		if (!ModuleSwitch.readable(Module.QUALITY)) {
+			throw ApiException.conflict("The dispatch gate is checked by the Quality module, which is not available "
+					+ "right now. Nothing was changed; repeat this once it is back on.");
+		}
+	}
+
 	/** SRS §14.6/§17.5, Phase 4c: Dispatch Ready -> Dispatched, ERGO OFP/Admin only. Closes the deferred half of
 	 * security-review finding M2 (ARCHITECTURE.md §8 2026-09-29): re-runs the same inspection gate {@link
 	 * #dispatchReady} checked, since material status can still change after DISPATCH_READY is reached (an order can
@@ -407,6 +421,7 @@ public class OrderService {
 		if (!EDITORS.contains(me.role()) || order.currentStatus != OrderStatus.DISPATCH_READY) {
 			throw ApiException.conflict("This action is not available for this order right now");
 		}
+		requireQualityGateReadable();
 		if (!dispatchReadyGateMet(order.id)) {
 			throw ApiException.unprocessable(
 					"All material inspections must still pass before the order can be dispatched.");

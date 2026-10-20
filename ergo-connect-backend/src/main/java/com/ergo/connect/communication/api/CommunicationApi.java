@@ -14,4 +14,11 @@ public interface CommunicationApi {
 	 * comment and it can still be edited (no reply yet, query not resolved). Non-throwing. */
 	boolean attachmentWindowOpenForCaller(long commentId);
 
+	/**
+	 * The workflow module that owns the record this comment hangs off, if the current caller may read the comment.
+	 * Lets the documents module apply that module's switch to the comment's attachments (ARCHITECTURE.md §8, module
+	 * switches). Empty if the comment does not exist for the caller.
+	 */
+	java.util.Optional<com.ergo.connect.common.security.ModuleAccess.Module> recordModuleOfComment(long commentId);
+
 }

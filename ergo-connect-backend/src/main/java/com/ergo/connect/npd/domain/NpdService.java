@@ -43,6 +43,7 @@ import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
 import com.ergo.connect.common.security.ModuleAccess;
 import com.ergo.connect.common.security.ModuleAccess.Module;
+import com.ergo.connect.common.security.ModuleSwitch;
 import com.ergo.connect.common.security.Role;
 import com.ergo.connect.masterdata.api.Directory;
 import com.ergo.connect.masterdata.api.Directory.CompanyRef;
@@ -186,7 +187,8 @@ public class NpdService {
 		List<ApprovedRfq> unconverted = approved.stream().filter(r -> !projects.existsBySourceRfqId(r.id())).toList();
 		Map<Long, CompanyRef> customers = directory.companies(unconverted.stream().map(ApprovedRfq::customerCompanyId)
 			.collect(Collectors.toSet()));
-		Set<NpdAction> actions = OWNERS.contains(me.role()) ? EnumSet.of(NpdAction.CONVERT) : Set.of();
+		Set<NpdAction> actions = OWNERS.contains(me.role()) && ModuleSwitch.writable(Module.NPD)
+				&& ModuleSwitch.readable(Module.QUOTATION) ? EnumSet.of(NpdAction.CONVERT) : Set.of();
 		return unconverted.stream()
 			.map(r -> new ConversionQueueRow(r.id(), r.number(), name(customers, r.customerCompanyId()),
 					r.partNumber(), r.revision(), r.description(), r.approvedAt(), actions))
@@ -199,6 +201,12 @@ public class NpdService {
 		CurrentUser me = CurrentUser.get();
 		if (!OWNERS.contains(me.role())) {
 			throw ApiException.forbidden("Only ERGO NPD or ERGO Management can convert an RFQ");
+		}
+		// Conversion creates an NPD project from the RFQ and the approved quote: it changes NPD and reads the other two.
+		ModuleSwitch.requireWritable(Module.NPD);
+		if (!ModuleSwitch.readable(Module.RFQ) || !ModuleSwitch.readable(Module.QUOTATION)) {
+			throw ApiException.conflict("Conversion needs the RFQ and Quotation modules, and one of them is not "
+					+ "available right now. Nothing was changed; it can be repeated once they are back on.");
 		}
 		RfqRef rfq = rfqApi.forErgo(rfqId); // 404 outside the caller's RFQ scope, checked before revealing anything else
 		if (projects.existsBySourceRfqId(rfqId)) {
@@ -360,9 +368,16 @@ public class NpdService {
 		// against this project) before it can close - a deliberate exception to this codebase's usual "later module
 		// reaches into the earlier one" build-order direction (ARCHITECTURE.md §8 2026-10-01), since Quality did not
 		// exist when this stage gate was first built.
-		if (current == NpdStage.FINAL_SAMPLE_READINESS && !qualityApi.npdFinalSampleGateMet(id)) {
-			throw ApiException.conflict(
-					"A final sample inspection must pass (or be released with deviation) before Final Sample Readiness can be closed");
+		if (current == NpdStage.FINAL_SAMPLE_READINESS) {
+			if (!ModuleSwitch.readable(Module.QUALITY)) {
+				// the gate cannot be evaluated, so it fails closed; the stage closes once Quality is back on
+				throw ApiException.conflict("Final Sample Readiness is signed off by the Quality module, which is not "
+						+ "available right now. Nothing was changed; close the stage once it is back on.");
+			}
+			if (!qualityApi.npdFinalSampleGateMet(id)) {
+				throw ApiException.conflict(
+						"A final sample inspection must pass (or be released with deviation) before Final Sample Readiness can be closed");
+			}
 		}
 		NpdStage next = current.next();
 		reasonIfGiven(comment);
@@ -942,7 +957,9 @@ public class NpdService {
 		boolean isSupplier = SUPPLIER_VIEWERS.contains(me.role());
 		// RfqApi's own record scope is per-audience (forErgo/forCustomer/forSupplier): the caller's own visible()
 		// pass already proved this project (and so this RFQ) is theirs, so each is safe to call here.
-		String rfqNumber = isCustomer ? rfqApi.forCustomer(p.sourceRfqId).number()
+		// the source RFQ's number is RFQ-module data: shown only while that module is not hidden
+		String rfqNumber = !ModuleSwitch.readable(Module.RFQ) ? null
+				: isCustomer ? rfqApi.forCustomer(p.sourceRfqId).number()
 				: isSupplier ? rfqApi.forSupplier(p.sourceRfqId).number() : rfqApi.numberOf(p.sourceRfqId);
 		Map<Long, UserRef> owner = directory.users(ids(List.of(p), x -> x.ownerUserId));
 
@@ -1077,7 +1094,7 @@ public class NpdService {
 
 	/** ponytail: one RfqApi call per row (no batch facade exists for ERGO RFQ numbers); fine at 3a's expected volume. */
 	private String rfqNumber(long rfqId) {
-		return rfqApi.numberOf(rfqId);
+		return ModuleSwitch.readable(Module.RFQ) ? rfqApi.numberOf(rfqId) : null;
 	}
 
 	private static Long delayDays(NpdProject p) {

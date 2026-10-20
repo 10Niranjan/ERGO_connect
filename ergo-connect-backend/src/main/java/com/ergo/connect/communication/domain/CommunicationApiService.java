@@ -26,4 +26,10 @@ class CommunicationApiService implements CommunicationApi {
 		return comments.attachmentWindowOpen(commentId);
 	}
 
+	@Override
+	public java.util.Optional<com.ergo.connect.common.security.ModuleAccess.Module> recordModuleOfComment(
+			long commentId) {
+		return comments.recordModule(commentId);
+	}
+
 }

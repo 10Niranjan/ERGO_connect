@@ -21,4 +21,9 @@ class DocumentsApiService implements DocumentsApi {
 		return documents.visibleToCaller(documentId);
 	}
 
+	@Override
+	public java.util.Optional<com.ergo.connect.common.security.ModuleAccess.Module> owningModule(long documentId) {
+		return documents.owningModule(documentId);
+	}
+
 }

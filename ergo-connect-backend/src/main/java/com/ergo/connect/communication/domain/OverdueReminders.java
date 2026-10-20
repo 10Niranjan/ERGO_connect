@@ -7,10 +7,13 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.stereotype.Component;
 
+import com.ergo.connect.common.event.ModuleSwitchChanged;
 import com.ergo.connect.common.event.Notifier;
 import com.ergo.connect.common.event.OverdueItem;
+import com.ergo.connect.common.security.AccessPolicy;
 import com.ergo.connect.npd.api.NpdApi;
 import com.ergo.connect.quality.api.QualityApi;
 import com.ergo.connect.quotation.api.QuotationApi;
@@ -45,6 +48,30 @@ public class OverdueReminders {
 	@Scheduled(cron = "${ergo.communication.overdue-cron:0 0 6 * * *}")
 	public void daily() {
 		scan(LocalDate.now());
+	}
+
+	/**
+	 * A module that was read-only or hidden is not scanned (each module's facade reports nothing then; see {@code
+	 * ModuleSwitch}), so its reminders pause. The scan is stateless and a recipient gets at most one reminder per item
+	 * per day, so when the module accepts changes again this catch-up run sends exactly what is due, once, instead of
+	 * waiting for the next morning.
+	 */
+	@TransactionalEventListener(fallbackExecution = true)
+	public void onSwitchChanged(ModuleSwitchChanged change) {
+		if (!change.reopened()) {
+			return;
+		}
+		// Its own thread: the admin's request keeps its pinned (pre-change) access snapshot and its identity, and a
+		// reminder run must see the new switch and act as the system, exactly like the 06:00 run.
+		Thread.ofVirtual().name("overdue-catch-up").start(() -> {
+			try {
+				AccessPolicy.syncNow(); // the switch that just committed, not the snapshot from before it
+				scan(LocalDate.now());
+			}
+			catch (RuntimeException e) {
+				log.error("Catch-up overdue scan after {} was switched back on failed", change.module(), e);
+			}
+		});
 	}
 
 	/** Returns how many overdue items were found (each may notify several people). */

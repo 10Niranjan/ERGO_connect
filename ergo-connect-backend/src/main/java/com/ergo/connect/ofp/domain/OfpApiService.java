@@ -34,6 +34,7 @@ import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
 import com.ergo.connect.common.security.ModuleAccess;
 import com.ergo.connect.common.security.ModuleAccess.Module;
+import com.ergo.connect.common.security.ModuleSwitch;
 import com.ergo.connect.common.security.Role;
 import com.ergo.connect.masterdata.api.Directory;
 import com.ergo.connect.masterdata.api.Directory.CompanyRef;
@@ -69,6 +70,11 @@ class OfpApiService implements OfpApi {
 
 	@Override
 	public Optional<OrderRef> orderRef(long orderId) {
+		// A quality record can only be linked to an order while OFP is not hidden. The caller's own OFP level is not
+		// asked: the role grid is unchanged, and Quality's own rules (who creates, company ownership) govern the link.
+		if (!ModuleSwitch.readable(Module.OFP)) {
+			return Optional.empty();
+		}
 		return orders.findById(orderId).map(o -> new OrderRef(o.id, o.customerCompanyId, o.supplierCompanyId));
 	}
 
@@ -76,20 +82,22 @@ class OfpApiService implements OfpApi {
 	@Transactional(readOnly = true)
 	public boolean shipmentVisibleToCaller(long shipmentId) {
 		Shipment shipment = shipments.findById(shipmentId).orElse(null);
-		return shipment != null && orderService.podReaderInScope(CurrentUser.get(), shipment.orderId);
+		return shipment != null && ModuleSwitch.readable(Module.OFP)
+				&& orderService.podReaderInScope(CurrentUser.get(), shipment.orderId);
 	}
 
 	@Override
 	@Transactional(readOnly = true)
 	public boolean podReplaceOpenForCaller(long shipmentId) {
 		Shipment shipment = shipments.findById(shipmentId).orElse(null);
-		return shipment != null && orderService.shipmentUploadOpen(CurrentUser.get(), shipment.orderId);
+		return shipment != null && ModuleSwitch.writable(Module.OFP)
+				&& orderService.shipmentUploadOpen(CurrentUser.get(), shipment.orderId);
 	}
 
 	@Override
 	@Transactional(readOnly = true)
 	public Optional<com.ergo.connect.common.record.RecordParties> orderPartiesVisibleToCaller(long orderId) {
-		if (!orderService.inScope(CurrentUser.get(), orderId)) {
+		if (!ModuleSwitch.readable(Module.OFP) || !orderService.inScope(CurrentUser.get(), orderId)) {
 			return Optional.empty();
 		}
 		return orders.findById(orderId).map(o -> new com.ergo.connect.common.record.RecordParties(o.customerCompanyId, o.supplierCompanyId));
@@ -97,6 +105,7 @@ class OfpApiService implements OfpApi {
 
 	@Override
 	public void podDocumentReplaced(long shipmentId, long newDocumentId) {
+		ModuleSwitch.requireWritable(Module.OFP); // repointing the POD changes the shipment: not while OFP is frozen
 		Shipment shipment = shipments.findById(shipmentId).orElse(null);
 		if (shipment != null) {
 			shipment.podDocumentId = newDocumentId;
@@ -106,6 +115,9 @@ class OfpApiService implements OfpApi {
 	@Override
 	@Transactional(readOnly = true)
 	public List<OrderDashboardItem> dashboardItems() {
+		if (!ModuleSwitch.readable(Module.OFP)) {
+			return List.of();
+		}
 		CurrentUser me = CurrentUser.get();
 		List<Order> visible;
 		if (me.companyType() == CompanyType.SUPPLIER) {
@@ -155,6 +167,9 @@ class OfpApiService implements OfpApi {
 	@Transactional(readOnly = true)
 	public List<SupplierPerformance> supplierPerformance() {
 		CurrentUser me = CurrentUser.get();
+		if (!ModuleSwitch.readable(Module.OFP)) {
+			return List.of();
+		}
 		boolean unrestricted = switch (me.role()) {
 			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_OFP -> true;
 			default -> false;

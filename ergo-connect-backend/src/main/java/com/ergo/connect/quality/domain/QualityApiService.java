@@ -15,6 +15,7 @@ import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
 import com.ergo.connect.common.security.ModuleAccess;
 import com.ergo.connect.common.security.ModuleAccess.Module;
+import com.ergo.connect.common.security.ModuleSwitch;
 import com.ergo.connect.common.security.Role;
 import com.ergo.connect.masterdata.api.Directory;
 import com.ergo.connect.masterdata.api.Directory.CompanyRef;
@@ -63,6 +64,11 @@ class QualityApiService implements QualityApi {
 	@Override
 	@Transactional(readOnly = true)
 	public java.util.List<com.ergo.connect.common.event.OverdueItem> overdueItems(java.time.LocalDate today) {
+		// Reminders ask someone to act: not while Quality is read-only, and never from a hidden module. The scan is
+		// stateless, so it simply resumes when Quality accepts changes again.
+		if (!ModuleSwitch.writableNow(Module.QUALITY)) {
+			return java.util.List.of();
+		}
 		java.util.List<com.ergo.connect.common.event.OverdueItem> items = new java.util.ArrayList<>();
 		for (Ncr n : ncrs.findByTargetClosureDateBeforeAndCurrentStatusNot(today, NcrStatus.CLOSED)) {
 			items.add(new com.ergo.connect.common.event.OverdueItem(com.ergo.connect.common.event.NotificationKind.OVERDUE_NCR, "ncr", n.id, n.ncrNumber,
@@ -119,6 +125,9 @@ class QualityApiService implements QualityApi {
 	 * depend on those services): {@code customerVisible} / {@code supplierVisible} gate each external side. */
 	private java.util.Optional<com.ergo.connect.common.record.RecordParties> parties(LinkedModule linkedModule, Long customerCompanyId,
 			Long supplierCompanyId, boolean customerVisible, boolean supplierVisible) {
+		if (!ModuleSwitch.readable(Module.QUALITY)) {
+			return java.util.Optional.empty();
+		}
 		CurrentUser me = CurrentUser.get();
 		boolean inScope = switch (QualityScope.of(me.role())) {
 			case FULL -> true;
@@ -151,6 +160,9 @@ class QualityApiService implements QualityApi {
 	 * "passed" (same rule the stub this replaces already used). {@code findByLinkedModuleAndLinkedRecordIdOrderById}
 	 * orders by id ascending, so the last element is the most recently raised. */
 	private boolean gateMet(LinkedModule module, long recordId) {
+		if (!ModuleSwitch.readable(Module.QUALITY)) {
+			return false; // a hidden gate cannot be evaluated, so it fails closed (never "passed")
+		}
 		List<Inspection> linked = inspections.findByLinkedModuleAndLinkedRecordIdOrderById(module, recordId);
 		return !linked.isEmpty() && resolvesToPassOrDeviation(linked.get(linked.size() - 1));
 	}
@@ -188,7 +200,7 @@ class QualityApiService implements QualityApi {
 	@Transactional(readOnly = true)
 	public boolean capaActionVisibleToCaller(long capaActionId) {
 		CapaAction a = capaActions.findById(capaActionId).orElse(null);
-		if (a == null || a.ncrId == null) {
+		if (a == null || a.ncrId == null || !ModuleSwitch.readable(Module.QUALITY)) {
 			return false;
 		}
 		Ncr n = ncrs.findById(a.ncrId).orElse(null);
@@ -215,7 +227,8 @@ class QualityApiService implements QualityApi {
 	@Transactional(readOnly = true)
 	public boolean capaReplaceOpenForCaller(long capaActionId) {
 		CapaAction a = capaActions.findById(capaActionId).orElse(null);
-		if (a == null || a.ncrId == null || a.status == CapaActionStatus.CLOSED) {
+		if (a == null || a.ncrId == null || a.status == CapaActionStatus.CLOSED
+				|| !ModuleSwitch.writable(Module.QUALITY)) {
 			return false;
 		}
 		Ncr n = ncrs.findById(a.ncrId).orElse(null);
@@ -235,6 +248,7 @@ class QualityApiService implements QualityApi {
 	@Override
 	@Transactional
 	public void capaEvidenceReplaced(long capaActionId, long newDocumentId) {
+		ModuleSwitch.requireWritable(Module.QUALITY); // repointing the evidence changes the CAPA action
 		CapaAction a = capaActions.findById(capaActionId).orElse(null);
 		if (a != null) {
 			a.evidenceDocumentId = newDocumentId;
@@ -244,6 +258,9 @@ class QualityApiService implements QualityApi {
 	@Override
 	@Transactional(readOnly = true)
 	public List<NcrDashboardItem> ncrDashboardItems() {
+		if (!ModuleSwitch.readable(Module.QUALITY)) {
+			return List.of();
+		}
 		CurrentUser me = CurrentUser.get();
 		List<Ncr> visible = switch (QualityScope.of(me.role())) {
 			case FULL -> ncrs.findAllByOrderByIdDesc();
@@ -286,6 +303,9 @@ class QualityApiService implements QualityApi {
 	@Override
 	@Transactional(readOnly = true)
 	public List<DeviationDashboardItem> deviationDashboardItems() {
+		if (!ModuleSwitch.readable(Module.QUALITY)) {
+			return List.of();
+		}
 		CurrentUser me = CurrentUser.get();
 		List<Deviation> visible = switch (QualityScope.of(me.role())) {
 			case FULL -> deviations.findAllByOrderByIdDesc();
@@ -330,6 +350,9 @@ class QualityApiService implements QualityApi {
 	@Override
 	@Transactional(readOnly = true)
 	public List<SupplierNcrCount> openNcrCountsBySupplier() {
+		if (!ModuleSwitch.readable(Module.QUALITY)) {
+			return List.of();
+		}
 		CurrentUser me = CurrentUser.get();
 		boolean unrestricted = switch (QualityScope.of(me.role())) {
 			case FULL -> true;
