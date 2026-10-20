@@ -8,6 +8,7 @@ Production B2B platform for ERGO: RFQ → Quotation → NPD → OFP → Quality 
 |---|---|---|
 | Structure, security, conventions | `ARCHITECTURE.md` (§8 = decisions log) | how we build |
 | Business rules, fields, permissions, workflows | `docs/SRS.md` (converted from the .docx) | what we build |
+| Permissions, module switches, dynamic sidebar (as built) | `docs/PERMISSIONS.md` | read before touching roles, access levels or the sidebar |
 | Signed-off original | `ERGO CONNECT – SOFTWARE REQUIREMENTS DOCUMENT (V1).docx` | tie-breaker |
 
 `docs/SRS.md` section map: §4–6 confirmed business rules · §8 access philosophy · §9 role definitions · **§10.x permission matrix per module** · §11 exceptions · §12 screens · §13 DB tables · **§14 workflow states** · §15 audit · §16 MVP scope · §17 page-level logic · §18 API. The appendix at the end is an older draft: use it for context only; it never overrides §1–21.
