@@ -36,11 +36,14 @@ interface UserRepository extends Repository<User, Long> {
 	/** Record scope lives in the query: companyId null = every company (ERGO roles), else only that company. */
 	@Query("""
 			select u from User u left join fetch u.roles left join fetch u.accountIds
-			where (:companyId is null or u.companyId = :companyId)
+			where u.deletedAt is null and (:companyId is null or u.companyId = :companyId)
 			order by u.firstName, u.lastName""")
 	List<User> findAllVisible(Long companyId);
 
-	@Query("select u from User u where u.id = :id and (:companyId is null or u.companyId = :companyId)")
+	/** Soft-deleted users do not exist for anyone. */
+	@Query("""
+			select u from User u
+			where u.id = :id and u.deletedAt is null and (:companyId is null or u.companyId = :companyId)""")
 	Optional<User> findVisible(Long id, Long companyId);
 
 }

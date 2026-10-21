@@ -1,6 +1,7 @@
 package com.ergo.connect.masterdata.access;
 
 import java.security.SecureRandom;
+import java.time.Instant;
 import java.util.Base64;
 import java.util.EnumSet;
 import java.util.List;
@@ -25,12 +26,13 @@ import com.ergo.connect.masterdata.access.UserDtos.CreatedUserResponse;
 import com.ergo.connect.masterdata.access.UserDtos.RolesRequest;
 import com.ergo.connect.masterdata.access.UserDtos.TemporaryPasswordResponse;
 import com.ergo.connect.masterdata.access.UserDtos.UpdateUserRequest;
+import com.ergo.connect.masterdata.access.UserDtos.UserAction;
 import com.ergo.connect.masterdata.access.UserDtos.UserResponse;
 
 /**
  * User & Access Management (SRS §10.1). Everyone may view users in their record scope; only ERGO Admin changes them
- * (decision in ARCHITECTURE.md §8, enforced on the controller). Field changes are audited automatically, role
- * changes explicitly.
+ * (decision in ARCHITECTURE.md §8, enforced on the controller), with one exception: ERGO RFQ may also create supplier
+ * accounts (client decision 2026-10-21). Field changes are audited automatically, role changes explicitly.
  */
 @Service
 @Transactional
@@ -92,10 +94,19 @@ public class UserAdminService {
 			.toList();
 	}
 
+	/**
+	 * ERGO Admin creates any account (ERGO employee, customer employee, supplier employee). ERGO RFQ creates supplier
+	 * accounts only (client decision 2026-10-21). The company must already be approved, so a pending or rejected
+	 * supplier has no accounts.
+	 */
 	public CreatedUserResponse create(CreateUserRequest request) {
+		Role caller = CurrentUser.get().role();
 		Company company = companies.findById(request.companyId())
 			.filter(c -> c.status == CompanyStatus.ACTIVE)
 			.orElseThrow(() -> ApiException.unprocessable("Company not found or not active (approve it first)"));
+		if (caller != Role.ERGO_ADMIN && company.type != CompanyType.SUPPLIER) {
+			throw ApiException.forbidden("You can create accounts for supplier companies only");
+		}
 		requireUniqueEmail(request.email());
 		Role defaultRole = checkRoles(request.roles(), request.defaultRole(), company.type);
 
@@ -172,6 +183,26 @@ public class UserAdminService {
 			otpCodes.invalidateAllFor(user.id);
 		}
 		return toResponse(user, companyOf(user));
+	}
+
+	/**
+	 * Soft delete (ERGO Admin only, enforced on the controller): the row is kept because the audit trail refers to
+	 * it, but the user disappears from every list, loses every session and can never sign in or be reactivated. The
+	 * reason is stored with the deletion in the audit trail.
+	 */
+	public void delete(long id, String reason) {
+		User user = visible(id);
+		if (isSelf(user)) {
+			throw ApiException.unprocessable("You cannot delete your own account");
+		}
+		audit.reason(reason.trim());
+		user.active = false;
+		user.deletedAt = Instant.now();
+		user.deletedByUserId = CurrentUser.get().userId();
+		sessions.revokeAll(user.id, null);
+		resetTokens.invalidateAllFor(user.id);
+		otpCodes.invalidateAllFor(user.id);
+		audit.record(User.class, user.id, "USER_DELETED", null, null, null);
 	}
 
 	/** SRS §12.13.1 "password reset trigger": a one-time password the admin hands over; the user must change it. */
@@ -276,9 +307,15 @@ public class UserAdminService {
 	}
 
 	private static UserResponse toResponse(User user, Company company) {
+		// computed by the same checks that enforce them: ERGO Admin only, never on yourself
+		Set<UserAction> actions = EnumSet.noneOf(UserAction.class);
+		if (CurrentUser.find().map(me -> me.role() == Role.ERGO_ADMIN).orElse(false) && !isSelf(user)) {
+			actions.add(UserAction.DELETE);
+			actions.add(user.active ? UserAction.DEACTIVATE : UserAction.ACTIVATE);
+		}
 		return new UserResponse(user.id, company.id, company.name, company.type, user.firstName, user.lastName,
 				user.email, user.mobile, user.active, user.roles.stream().sorted().toList(), user.defaultRole,
-				user.accountIds.stream().sorted().toList(), user.lastLoginAt, user.twoFactorEnabled);
+				user.accountIds.stream().sorted().toList(), user.lastLoginAt, user.twoFactorEnabled, actions);
 	}
 
 }

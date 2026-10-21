@@ -52,7 +52,7 @@ role_module_permissions (role × module → NV|V|A|O)   app_modules (module, lab
   the engine's `CO`** (same powers, different name); stored codes are only `NV,V,A,O`.
 - **Module switch meaning:** `O` on (as the grid) · `A` nobody gives final approval · `V` read-only · `NV` hidden for
   every role and company (data kept, open records wait). Only configurable modules can be switched.
-- **Fixed modules:** DASHBOARD, DOCUMENTS, COMMUNICATION, COMPANIES, COMPANY_PROFILE, MASTER_DATA, USERS, PERMISSIONS
+- **Fixed modules:** DASHBOARD, DOCUMENTS, COMMUNICATION, COMPANIES, SUPPLIERS, COMPANY_PROFILE, MASTER_DATA, USERS, PERMISSIONS
   are rows in the sheet (seeded with their old effective access, used for sidebar + route guards) but
   `configurable=false`: shown **locked** in the matrix, rejected on save, and their backend checks are still role
   lists in code (`hasAnyRole(...)`). To make one configurable: set `app_modules.configurable=true` in a new migration,

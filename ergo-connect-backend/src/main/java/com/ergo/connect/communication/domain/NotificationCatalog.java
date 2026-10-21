@@ -103,6 +103,12 @@ final class NotificationCatalog {
 		put(NotificationKind.THREAD_ESCALATED, ACTION_REQUIRED, EnumSet.of(ERGO, CUSTOMER, SUPPLIER),
 				"A thread was escalated", "Your conversation was escalated");
 
+		// Company onboarding (ERGO staff only)
+		put(NotificationKind.COMPANY_APPROVAL_REQUESTED, APPROVAL_PENDING, EnumSet.of(ERGO),
+				"Company awaiting approval", null);
+		put(NotificationKind.COMPANY_APPROVAL_DECIDED, RESPONSE_RECEIVED, EnumSet.of(ERGO),
+				"Company approval decision recorded", null);
+
 		// Scheduled reminders
 		put(NotificationKind.OVERDUE_ACTIVITY, OVERDUE_REMINDER, EnumSet.of(ERGO, CUSTOMER, SUPPLIER),
 				"NPD activity is overdue", "An NPD activity is overdue");

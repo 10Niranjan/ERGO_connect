@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.common.record.RecordParties;
 import com.ergo.connect.common.security.ModuleSwitch;
+import com.ergo.connect.masterdata.api.Directory;
 import com.ergo.connect.npd.api.NpdApi;
 import com.ergo.connect.ofp.api.OfpApi;
 import com.ergo.connect.quality.api.QualityApi;
@@ -35,12 +36,16 @@ class RecordScope {
 
 	private final QualityApi qualityApi;
 
-	RecordScope(RfqApi rfqApi, QuotationApi quotationApi, NpdApi npdApi, OfpApi ofpApi, QualityApi qualityApi) {
+	private final Directory directory;
+
+	RecordScope(RfqApi rfqApi, QuotationApi quotationApi, NpdApi npdApi, OfpApi ofpApi, QualityApi qualityApi,
+			Directory directory) {
 		this.rfqApi = rfqApi;
 		this.quotationApi = quotationApi;
 		this.npdApi = npdApi;
 		this.ofpApi = ofpApi;
 		this.qualityApi = qualityApi;
+		this.directory = directory;
 	}
 
 	/** Empty = the record doesn't exist for the current caller. */
@@ -57,6 +62,9 @@ class RecordScope {
 			case "inspection" -> qualityApi.inspectionPartiesVisibleToCaller(id);
 			case "ncr" -> qualityApi.ncrPartiesVisibleToCaller(id);
 			case "deviation" -> qualityApi.deviationPartiesVisibleToCaller(id);
+			// not a customer/supplier record: only notifications point at a company (onboarding approval)
+			case "company" -> directory.companyVisibleToCaller(id) ? Optional.of(new RecordParties(null, null))
+					: Optional.empty();
 			default -> throw ApiException.unprocessable("Unknown record type: " + module);
 		};
 	}
@@ -81,6 +89,7 @@ class RecordScope {
 			case "inspection" -> "/quality/" + id;
 			case "ncr" -> "/quality/ncrs/" + id;
 			case "deviation" -> "/quality/deviations/" + id;
+			case "company" -> "/companies";
 			case "document" -> "/documents/" + id;
 			default -> "/";
 		};

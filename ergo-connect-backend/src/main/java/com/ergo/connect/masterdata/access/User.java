@@ -72,6 +72,11 @@ class User {
 
 	boolean active = true;
 
+	/** Soft delete by ERGO Admin: the row stays for the audit trail, but the user is hidden and can never sign in. */
+	Instant deletedAt;
+
+	Long deletedByUserId;
+
 	@AuditExclude
 	int failedLoginCount;
 

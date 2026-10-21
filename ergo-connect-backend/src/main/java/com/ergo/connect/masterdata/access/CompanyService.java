@@ -15,6 +15,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.ergo.connect.common.audit.AuditLogService;
+import com.ergo.connect.common.event.NotificationKind;
+import com.ergo.connect.common.event.Notifier;
+import com.ergo.connect.common.event.Recipients;
 import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
@@ -25,8 +28,9 @@ import com.ergo.connect.masterdata.access.CompanyDtos.CompanyRequest;
 import com.ergo.connect.masterdata.access.CompanyDtos.CompanyResponse;
 
 /**
- * Customer and supplier management (SRS §10.2, §10.3) with the client's decisions (ARCHITECTURE.md §8): companies
- * added by ERGO RFQ or ERGO KAM wait for ERGO Admin / ERGO Management approval, ERGO KAMs see only their assigned
+ * Customer and supplier management (SRS §10.2, §10.3) with the client's decisions (ARCHITECTURE.md §8): customers
+ * added by ERGO RFQ or ERGO KAM and every supplier wait for ERGO Management / ERGO Admin approval (a supplier an
+ * Admin added: Management only), a supplier is "approved" (ACTIVE) only after that, ERGO KAMs see only their assigned
  * customers, and customers and suppliers maintain their own profile. Every rule below is used both to enforce an
  * action and to list it in {@link CompanyResponse#actions()}, so the UI can never offer what the server refuses.
  */
@@ -40,14 +44,21 @@ public class CompanyService {
 
 	private final AuditLogService audit;
 
-	CompanyService(CompanyRepository companies, UserRepository users, AuditLogService audit) {
+	private final Notifier notifier;
+
+	CompanyService(CompanyRepository companies, UserRepository users, AuditLogService audit, Notifier notifier) {
 		this.companies = companies;
 		this.users = users;
 		this.audit = audit;
+		this.notifier = notifier;
 	}
 
+	/**
+	 * The companies the caller may see, optionally narrowed. {@code type} and {@code status} only narrow what record
+	 * scope already allows; the approved supplier list is {@code type=SUPPLIER&status=ACTIVE}.
+	 */
 	@Transactional(readOnly = true)
-	public List<CompanyResponse> list() {
+	public List<CompanyResponse> list(CompanyType type, CompanyStatus status) {
 		CurrentUser me = CurrentUser.get();
 		List<Company> visible = switch (me.role()) {
 			// ERGO_QUALITY also creates/tags inspections directly against customers/suppliers with no backing
@@ -56,13 +67,22 @@ public class CompanyService {
 			// record-scoped "only companies on my own records" reading originally given to every ERGO functional
 			// role here. ERGO_NPD/ERGO_OFP are left as they were (List.of()): unlike Quality, neither module lets
 			// its own ERGO role freely tag an arbitrary company onto a record - flagged, not silently widened too.
-			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_RFQ, ERGO_QUALITY -> companies.findAllByOrderByNameAsc();
+			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_RFQ -> companies.findAllByOrderByNameAsc();
+			// Quality only picks companies it can work with: a pending or rejected company is not one (client 2026-10-21)
+			case ERGO_QUALITY -> companies.findAllByOrderByNameAsc()
+				.stream()
+				.filter(c -> c.status != PENDING_APPROVAL && c.status != REJECTED)
+				.toList();
 			case ERGO_KAM -> companies.findByIdInOrderByNameAsc(accounts(me));
 			// SRS "RV": the companies on their own NPD / OFP records
 			case ERGO_NPD, ERGO_OFP -> List.of();
 			default -> companies.findById(me.companyId()).stream().toList(); // customers and suppliers: their own
 		};
-		return visible.stream().map(company -> toResponse(company, me)).toList();
+		return visible.stream()
+			.filter(company -> type == null || company.type == type)
+			.filter(company -> status == null || company.status == status)
+			.map(company -> toResponse(company, me))
+			.toList();
 	}
 
 	@Transactional(readOnly = true)
@@ -71,7 +91,23 @@ public class CompanyService {
 		return toResponse(visible(me, id), me);
 	}
 
-	/** ERGO Admin: active at once. ERGO RFQ (customers, suppliers) and ERGO KAM (customers): pending approval. */
+	/** Non-throwing record-scope probe for other modules (notification delivery runs it as the recipient). */
+	@Transactional(readOnly = true)
+	public boolean visibleToCaller(long id) {
+		try {
+			visible(CurrentUser.get(), id);
+			return true;
+		}
+		catch (ApiException e) {
+			return false;
+		}
+	}
+
+	/**
+	 * Every supplier waits for approval, whoever adds it (client decision 2026-10-21); one added by an ERGO Admin can
+	 * be approved by ERGO Management only. A customer is active at once when ERGO Admin adds it, and pending when ERGO
+	 * RFQ or ERGO KAM does.
+	 */
 	public CompanyResponse create(CompanyRequest request) {
 		CurrentUser me = CurrentUser.get();
 		if (request.type() == CompanyType.ERGO) {
@@ -86,10 +122,14 @@ public class CompanyService {
 		Company company = new Company();
 		company.code = request.code();
 		company.type = request.type();
-		company.status = me.role() == Role.ERGO_ADMIN ? ACTIVE : PENDING_APPROVAL;
+		boolean adminAddedCustomer = me.role() == Role.ERGO_ADMIN && request.type() == CompanyType.CUSTOMER;
+		company.status = adminAddedCustomer ? ACTIVE : PENDING_APPROVAL;
 		company.createdByUserId = me.userId();
 		apply(company, request.profile());
 		companies.save(company);
+		if (company.status == PENDING_APPROVAL) {
+			notifyReviewers(company);
+		}
 		if (me.role() == Role.ERGO_KAM) { // otherwise the KAM could not see what they just added
 			User kam = users.findById(me.userId()).orElseThrow();
 			kam.accountIds.add(company.id);
@@ -127,6 +167,7 @@ public class CompanyService {
 			throw ApiException.conflict("Only rejected companies can be resubmitted, by someone who can edit them");
 		}
 		company.status = PENDING_APPROVAL;
+		notifyReviewers(company);
 		return toResponse(company, me);
 	}
 
@@ -152,13 +193,27 @@ public class CompanyService {
 			throw ApiException.conflict("Only companies pending approval can be approved or rejected");
 		}
 		if (!canReview(me, company)) {
-			throw ApiException.unprocessable("You cannot approve or reject a company you added yourself");
+			throw ApiException.unprocessable(company.type == CompanyType.SUPPLIER
+					? "Suppliers are approved or rejected by ERGO Management only"
+					: "You cannot approve or reject a company you added yourself");
 		}
 		if (comment != null && !comment.isBlank()) {
 			audit.reason(comment.trim()); // stored with the status change: approver, time, old + new status, comment
 		}
 		company.status = outcome;
+		if (company.createdByUserId != null) {
+			notifier.send(NotificationKind.COMPANY_APPROVAL_DECIDED, "company", company.id, company.name,
+					outcome == ACTIVE ? "approved" : "rejected", Recipients.users(Set.of(company.createdByUserId)));
+		}
 		return toResponse(company, me);
+	}
+
+	/** The people who can review hear that a company awaits it: Management for a supplier, Admin too for a customer. */
+	private void notifyReviewers(Company company) {
+		Recipients to = company.type == CompanyType.SUPPLIER ? Recipients.ergo(Role.ERGO_MANAGEMENT)
+				: Recipients.ergo(Role.ERGO_MANAGEMENT, Role.ERGO_ADMIN);
+		notifier.send(NotificationKind.COMPANY_APPROVAL_REQUESTED, "company", company.id, company.name,
+				company.type.name().toLowerCase(), to);
 	}
 
 	/** Record scope (SRS §10.2/§10.3 view column): out-of-scope companies do not exist for the caller. */
@@ -170,6 +225,7 @@ public class CompanyService {
 			default -> id == me.companyId();
 		};
 		return (inScope ? companies.findById(id) : Optional.<Company>empty())
+			.filter(c -> me.role() != Role.ERGO_QUALITY || (c.status != PENDING_APPROVAL && c.status != REJECTED))
 			.orElseThrow(() -> ApiException.notFound("Company"));
 	}
 
@@ -184,10 +240,20 @@ public class CompanyService {
 		};
 	}
 
-	/** Approve / reject: ERGO Admin and ERGO Management, never on a company they added themselves. */
+	/**
+	 * Approve / reject: ERGO Management, and ERGO Admin too - except for a supplier an Admin added, which only
+	 * Management may review. Nobody reviews a company they added themselves.
+	 */
 	private static boolean canReview(CurrentUser me, Company company) {
-		return (me.role() == Role.ERGO_ADMIN || me.role() == Role.ERGO_MANAGEMENT)
-				&& !Objects.equals(company.createdByUserId, me.userId());
+		boolean reviewer = me.role() == Role.ERGO_MANAGEMENT
+				|| (me.role() == Role.ERGO_ADMIN && company.type != CompanyType.SUPPLIER);
+		return reviewer && !Objects.equals(company.createdByUserId, me.userId());
+	}
+
+	/** ERGO Admin adds accounts to any approved company; ERGO RFQ only to an approved supplier. */
+	private static boolean canAddUser(CurrentUser me, Company company) {
+		return company.status == ACTIVE && (me.role() == Role.ERGO_ADMIN
+				|| (me.role() == Role.ERGO_RFQ && company.type == CompanyType.SUPPLIER));
 	}
 
 	private static boolean canResubmit(CurrentUser me, Company company) {
@@ -224,6 +290,9 @@ public class CompanyService {
 		}
 		if (canResubmit(me, c)) {
 			actions.add(CompanyAction.RESUBMIT);
+		}
+		if (canAddUser(me, c)) {
+			actions.add(CompanyAction.ADD_USER);
 		}
 		if (me.role() == Role.ERGO_ADMIN && c.type != CompanyType.ERGO) {
 			if (c.status == ACTIVE) {

@@ -34,7 +34,7 @@ public final class CompanyDtos {
 
 	/** What the caller may do with this company now (by role and status), so the UI shows only valid buttons. */
 	public enum CompanyAction {
-		EDIT, APPROVE, REJECT, RESUBMIT, ACTIVATE, DEACTIVATE
+		EDIT, APPROVE, REJECT, RESUBMIT, ACTIVATE, DEACTIVATE, ADD_USER
 	}
 
 	public record CompanyResponse(long id, String code, CompanyType type, CompanyStatus status,

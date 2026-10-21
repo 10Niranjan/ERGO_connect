@@ -10,14 +10,17 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.masterdata.access.CompanyDtos.CompanyProfile;
 import com.ergo.connect.masterdata.access.CompanyDtos.CompanyRequest;
 import com.ergo.connect.masterdata.access.CompanyDtos.CompanyResponse;
 import com.ergo.connect.masterdata.access.CompanyDtos.ReviewRequest;
 import com.ergo.connect.masterdata.access.CompanyService;
+import com.ergo.connect.masterdata.access.CompanyStatus;
 import com.ergo.connect.masterdata.access.UserDtos.ActiveRequest;
 
 import jakarta.validation.Valid;
@@ -43,10 +46,14 @@ class CompanyController {
 		this.companies = companies;
 	}
 
-	/** Every role; the list is limited to the caller's record scope. */
+	/**
+	 * Every role; the list is limited to the caller's record scope. {@code type} / {@code status} narrow it: the
+	 * approved supplier list is {@code ?type=SUPPLIER&status=ACTIVE}.
+	 */
 	@GetMapping
-	List<CompanyResponse> list() {
-		return companies.list();
+	List<CompanyResponse> list(@RequestParam(required = false) CompanyType type,
+			@RequestParam(required = false) CompanyStatus status) {
+		return companies.list(type, status);
 	}
 
 	@GetMapping("/{id}")

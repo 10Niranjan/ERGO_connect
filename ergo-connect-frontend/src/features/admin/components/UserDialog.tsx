@@ -31,19 +31,21 @@ import {
 interface Props {
   /** null = create a new user */
   user: User | null
+  /** Creating from a company's row: that company is fixed instead of chosen (ERGO RFQ adds supplier accounts this way). */
+  fixedCompanyId?: number
   onClose: () => void
   onCreated: (email: string, temporaryPassword: string) => void
 }
 
 // SRS 12.13.1: create user, map company, assign role(s).
-export function UserDialog({ user, onClose, onCreated }: Props) {
+export function UserDialog({ user, fixedCompanyId, onClose, onCreated }: Props) {
   const { data: companies = [] } = useCompaniesQuery()
   const { data: roleOptions = [] } = useRolesQuery()
   const [createUser, creating] = useCreateUserMutation()
   const [updateUser, updating] = useUpdateUserMutation()
   const [setUserRoles, settingRoles] = useSetUserRolesMutation()
   const [setUserAccounts, settingAccounts] = useSetUserAccountsMutation()
-  const [companyId, setCompanyId] = useState<number | ''>(user?.companyId ?? '')
+  const [companyId, setCompanyId] = useState<number | ''>(user?.companyId ?? fixedCompanyId ?? '')
   const [roles, setRoles] = useState<Role[]>(user?.roles ?? [])
   const [defaultRole, setDefaultRole] = useState<Role | ''>(user?.defaultRole ?? '')
   const [accountIds, setAccountIds] = useState<number[]>(user?.accountIds ?? [])
@@ -90,8 +92,13 @@ export function UserDialog({ user, onClose, onCreated }: Props) {
       <form onSubmit={handleSubmit}>
         <DialogTitle>{user ? 'Edit user' : 'New user'}</DialogTitle>
         <DialogContent sx={{ display: 'grid', gap: 2, pt: '8px !important' }}>
-          {user ? (
-            <TextField label="Company" value={user.companyName} disabled helperText="Users always stay in their company" />
+          {user || fixedCompanyId !== undefined ? (
+            <TextField
+              label="Company"
+              value={user?.companyName ?? companies.find((company) => company.id === fixedCompanyId)?.profile.name ?? ''}
+              disabled
+              helperText="Users always stay in their company"
+            />
           ) : (
             <TextField
               select

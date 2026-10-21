@@ -25,6 +25,9 @@ public enum NotificationKind {
 	DOCUMENT_UPLOADED, DOCUMENT_DECIDED, MENTIONED, COMMENT_REPLY, THREAD_ESCALATED,
 
 	// Scheduled reminders (SRS §14.9 "overdue activity")
-	OVERDUE_ACTIVITY, OVERDUE_QUOTE, OVERDUE_NCR, OVERDUE_CAPA
+	OVERDUE_ACTIVITY, OVERDUE_QUOTE, OVERDUE_NCR, OVERDUE_CAPA,
+
+	// Company onboarding (a company awaits approval; the approval decision)
+	COMPANY_APPROVAL_REQUESTED, COMPANY_APPROVAL_DECIDED
 
 }

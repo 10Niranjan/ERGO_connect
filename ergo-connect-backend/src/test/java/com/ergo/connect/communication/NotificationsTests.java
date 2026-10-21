@@ -1,5 +1,6 @@
 package com.ergo.connect.communication;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
@@ -177,7 +178,9 @@ class NotificationsTests {
 		notifier.send(NotificationKind.RFQ_STATUS_CHANGED, "rfq", rfqId, "RFQ-X", "Validated",
 				Recipients.users(Set.of(buyerA.userId(), buyerA2.userId())));
 		assertCount(buyerA, 1);
-		assertCount(buyerA2, 0);
+		// an inactive user's own access token no longer works, so check the stored rows instead of their drawer
+		assertThat(jdbc.queryForObject("SELECT count(*) FROM notifications WHERE recipient_user_id = ?", Long.class,
+				buyerA2.userId())).isZero();
 	}
 
 	@Test

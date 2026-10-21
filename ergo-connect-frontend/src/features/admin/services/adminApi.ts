@@ -2,6 +2,8 @@ import { api } from '@/services/baseApi'
 import type { CompanyType, Role, RoleOption } from '@/features/auth/store/authSlice'
 import type { MasterOption } from '@/utils/masterData'
 
+export type UserAction = 'DEACTIVATE' | 'ACTIVATE' | 'DELETE'
+
 export interface User {
   id: number
   companyId: number
@@ -14,6 +16,8 @@ export interface User {
   active: boolean
   roles: Role[]
   defaultRole: Role | null
+  /** What the signed-in user may do with this user; the backend decides (ERGO Admin only, never on yourself) */
+  actions: UserAction[]
   /** Customer accounts of an ERGO Key Account Manager */
   accountIds: number[]
   lastLoginAt: string | null
@@ -185,6 +189,10 @@ const adminApi = api.enhanceEndpoints({ addTagTypes: ['User', 'MasterData', 'Exc
       query: ({ id, ...body }) => ({ url: `/users/${id}/active`, method: 'PUT', body }),
       invalidatesTags: ['User'],
     }),
+    deleteUser: build.mutation<void, { id: number; reason: string }>({
+      query: ({ id, reason }) => ({ url: `/users/${id}/delete`, method: 'POST', body: { reason } }), // soft delete: hidden, no access, audit trail kept
+      invalidatesTags: ['User'],
+    }),
     resetUserPassword: build.mutation<{ temporaryPassword: string }, number>({
       query: (id) => ({ url: `/users/${id}/reset-password`, method: 'POST' }),
       invalidatesTags: ['User'],
@@ -243,6 +251,7 @@ export const {
   useSetUserRolesMutation,
   useSetUserAccountsMutation,
   useSetUserActiveMutation,
+  useDeleteUserMutation,
   useResetUserPasswordMutation,
   usePermissionMatrixQuery,
   useEditablePermissionsQuery,

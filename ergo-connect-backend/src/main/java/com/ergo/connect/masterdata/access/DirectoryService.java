@@ -22,9 +22,17 @@ class DirectoryService implements Directory {
 
 	private final UserRepository users;
 
-	DirectoryService(CompanyRepository companies, UserRepository users) {
+	private final CompanyService companyService;
+
+	DirectoryService(CompanyRepository companies, UserRepository users, CompanyService companyService) {
 		this.companies = companies;
 		this.users = users;
+		this.companyService = companyService;
+	}
+
+	@Override
+	public boolean companyVisibleToCaller(long id) {
+		return companyService.visibleToCaller(id);
 	}
 
 	@Override
@@ -82,7 +90,7 @@ class DirectoryService implements Directory {
 		if (role != Role.ERGO_ADMIN && role != Role.ERGO_MANAGEMENT) {
 			return 0;
 		}
-		return (int) companies.countByStatus(CompanyStatus.PENDING_APPROVAL);
+		return (int) companies.countReviewable(CurrentUser.get().userId(), role == Role.ERGO_ADMIN);
 	}
 
 	private static CompanyRef ref(Company c) {

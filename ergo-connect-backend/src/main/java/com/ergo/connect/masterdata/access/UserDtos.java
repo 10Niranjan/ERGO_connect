@@ -18,9 +18,15 @@ public final class UserDtos {
 	private UserDtos() {
 	}
 
+	/** What the caller may do with this user now, so the UI shows only valid buttons (empty for all but ERGO Admin). */
+	public enum UserAction {
+		DEACTIVATE, ACTIVATE, DELETE
+	}
+
 	public record UserResponse(long id, long companyId, String companyName, CompanyType companyType,
 			String firstName, String lastName, String email, String mobile, boolean active, List<Role> roles,
-			Role defaultRole, List<Long> accountIds, Instant lastLoginAt, boolean twoFactorEnabled) {
+			Role defaultRole, List<Long> accountIds, Instant lastLoginAt, boolean twoFactorEnabled,
+			Set<UserAction> actions) {
 	}
 
 	public record CreateUserRequest(@NotNull Long companyId, @NotBlank @Size(max = 100) String firstName,
@@ -34,6 +40,10 @@ public final class UserDtos {
 	}
 
 	public record RolesRequest(@NotEmpty Set<@NotNull Role> roles, Role defaultRole) {
+	}
+
+	/** Why an account is deleted; stored in the audit trail with the deletion. */
+	public record DeleteRequest(@NotBlank @Size(max = 500) String reason) {
 	}
 
 	public record ActiveRequest(@NotNull Boolean active) {

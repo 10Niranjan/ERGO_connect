@@ -106,7 +106,7 @@ export function CompanyDialog({ company, types = ['CUSTOMER', 'SUPPLIER'], onClo
           ))}
           {!company && (
             <Alert severity="info" sx={{ gridColumn: '1 / -1' }}>
-              Companies added by ERGO RFQ or a Key Account Manager wait for approval by ERGO Admin or ERGO Management.
+              Every supplier waits for approval by ERGO Management, and a customer added by ERGO RFQ or a Key Account Manager waits for ERGO Management or ERGO Admin. A supplier joins the approved supplier list only after that.
             </Alert>
           )}
           {error && (

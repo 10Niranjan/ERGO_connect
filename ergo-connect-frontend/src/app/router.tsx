@@ -12,6 +12,7 @@ import {
   ASSIGNED_RFQ_VIEW,
   COMMUNICATION_VIEW,
   COMPANIES_VIEW,
+  SUPPLIERS_VIEW,
   COMPANY_PROFILE_VIEW,
   DEVIATION_CREATE,
   DOCUMENTS_VIEW,
@@ -34,6 +35,7 @@ import { MasterDataPage } from '@/features/admin/pages/MasterDataPage'
 import { PermissionManagementPage } from '@/features/admin/pages/PermissionManagementPage'
 import { UsersPage } from '@/features/admin/pages/UsersPage'
 import { CompaniesPage } from '@/features/companies/pages/CompaniesPage'
+import { SuppliersPage } from '@/features/companies/pages/SuppliersPage'
 import { MyCompanyPage } from '@/features/companies/pages/MyCompanyPage'
 import { CommunicationCenterPage } from '@/features/communication/pages/CommunicationCenterPage'
 import { DashboardPage } from '@/features/dashboard/pages/DashboardPage'
@@ -167,6 +169,10 @@ export const router = createBrowserRouter([
           {
             element: <RequirePermission rules={COMPANIES_VIEW} />,
             children: [{ path: '/companies', element: <CompaniesPage /> }],
+          },
+          {
+            element: <RequirePermission rules={SUPPLIERS_VIEW} />,
+            children: [{ path: '/suppliers', element: <SuppliersPage /> }],
           },
           { element: <RequirePermission rules={COMPANY_PROFILE_VIEW} />, children: [{ path: '/company', element: <MyCompanyPage /> }] },
           { element: <RequirePermission rules={USERS_VIEW} />, children: [{ path: '/admin/users', element: <UsersPage /> }] },

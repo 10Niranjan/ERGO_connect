@@ -22,6 +22,7 @@ import {
   useUsersQuery,
   type User,
 } from '../adminApi'
+import { DeleteUserDialog } from '../components/DeleteUserDialog'
 import { TemporaryPasswordDialog } from '../components/TemporaryPasswordDialog'
 import { UserDialog } from '../components/UserDialog'
 
@@ -32,6 +33,7 @@ export function UsersPage() {
   const [setUserActive] = useSetUserActiveMutation()
   const [resetUserPassword] = useResetUserPasswordMutation()
   const [editing, setEditing] = useState<User | 'new' | null>(null)
+  const [deleting, setDeleting] = useState<User | null>(null)
   const [issued, setIssued] = useState<{ email: string; password: string } | null>(null)
   const [actionError, setActionError] = useState<unknown>(null)
 
@@ -111,9 +113,16 @@ export function UsersPage() {
                   <Button size="small" onClick={() => void resetPassword(user)}>
                     Reset password
                   </Button>
-                  <Button size="small" color={user.active ? 'error' : 'primary'} onClick={() => void toggleActive(user)}>
-                    {user.active ? 'Deactivate' : 'Activate'}
-                  </Button>
+                  {(user.actions.includes('DEACTIVATE') || user.actions.includes('ACTIVATE')) && (
+                    <Button size="small" color={user.active ? 'error' : 'primary'} onClick={() => void toggleActive(user)}>
+                      {user.active ? 'Deactivate' : 'Activate'}
+                    </Button>
+                  )}
+                  {user.actions.includes('DELETE') && (
+                    <Button size="small" color="error" onClick={() => setDeleting(user)}>
+                      Delete
+                    </Button>
+                  )}
                 </TableCell>
               </TableRow>
             ))}
@@ -130,6 +139,7 @@ export function UsersPage() {
           }}
         />
       )}
+      {deleting && <DeleteUserDialog user={deleting} onClose={() => setDeleting(null)} />}
       {issued && <TemporaryPasswordDialog {...issued} onClose={() => setIssued(null)} />}
     </Stack>
   )

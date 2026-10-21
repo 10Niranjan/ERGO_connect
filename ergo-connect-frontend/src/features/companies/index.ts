@@ -1,5 +1,7 @@
 export * from './components/CompanyDialog'
+export * from './components/CompanyRowActions'
 export * from './components/ReviewDialog'
 export * from './pages/CompaniesPage'
 export * from './pages/MyCompanyPage'
+export * from './pages/SuppliersPage'
 export * from './services/companiesApi'

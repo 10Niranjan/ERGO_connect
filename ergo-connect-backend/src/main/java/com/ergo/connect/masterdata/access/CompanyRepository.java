@@ -4,6 +4,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.Repository;
 
 /**
@@ -32,5 +33,13 @@ interface CompanyRepository extends Repository<Company, Long> {
 
 	/** Dashboard "Pending approvals" widget (ERGO Admin/Management only). */
 	long countByStatus(CompanyStatus status);
+
+	/** The pending companies this reviewer could actually act on: not their own, and no suppliers for ERGO Admin. */
+	@Query("""
+			select count(c) from Company c
+			where c.status = com.ergo.connect.masterdata.access.CompanyStatus.PENDING_APPROVAL
+			  and (c.createdByUserId is null or c.createdByUserId <> :userId)
+			  and (:admin = false or c.type <> com.ergo.connect.common.security.CompanyType.SUPPLIER)""")
+	long countReviewable(long userId, boolean admin);
 
 }

@@ -19,6 +19,7 @@ import com.ergo.connect.masterdata.access.UserDtos.AccountsRequest;
 import com.ergo.connect.masterdata.access.UserDtos.ActiveRequest;
 import com.ergo.connect.masterdata.access.UserDtos.CreateUserRequest;
 import com.ergo.connect.masterdata.access.UserDtos.CreatedUserResponse;
+import com.ergo.connect.masterdata.access.UserDtos.DeleteRequest;
 import com.ergo.connect.masterdata.access.UserDtos.RolesRequest;
 import com.ergo.connect.masterdata.access.UserDtos.TemporaryPasswordResponse;
 import com.ergo.connect.masterdata.access.UserDtos.UpdateUserRequest;
@@ -28,7 +29,8 @@ import jakarta.validation.Valid;
 
 /**
  * SRS §10.1 User & Access Management. View: every role, limited to its record scope (V / RV). Create, edit,
- * activate, role mapping and password reset: ERGO Admin only (client decision, ARCHITECTURE.md §8).
+ * activate, role mapping, delete (with a reason) and password reset: ERGO Admin only (client decision, ARCHITECTURE.md §8); ERGO RFQ
+ * may also create supplier accounts.
  */
 @RestController
 @RequestMapping("/api")
@@ -57,8 +59,9 @@ class UserController {
 		return users.roles();
 	}
 
+	/** ERGO Admin any account; ERGO RFQ supplier accounts only (the service enforces the company type). */
 	@PostMapping("/users")
-	@PreAuthorize(ERGO_ADMIN)
+	@PreAuthorize("hasAnyRole('ERGO_ADMIN', 'ERGO_RFQ')")
 	@ResponseStatus(HttpStatus.CREATED)
 	CreatedUserResponse create(@Valid @RequestBody CreateUserRequest body) {
 		return users.create(body);
@@ -86,6 +89,17 @@ class UserController {
 	@PreAuthorize(ERGO_ADMIN)
 	UserResponse setAccounts(@PathVariable long id, @Valid @RequestBody AccountsRequest body) {
 		return users.setAccounts(id, body.customerIds());
+	}
+
+	/**
+	 * Soft delete: hides the user and ends access, keeps the audit trail. A POST with a reason (like reject), not a
+	 * DELETE: a request body on DELETE is dropped by some proxies and clients.
+	 */
+	@PostMapping("/users/{id}/delete")
+	@PreAuthorize(ERGO_ADMIN)
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	void delete(@PathVariable long id, @Valid @RequestBody DeleteRequest body) {
+		users.delete(id, body.reason());
 	}
 
 	@PostMapping("/users/{id}/reset-password")

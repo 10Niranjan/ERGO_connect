@@ -40,6 +40,9 @@ public interface Directory {
 	/** Every role mapped to each user (a person works in one at a time but may hold several), in one query. */
 	Map<Long, Set<com.ergo.connect.common.security.Role>> rolesOf(Collection<Long> userIds);
 
+	/** Whether the current caller may see this company (the company list's own record scope); false if unknown. */
+	boolean companyVisibleToCaller(long id);
+
 	/** ERGO Management's "Pending approvals" dashboard widget (SRS §12.5.1): companies awaiting onboarding review.
 	 * 0 for any caller who is not ERGO Admin/Management (ARCHITECTURE.md §8, 2026-10-05 Phase 7c). */
 	int pendingCompanyApprovalsCount();
