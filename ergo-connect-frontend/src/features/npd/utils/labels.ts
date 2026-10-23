@@ -10,6 +10,8 @@ import type {
   PlanStatus,
   PromptResponseType,
   RiskLevel,
+  ValidationParty,
+  ValidationStatus,
 } from '../services/npdApi'
 import type { SamplePoStatus } from '../services/samplePoApi'
 
@@ -102,6 +104,23 @@ export const PLAN_EVENT: Record<PlanEvent, string> = {
   SUBMITTED: 'Plan submitted by supplier',
   SENT_BACK: 'Plan sent back to supplier',
   AGREED: 'Plan agreed by ERGO NPD',
+}
+
+export const VALIDATION_STATUS: Record<ValidationStatus, { label: string; color: ChipColor }> = {
+  NOT_STARTED: { label: 'Not started', color: 'default' },
+  IN_VALIDATION: { label: 'In quality validation', color: 'warning' },
+  VALIDATED: { label: 'Quality validated', color: 'info' },
+  IN_CUSTOMER_REVIEW: { label: 'In customer review', color: 'warning' },
+  CUSTOMER_APPROVED: { label: 'Customer approved', color: 'success' },
+}
+
+export const VALIDATION_PARTY: Record<ValidationParty, string> = {
+  SUPPLIER_INTERNAL: 'Supplier Quality (internal)',
+  SUPPLIER_QUALITY: 'Supplier Quality',
+  ERGO_QUALITY: 'ERGO Quality',
+  CUSTOMER_NPD: 'Customer NPD',
+  CUSTOMER_QUALITY: 'Customer Quality',
+  CUSTOMER: 'Customer',
 }
 
 export const SAMPLE_PO_STATUS: Record<SamplePoStatus, { label: string; color: ChipColor }> = {

@@ -9,6 +9,8 @@ export type NpdAction =
   | 'SUBMIT_PLAN'
   | 'AGREE_PLAN'
   | 'SEND_BACK_PLAN'
+  | 'SUBMIT_VALIDATION'
+  | 'DECIDE_VALIDATION'
   | 'UPDATE_PROJECT'
   | 'CLOSE_STAGE'
   | 'ADD_ACTIVITY'
@@ -75,6 +77,35 @@ export interface PlanStepForm {
 }
 
 export type StageState = 'COMPLETED' | 'CURRENT' | 'UPCOMING'
+
+/** Where the project is in the quality validation and customer final approval loop (flow doc steps 9-10). */
+export type ValidationStatus = 'NOT_STARTED' | 'IN_VALIDATION' | 'VALIDATED' | 'IN_CUSTOMER_REVIEW' | 'CUSTOMER_APPROVED'
+
+/** CUSTOMER is all the supplier ever learns of a customer's decision (never its words or people). */
+export type ValidationParty = 'SUPPLIER_INTERNAL' | 'SUPPLIER_QUALITY' | 'ERGO_QUALITY' | 'CUSTOMER_NPD' | 'CUSTOMER_QUALITY' | 'CUSTOMER'
+
+export interface ValidationDecisionView {
+  round: number
+  party: ValidationParty
+  decision: 'APPROVED' | 'REJECTED'
+  comment: string | null
+  decidedBy: string | null
+  at: string
+  returnStage: NpdStage | null
+}
+
+export interface ValidationView {
+  status: ValidationStatus
+  round: number
+  decisions: ValidationDecisionView[]
+}
+
+/** A rejection needs a comment; Supplier Quality and ERGO Quality also say which development stage the project goes back to. */
+export interface ValidationDecisionForm {
+  approved: boolean
+  comment: string | null
+  returnStage: NpdStage | null
+}
 
 export interface StageProgress {
   stage: NpdStage
@@ -316,6 +347,7 @@ interface NpdViewBase {
   activities: ActivityView[]
   issuesRisks: IssueRiskView[]
   progress: ProgressView
+  validation: ValidationView
   actions: NpdAction[]
   createdAt: string
   updatedAt: string
@@ -408,6 +440,16 @@ const npdApi = api.enhanceEndpoints({ addTagTypes: ['Npd'] }).injectEndpoints({
       query: ({ id, comment }) => ({ url: `/npd/${id}/plan/send-back`, method: 'POST', body: { comment } }),
       invalidatesTags: ['Npd'],
     }),
+    /** Flow doc step 9: Supplier Quality approves internally and submits to ERGO Quality and Supplier Quality. */
+    submitNpdValidation: build.mutation<NpdView, { id: number; comment?: string }>({
+      query: ({ id, comment }) => ({ url: `/npd/${id}/validation/submit`, method: 'POST', body: { comment: comment ?? null } }),
+      invalidatesTags: ['Npd'],
+    }),
+    /** Flow doc steps 9-10: each party approves or rejects as its own role. */
+    decideNpdValidation: build.mutation<NpdView, { id: number; form: ValidationDecisionForm }>({
+      query: ({ id, form }) => ({ url: `/npd/${id}/validation/decide`, method: 'POST', body: form }),
+      invalidatesTags: ['Npd'],
+    }),
     closeNpdStage: build.mutation<NpdView, { id: number; comment?: string }>({
       query: ({ id, comment }) => ({ url: `/npd/${id}/close-stage`, method: 'POST', body: { comment: comment ?? null } }),
       invalidatesTags: ['Npd'],
@@ -470,6 +512,8 @@ export const {
   useSubmitNpdPlanMutation,
   useAgreeNpdPlanMutation,
   useSendBackNpdPlanMutation,
+  useSubmitNpdValidationMutation,
+  useDecideNpdValidationMutation,
   useNpdListQuery,
   useMyNpdProjectsQuery,
   useNpdProjectQuery,

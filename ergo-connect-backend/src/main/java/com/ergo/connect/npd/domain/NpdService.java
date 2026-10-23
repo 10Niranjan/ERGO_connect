@@ -72,6 +72,8 @@ import com.ergo.connect.npd.domain.NpdDtos.PromptChecklistForm;
 import com.ergo.connect.npd.domain.NpdDtos.PromptChecklistView;
 import com.ergo.connect.npd.domain.NpdDtos.PromptResponseForm;
 import com.ergo.connect.npd.domain.NpdDtos.ProgressView;
+import com.ergo.connect.npd.domain.NpdDtos.ValidationDecisionView;
+import com.ergo.connect.npd.domain.NpdDtos.ValidationView;
 import com.ergo.connect.npd.domain.NpdDtos.StageProgress;
 import com.ergo.connect.npd.domain.NpdDtos.StageState;
 import com.ergo.connect.npd.domain.NpdDtos.StageHistoryView;
@@ -138,6 +140,8 @@ public class NpdService {
 
 	private final NpdPlanHistoryRepository planHistory;
 
+	private final NpdValidationDecisionRepository validationDecisions;
+
 	private final RfqApi rfqApi;
 
 	private final QualityApi qualityApi;
@@ -154,10 +158,11 @@ public class NpdService {
 			NpdStageHistoryRepository stageHistory, NpdPromptChecklistRepository checklists,
 			NpdPromptResponseRepository responses, NpdIssueRiskRepository issueRisks,
 			NpdApprovalRepository approvals, SamplePoRepository samplePos, NpdPlanHistoryRepository planHistory,
-			RfqApi rfqApi, QualityApi qualityApi, Directory directory, AuditLogService audit, JdbcTemplate jdbc,
+			NpdValidationDecisionRepository validationDecisions, RfqApi rfqApi, QualityApi qualityApi, Directory directory, AuditLogService audit, JdbcTemplate jdbc,
 			Notifier notifier) {
 		this.notifier = notifier;
 		this.planHistory = planHistory;
+		this.validationDecisions = validationDecisions;
 		this.projects = projects;
 		this.activities = activities;
 		this.stageHistory = stageHistory;
@@ -314,7 +319,7 @@ public class NpdService {
 
 	/** Takes the project row's lock, so a step edit cannot slip in between a submit and ERGO's decision on it: the plan
 	 * state read afterwards is the committed one. */
-	private void lockProject(long projectId) {
+	void lockProject(long projectId) {
 		jdbc.query("SELECT 1 FROM npd_projects WHERE npd_project_id = ? FOR UPDATE", rs -> {
 		}, projectId);
 	}
@@ -434,20 +439,7 @@ public class NpdService {
 		NpdProject project = visible(me, id);
 		require(NpdAction.CLOSE_STAGE, me, project);
 		NpdStage current = project.stage;
-		List<NpdActivity> mandatory = activities.findByNpdProjectIdAndPhaseNameAndMandatoryFlagTrue(id, current);
-		// M2: the gate needs an APPROVED approval of the *right* approvalType linked to the activity, not just any
-		// approved approval linked to it — otherwise ERGO could clear a CUSTOMER_SAMPLE_APPROVAL-gated activity by
-		// requesting and self-approving an unrelated STAGE_GATE approval instead.
-		Map<Long, Set<ApprovalType>> approvedTypesByActivity = approvals
-			.findByNpdProjectIdAndApprovalStatusOrderById(id, ApprovalStatus.APPROVED).stream()
-			.filter(a -> a.linkedActivityId != null)
-			.collect(Collectors.groupingBy(a -> a.linkedActivityId, Collectors.mapping(a -> a.approvalType,
-					Collectors.toSet())));
-		List<String> open = mandatory.stream()
-			.filter(a -> a.status != ActivityStatus.DONE || a.approvalRequiredFlag
-					&& !approvedTypesByActivity.getOrDefault(a.id, Set.of()).contains(a.requiredApprovalType))
-			.map(a -> a.status != ActivityStatus.DONE ? a.activityName : a.activityName + " (pending approval)")
-			.toList();
+		List<String> open = openMandatory(project);
 		if (!open.isEmpty()) {
 			throw ApiException
 				.conflict("Complete these mandatory activities before closing this stage: " + String.join(", ", open));
@@ -466,6 +458,15 @@ public class NpdService {
 				throw ApiException.conflict(
 						"A final sample inspection must pass (or be released with deviation) before Final Sample Readiness can be closed");
 			}
+			// flow doc step 9: ERGO Quality and Supplier Quality must both have approved; closing the stage submits the
+			// project to Customer NPD and Customer Quality (step 10)
+			if (project.validationStatus != ValidationStatus.VALIDATED) {
+				throw ApiException.conflict("ERGO Quality and Supplier Quality must both approve the validation before Final "
+						+ "Sample Readiness can be closed");
+			}
+		}
+		if (current == NpdStage.CUSTOMER_FEEDBACK && project.validationStatus != ValidationStatus.CUSTOMER_APPROVED) {
+			throw ApiException.conflict("Customer NPD and Customer Quality must both approve before Customer Feedback can be closed");
 		}
 		NpdStage next = current.next();
 		reasonIfGiven(comment);
@@ -477,9 +478,32 @@ public class NpdService {
 		history.changedByUserId = me.userId();
 		history.remarks = text(comment);
 		stageHistory.save(history);
+		if (current == NpdStage.FINAL_SAMPLE_READINESS) {
+			project.validationStatus = ValidationStatus.IN_CUSTOMER_REVIEW;
+			notifier.send(NotificationKind.NPD_CUSTOMER_REVIEW_REQUESTED, "npd", project.id, project.npdNumber,
+					"Part " + project.partNumber, editors(project.customerCompanyId, Set.of(CUSTOMER_NPD, CUSTOMER_QUALITY)));
+		}
 		notifier.send(NotificationKind.NPD_STAGE_CHANGED, "npd", project.id, project.npdNumber, "Now in " + pretty(next),
 				everyone(project));
 		return view(me, project);
+	}
+
+	/** The mandatory activities of the project's current stage that are not finished (or wait for their approval), by name. */
+	List<String> openMandatory(NpdProject project) {
+		List<NpdActivity> mandatory = activities.findByNpdProjectIdAndPhaseNameAndMandatoryFlagTrue(project.id, project.stage);
+		// M2: the gate needs an APPROVED approval of the *right* approvalType linked to the activity, not just any
+		// approved approval linked to it - otherwise ERGO could clear a CUSTOMER_SAMPLE_APPROVAL-gated activity by
+		// requesting and self-approving an unrelated STAGE_GATE approval instead.
+		Map<Long, Set<ApprovalType>> approvedTypesByActivity = approvals
+			.findByNpdProjectIdAndApprovalStatusOrderById(project.id, ApprovalStatus.APPROVED).stream()
+			.filter(a -> a.linkedActivityId != null)
+			.collect(Collectors.groupingBy(a -> a.linkedActivityId, Collectors.mapping(a -> a.approvalType,
+					Collectors.toSet())));
+		return mandatory.stream()
+			.filter(a -> a.status != ActivityStatus.DONE || a.approvalRequiredFlag
+					&& !approvedTypesByActivity.getOrDefault(a.id, Set.of()).contains(a.requiredApprovalType))
+			.map(a -> a.status != ActivityStatus.DONE ? a.activityName : a.activityName + " (pending approval)")
+			.toList();
 	}
 
 	// ---------------------------------------------------------------- activities (SRS §13.4.3, §17.4)
@@ -754,7 +778,7 @@ public class NpdService {
 	}
 
 	/** An empty role set (module read-only or hidden) must notify nobody; Recipients.company with no roles means "anyone". */
-	private static Recipients editors(long companyId, java.util.Set<Role> roles) {
+	static Recipients editors(long companyId, java.util.Set<Role> roles) {
 		return roles.isEmpty() ? Recipients.none() : Recipients.company(companyId, roles.toArray(Role[]::new));
 	}
 
@@ -791,7 +815,7 @@ public class NpdService {
 				ownerSide(activity));
 	}
 
-	private static String pretty(Enum<?> value) {
+	static String pretty(Enum<?> value) {
 		String text = value.name().toLowerCase().replace('_', ' ');
 		return Character.toUpperCase(text.charAt(0)) + text.substring(1);
 	}
@@ -799,7 +823,7 @@ public class NpdService {
 	// ---------------------------------------------------------------- rules
 
 	/** Record scope. Out-of-scope NPD projects do not exist for the caller (404, not 403). */
-	private NpdProject visible(CurrentUser me, long id) {
+	NpdProject visible(CurrentUser me, long id) {
 		NpdProject project = projects.findById(id).orElse(null);
 		if (!inScope(me, project)) {
 			throw ApiException.notFound("NPD project");
@@ -830,8 +854,8 @@ public class NpdService {
 			// a project moves on only once the plan is agreed (flow doc step 8)
 			case CLOSE_STAGE -> OWNERS.contains(me.role()) && project.stage != NpdStage.CLOSED
 					&& project.planStatus == PlanStatus.AGREED;
-			case ADD_ACTIVITY -> editor && project.stage != NpdStage.CLOSED && !planUnderReview(project);
-			case MANAGE_PROMPT_CHECKLIST -> editor && project.stage != NpdStage.CLOSED && !planUnderReview(project);
+			case ADD_ACTIVITY -> editor && project.stage != NpdStage.CLOSED && !planUnderReview(project) && !underValidation(project);
+			case MANAGE_PROMPT_CHECKLIST -> editor && project.stage != NpdStage.CLOSED && !planUnderReview(project) && !underValidation(project);
 			case RAISE_ISSUE -> editor && project.stage != NpdStage.CLOSED;
 			// approvals (sample, quality, stage gate) belong to the work, which starts once the plan is agreed
 			case REQUEST_APPROVAL -> editor && project.stage != NpdStage.CLOSED && executing(project);
@@ -848,7 +872,7 @@ public class NpdService {
 
 	/** Activity-level actions: ERGO's full edit, plus the owning company's own progress/response/blocked-toggle. */
 	private static boolean allowed(NpdAction action, CurrentUser me, NpdProject project, NpdActivity activity) {
-		if (project.stage == NpdStage.CLOSED) {
+		if (project.stage == NpdStage.CLOSED || frozenByValidation(project, activity)) {
 			return false;
 		}
 		boolean editor = EDITORS.contains(me.role());
@@ -870,6 +894,18 @@ public class NpdService {
 	/** The plan is with ERGO NPD for its decision: nobody changes the steps meanwhile. */
 	private static boolean planUnderReview(NpdProject project) {
 		return project.planStatus == PlanStatus.SUBMITTED;
+	}
+
+	/** The final-sample work is with the quality teams for validation: it must not change under their feet. */
+	private static boolean underValidation(NpdProject project) {
+		return project.stage == NpdStage.FINAL_SAMPLE_READINESS
+				&& (project.validationStatus == ValidationStatus.IN_VALIDATION || project.validationStatus == ValidationStatus.VALIDATED);
+	}
+
+	/** The steps of Final Sample Readiness stay as they were submitted from the submission until the customer has decided. */
+	private static boolean frozenByValidation(NpdProject project, NpdActivity activity) {
+		return activity.phaseName == NpdStage.FINAL_SAMPLE_READINESS && (project.validationStatus == ValidationStatus.IN_VALIDATION
+				|| project.validationStatus == ValidationStatus.VALIDATED || project.validationStatus == ValidationStatus.IN_CUSTOMER_REVIEW);
 	}
 
 	/** Execution has started: the plan is agreed (projects from before the plan flow count as agreed). */
@@ -1095,7 +1131,7 @@ public class NpdService {
 
 	// ---------------------------------------------------------------- per-audience view assembly
 
-	private NpdView view(CurrentUser me, NpdProject p) {
+	NpdView view(CurrentUser me, NpdProject p) {
 		boolean isCustomer = CUSTOMER_VIEWERS.contains(me.role());
 		boolean isSupplier = SUPPLIER_VIEWERS.contains(me.role());
 		// RfqApi's own record scope is per-audience (forErgo/forCustomer/forSupplier): the caller's own visible()
@@ -1117,9 +1153,16 @@ public class NpdService {
 			.toList();
 		// H1: whatever ERGO typed as a stage-move comment (remarks) could name the other party or a price — the
 		// customer/supplier variant drops it; changedBy stays (every stage move is an ERGO-only action).
+		// A stage move can now also be a customer's or the supplier's rejection (quality validation), so the name of whoever
+		// moved it is shown only if that is ERGO or the caller's own company, never the other external party's people.
+		// The customer also never sees a move back that the supplier-side validation caused (only its own rejection).
+		Map<Long, CompanyRef> historyCompanies = directory.companies(ids(historyUsers.values(), UserRef::companyId));
 		List<ExternalStageHistoryView> externalHistoryViews = history.stream()
+			.filter(h -> !isCustomer || h.previousStageName == null || h.stageName.compareTo(h.previousStageName) >= 0
+					|| h.previousStageName == NpdStage.CUSTOMER_FEEDBACK)
 			.map(h -> new ExternalStageHistoryView(h.stageName, h.previousStageName,
-					userName(historyUsers, h.changedByUserId), h.changedAt))
+					mayNameChanger(me, historyUsers.get(h.changedByUserId), historyCompanies) ? userName(historyUsers, h.changedByUserId) : null,
+					h.changedAt))
 			.toList();
 
 		List<NpdActivity> acts = isCustomer
@@ -1166,13 +1209,26 @@ public class NpdService {
 		Long delay = delayDays(p);
 		Set<NpdAction> actions = projectActions(me, p);
 		ProgressView progress = progress(p, acts);
+		List<NpdValidationDecision> decisionRows = validationDecisions.findByNpdProjectIdOrderById(p.id);
+		Set<ValidationParty> decidedNow = decisionRows.stream().filter(d -> d.roundNo == p.validationRound)
+			.map(d -> d.party).collect(Collectors.toCollection(() -> EnumSet.noneOf(ValidationParty.class)));
+		ValidationView validation = validationView(me, p, decisionRows);
+		actions = new java.util.LinkedHashSet<>(actions);
+		Long submitter = decisionRows.stream().filter(d -> d.roundNo == p.validationRound && d.party == ValidationParty.SUPPLIER_INTERNAL)
+			.map(d -> d.decidedByUserId).findFirst().orElse(null);
+		actions.addAll(NpdValidationService.actions(me, p, decidedNow, submitter));
+		// the button only where closing can work; closeStage itself still checks the inspection gate first, then this one
+		if (p.stage == NpdStage.FINAL_SAMPLE_READINESS && p.validationStatus != ValidationStatus.VALIDATED
+				|| p.stage == NpdStage.CUSTOMER_FEEDBACK && p.validationStatus != ValidationStatus.CUSTOMER_APPROVED) {
+			actions.remove(NpdAction.CLOSE_STAGE);
+		}
 
 		List<NpdPlanHistoryEntry> planHistoryRows = isCustomer ? List.of() : planHistory.findByNpdProjectIdOrderById(p.id);
 
 		if (isSupplier) {
 			return new SupplierNpdView("SUPPLIER", p.id, p.npdNumber, p.sourceRfqId, rfqNumber, p.partNumber, p.revision,
 					p.description, p.quoteReference, p.stage, p.targetSampleDate, p.actualSampleSubmissionDate, delay,
-					activityViews, issueViews, externalHistoryViews, p.planStatus, planViews(planHistoryRows, true), progress, actions,
+					activityViews, issueViews, externalHistoryViews, p.planStatus, planViews(planHistoryRows, true), progress, validation, actions,
 					p.createdAt, p.updatedAt);
 		}
 		if (isCustomer) {
@@ -1180,7 +1236,7 @@ public class NpdService {
 			return new CustomerNpdView("CUSTOMER", p.id, p.npdNumber, p.sourceRfqId, rfqNumber,
 					new Named(customer.id(), customer.code(), customer.name()), samplePoId, samplePoNumber, p.partNumber, p.revision,
 					p.description, p.stage, p.targetSampleDate, p.actualSampleSubmissionDate, delay, activityViews,
-					issueViews, approvalViews, externalHistoryViews, progress, actions, p.createdAt, p.updatedAt);
+					issueViews, approvalViews, externalHistoryViews, progress, validation, actions, p.createdAt, p.updatedAt);
 		}
 		if (me.companyType() != CompanyType.ERGO) {
 			// the ERGO view carries both companies: only ever for an ERGO caller, whatever the role sets say
@@ -1194,7 +1250,7 @@ public class NpdService {
 				p.quoteReference, p.stage, p.targetSampleDate, p.actualSampleSubmissionDate, delay, p.ownerUserId,
 				userName(owner, p.ownerUserId), p.qualityOwnerUserId, userName(owner, p.qualityOwnerUserId), p.riskLevel,
 				p.planStatus, planViews(planHistoryRows, false), samplePoId, samplePoNumber, activityViews, issueViews,
-				approvalViews, historyViews, progress, actions, p.createdAt, p.updatedAt);
+				approvalViews, historyViews, progress, validation, actions, p.createdAt, p.updatedAt);
 	}
 
 	/** The plan's trail. ERGO sees every comment. The supplier sees ERGO NPD's send-back reason (written for it) and its own
@@ -1226,6 +1282,63 @@ public class NpdService {
 		int total = visibleActivities.size();
 		int done = (int) visibleActivities.stream().filter(a -> a.status == ActivityStatus.DONE).count();
 		return new ProgressView(total == 0 ? 0 : done * 100 / total, done, total, stages);
+	}
+
+	private static boolean mayNameChanger(CurrentUser me, UserRef changer, Map<Long, CompanyRef> companies) {
+		if (changer == null) {
+			return false;
+		}
+		CompanyRef company = companies.get(changer.companyId());
+		return changer.companyId() == me.companyId() || company != null && company.type() == CompanyType.ERGO;
+	}
+
+	/** The quality history for one audience. ERGO sees everything. The supplier sees its own people's decisions and ERGO
+	 * Quality's rejection reasons (written for the rework), but of the customer only the outcome: never its words or
+	 * people. The customer sees only its own decisions and a coarse status that does not reveal the supplier-side
+	 * steps. */
+	private ValidationView validationView(CurrentUser me, NpdProject p, List<NpdValidationDecision> rows) {
+		boolean customer = CUSTOMER_VIEWERS.contains(me.role());
+		boolean supplier = SUPPLIER_VIEWERS.contains(me.role());
+		Map<Long, UserRef> users = directory.users(ids(rows, r -> r.decidedByUserId));
+		List<ValidationDecisionView> views = new ArrayList<>();
+		Set<Integer> emittedCustomerRounds = new java.util.HashSet<>();
+		for (NpdValidationDecision d : rows) {
+			boolean customerParty = d.party.side() == CompanyType.CUSTOMER;
+			if (customer && !customerParty) {
+				continue;
+			}
+			String party = d.party.name();
+			String comment = d.comment;
+			String by = userName(users, d.decidedByUserId);
+			if (supplier && customerParty) {
+				if (!emittedCustomerRounds.add(d.roundNo)) {
+					continue;
+				}
+				List<NpdValidationDecision> customerRound = rows.stream()
+					.filter(x -> x.roundNo == d.roundNo && x.party.side() == CompanyType.CUSTOMER)
+					.toList();
+				boolean rejected = customerRound.stream().anyMatch(x -> x.decision == NpdValidationDecision.Decision.REJECTED);
+				if (!rejected && customerRound.size() < ValidationParty.CUSTOMER_REVIEWERS.size()) {
+					emittedCustomerRounds.remove(d.roundNo); // still waiting for the second customer team
+					continue;
+				}
+				views.add(new ValidationDecisionView(d.roundNo, "CUSTOMER", rejected ? "REJECTED" : "APPROVED", null, null,
+						customerRound.getLast().createdAt, rejected ? d.returnStage : null));
+				continue;
+			}
+			else if (supplier && d.party == ValidationParty.ERGO_QUALITY && d.decision == NpdValidationDecision.Decision.APPROVED) {
+				comment = null; // an approval note is internal to ERGO
+			}
+			views.add(new ValidationDecisionView(d.roundNo, party, d.decision.name(), comment, by, d.createdAt, d.returnStage));
+		}
+		ValidationStatus status = p.validationStatus;
+		if (customer && (status == ValidationStatus.IN_VALIDATION || status == ValidationStatus.VALIDATED)) {
+			status = ValidationStatus.NOT_STARTED;
+		}
+		// the customer's round counts the customer's own rejections: the supplier-side rounds are not its business
+		int round = customer ? 1 + (int) rows.stream().filter(d -> d.party.side() == CompanyType.CUSTOMER
+				&& d.decision == NpdValidationDecision.Decision.REJECTED).count() : p.validationRound;
+		return new ValidationView(status, round, views);
 	}
 
 	/** A customer's or supplier's own issues/risks: owned by their own company only. Deliberately NOT unioned with

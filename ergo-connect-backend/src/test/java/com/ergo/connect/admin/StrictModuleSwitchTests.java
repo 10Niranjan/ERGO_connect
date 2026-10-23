@@ -315,6 +315,7 @@ class StrictModuleSwitchTests {
 	@Test
 	void theDispatchAndFinalSampleGatesFailClosedWhileQualityIsHidden() throws Exception {
 		long project = npdProject("FINAL_SAMPLE_READINESS");
+		jdbc.update("UPDATE npd_projects SET validation_status = 'VALIDATED' WHERE npd_project_id = ?", project);
 		jdbc.update("""
 				INSERT INTO inspections (linked_module, linked_record_id, customer_company_id, supplier_company_id,
 				                         part_number, result_status, created_by_user_id, created_by_company_id)

@@ -1,7 +1,7 @@
 # ERGO Connect — flow-document alignment: handoff for the next Claude
 
 **Read this file first.** It is self-contained: after reading it (and `CLAUDE.md`) you can continue without asking
-the user what happened. Last updated 2026-10-24 (slice 4 done), branch `sprint-3`.
+the user what happened. Last updated 2026-10-24 (slice 5 done), branch `sprint-3`.
 
 ## 1. Why this work exists
 
@@ -170,21 +170,20 @@ Decisions in `ARCHITECTURE.md` §8 (2026-10-24) and `docs/PERMISSIONS.md` §11. 
 - **Tests:** `PlanAgreementTests` (9) plus `TestNpd.agreed(...)`, the helper that drives a project to execution (`TestNpd.release` stops at "assigned": supplier steps get a planned date there). Tests that work steps or close stages now use it.
 - **Not built / known gaps:** the responsible-person picker on the supplier's step dialog (date and remarks only), a reusable saved plan template, a browser smoke test of the whole path.
 
+### Slice 5 — dual quality gate and customer final approval (V37) ✅
+Decisions (defaults to confirm with the client) in `ARCHITECTURE.md` §8, two entries of 2026-10-24.
+- **Loop (`NpdValidationService`, `ValidationStatus`):** `NOT_STARTED` -> `IN_VALIDATION` (Supplier Quality's internal approval = submission) -> `VALIDATED` (ERGO Quality and Supplier Quality both approved) -> `IN_CUSTOMER_REVIEW` (closing Final Sample Readiness submits) -> `CUSTOMER_APPROVED` (Customer NPD and Customer Quality both approved). Endpoints `POST /api/npd/{id}/validation/submit` and `/validation/decide`. `npd_validation_decisions` (append-only) is the quality history.
+- **Rejections:** reason mandatory. ERGO Quality / Supplier Quality send the project to a development stage (Planning..Trial Execution), reopening that stage's finished non-customer steps; the customer sends it back to Final Sample Readiness. Each starts a new round; Supplier Quality must submit again (a colleague must validate, not the submitter).
+- **Gates:** `closeStage` at Final Sample Readiness = real inspection (`QualityApi`) AND `VALIDATED`; at Customer Feedback = `CUSTOMER_APPROVED`. Final Sample Readiness work is frozen from submission until the customer decides. Projects already at Customer Feedback or later were backfilled as approved.
+- **Visibility:** ERGO sees all; the supplier sees its side + ERGO Quality's rejection reasons + one customer outcome per round; the customer sees only its own decisions, a coarse status and its own round count. External stage history shows names only for ERGO and the caller's own company.
+- **Frontend:** `features/npd/components/ValidationPanel.tsx` (status, submit / approve / reject dialogs, quality history) on the Overview tab.
+- **Tests:** `ValidationFlowTests` (12); `TestNpd.validate(...)` / `customerApprove(...)` drive the loop; the helpers that close every stage (NpdTests, OfpTests) use them.
+- **Known gaps:** approvals linked to a reopened step stay approved; Supplier Quality chooses the return stage; the older `ApprovalType` approvals still exist beside this loop.
+
 ## 4. What is left — the slices to build (in this order)
 
-For each slice: ask `srs-analyst`-style questions only where the doc is ambiguous; write migration `V37+` (next free number is **V37**); backend (entities → service/workflow → `<module>.api` facade → controller → tests); frontend; then
+For each slice: ask `srs-analyst`-style questions only where the doc is ambiguous; write migration `V38+` (next free number is **V38**); backend (entities → service/workflow → `<module>.api` facade → controller → tests); frontend; then
 `security-reviewer`; `./mvnw verify` + `npm run build && npm run lint` green; log in `ARCHITECTURE.md` §8; commit.
-
-### Slice 5 — flow steps 9–10: dual quality gate and customer final approval
-- After applicable steps complete: **Supplier Quality inspects and approves internally**, then the project goes to
-  **both ERGO Quality and Supplier Quality** for inspection/testing/validation. Both must approve.
-- **ERGO Quality rejects → back to the relevant development step** (steps 7/8) with failure comments for rework;
-  decisions and remarks recorded in the project history.
-- Then **Customer NPD and Customer Quality** final review: **both must approve**; rejection returns to the relevant
-  quality stage with comments for corrective action and resubmission.
-- Existing pieces: `quality` module (inspections, NCR/CAPA, deviations) and the gates `QualityApi.npdFinalSampleGateMet`
-  / `ofpDispatchGateMet`; NPD approvals (`ApprovalType`: STAGE_GATE, QUALITY_GATE, CUSTOMER_*). Reconcile them with the
-  dual-gate rule rather than adding a parallel mechanism.
 
 ### Slice 6 — flow step 11: production order and OFP project
 - **Customer OFP releases a production order** and submits it under OFP; the **ERGO KAM is notified** and creates an
@@ -216,7 +215,7 @@ For each slice: ask `srs-analyst`-style questions only where the doc is ambiguou
   (`approveWhole`). `ModuleSwitchFacadeTests` forces every new `<module>.api` method to be classified (and
   `QuotationSummary` etc. need an argument in its `arguments()`). `ModuleBoundaryTest` forbids cross-module imports
   except via `<module>.api`.
-- **Flyway:** migrations are immutable once committed (V31–V36 are committed now); add V37+. Raw SQL in tests that
+- **Flyway:** migrations are immutable once committed (V31–V37 are committed now); add V38+. Raw SQL in tests that
   inserts `rfqs`/`npd_projects` must also create an `rfq_items` row and set `source_rfq_item_id`.
 - **Module switches / audit / DTO-per-audience** rules in `CLAUDE.md` still apply to everything above.
 - **Git:** work on `sprint-3`. Commit messages end with the `Co-Authored-By` trailer given in the session reminder.

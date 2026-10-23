@@ -1148,6 +1148,10 @@ class OfpTests {
 					"$.stage");
 			if (current.equals("FINAL_SAMPLE_READINESS")) {
 				passNpdInspection(projectId);
+				TestNpd.validate(mvc, users.login(supplier, "SUPPLIER_QUALITY"), users.login(supplier, "SUPPLIER_QUALITY"), ergoQuality, projectId);
+			}
+			else if (current.equals("CUSTOMER_FEEDBACK")) {
+				TestNpd.customerApprove(mvc, users.login(customerA, "CUSTOMER_NPD"), users.login(customerA, "CUSTOMER_QUALITY"), projectId);
 			}
 			call(post("/api/npd/{id}/close-stage", projectId), ergoNpd, "{}").andExpect(status().isOk());
 		}

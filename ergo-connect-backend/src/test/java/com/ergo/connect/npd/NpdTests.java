@@ -646,6 +646,9 @@ class NpdTests {
 				{"partNumber": "PN-STD", "quantityChecked": 5, "quantityRejected": 0, "inspectionDate": "%s",
 				 "customerVisible": false}""".formatted(LocalDate.now())).andExpect(status().isOk());
 		call(post("/api/quality/inspections/{id}/pass", inspectionId), ergoManagement, "{}").andExpect(status().isOk());
+		// the inspection alone is not enough: ERGO Quality and Supplier Quality must both approve the validation
+		call(post("/api/npd/{id}/close-stage", projectId), ergoNpd, "{}").andExpect(status().isConflict());
+		validate(projectId);
 		call(post("/api/npd/{id}/close-stage", projectId), ergoNpd, "{}")
 			.andExpect(jsonPath("$.stage").value("CUSTOMER_FEEDBACK"));
 	}
@@ -665,6 +668,7 @@ class NpdTests {
 				 "customerVisible": false}""".formatted(LocalDate.now())).andExpect(status().isOk());
 		call(post("/api/quality/inspections/{id}/release-with-deviation", inspectionId), ergoManagement,
 				"{\"reason\": \"Minor deviation, customer concession granted\"}").andExpect(status().isOk());
+		validate(projectId);
 		call(post("/api/npd/{id}/close-stage", projectId), ergoNpd, "{}")
 			.andExpect(jsonPath("$.stage").value("CUSTOMER_FEEDBACK"));
 	}
@@ -678,8 +682,14 @@ class NpdTests {
 				SELECT inspection_id FROM inspections WHERE linked_module = 'NPD' AND linked_record_id = ?""",
 				Long.class, projectId);
 		call(post("/api/quality/inspections/{id}/close", inspectionId), ergoManagement, "{}").andExpect(status().isOk());
+		validate(projectId);
 		call(post("/api/npd/{id}/close-stage", projectId), ergoNpd, "{}")
 			.andExpect(jsonPath("$.stage").value("CUSTOMER_FEEDBACK"));
+	}
+
+	/** Supplier Quality submits the project to validation and ERGO Quality and Supplier Quality both approve it. */
+	private void validate(long projectId) throws Exception {
+		TestNpd.validate(mvc, users.login(supplier, "SUPPLIER_QUALITY"), users.login(supplier, "SUPPLIER_QUALITY"), ergoQuality, projectId);
 	}
 
 	/** Closes PLANNING through Trial Execution (5 close-stage calls, no mandatory activities), leaving the project
@@ -1115,6 +1125,10 @@ class NpdTests {
 					"$.stage");
 			if (current.equals("FINAL_SAMPLE_READINESS")) {
 				passNpdInspection(projectId);
+				validate(projectId);
+			}
+			else if (current.equals("CUSTOMER_FEEDBACK")) {
+				TestNpd.customerApprove(mvc, users.login(customerA, "CUSTOMER_NPD"), users.login(customerA, "CUSTOMER_QUALITY"), projectId);
 			}
 			stage = JsonPath.read(
 					call(post("/api/npd/{id}/close-stage", projectId), ergoNpd, "{}").andExpect(status().isOk())

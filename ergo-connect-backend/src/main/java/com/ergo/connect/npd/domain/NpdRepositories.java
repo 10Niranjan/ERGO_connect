@@ -67,6 +67,9 @@ interface NpdActivityRepository extends Repository<NpdActivity, Long> {
 	/** The activities that gate Close Stage for one stage of one project. */
 	List<NpdActivity> findByNpdProjectIdAndPhaseNameAndMandatoryFlagTrue(Long npdProjectId, NpdStage phaseName);
 
+	/** Every activity of one stage of one project (a rework sends the project back to it). */
+	List<NpdActivity> findByNpdProjectIdAndPhaseName(Long npdProjectId, NpdStage phaseName);
+
 }
 
 interface NpdStageHistoryRepository extends Repository<NpdStageHistoryEntry, Long> {
@@ -146,5 +149,15 @@ interface NpdPlanHistoryRepository extends Repository<NpdPlanHistoryEntry, Long>
 	NpdPlanHistoryEntry save(NpdPlanHistoryEntry entry);
 
 	List<NpdPlanHistoryEntry> findByNpdProjectIdOrderById(Long npdProjectId);
+
+}
+
+interface NpdValidationDecisionRepository extends Repository<NpdValidationDecision, Long> {
+
+	NpdValidationDecision save(NpdValidationDecision decision);
+
+	List<NpdValidationDecision> findByNpdProjectIdOrderById(Long npdProjectId);
+
+	List<NpdValidationDecision> findByNpdProjectIdAndRoundNoOrderById(Long npdProjectId, int roundNo);
 
 }

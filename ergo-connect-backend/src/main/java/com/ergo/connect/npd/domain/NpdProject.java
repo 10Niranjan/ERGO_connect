@@ -81,6 +81,13 @@ class NpdProject {
 	@Enumerated(EnumType.STRING)
 	PlanStatus planStatus = PlanStatus.AGREED;
 
+	/** Flow doc steps 9-10: Supplier Quality -> ERGO Quality + Supplier Quality -> Customer NPD + Customer Quality. */
+	@Enumerated(EnumType.STRING)
+	ValidationStatus validationStatus = ValidationStatus.NOT_STARTED;
+
+	/** Counts the submissions to validation; a rejection starts a new round. */
+	int validationRound = 1;
+
 	@Enumerated(EnumType.STRING)
 	RiskLevel riskLevel;
 

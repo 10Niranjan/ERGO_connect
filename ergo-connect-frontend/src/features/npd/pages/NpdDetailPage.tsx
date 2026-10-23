@@ -33,6 +33,7 @@ import { HandoverDialog } from '../../ofp/components/HandoverDialog'
 import { Link as RouterLink, useParams } from 'react-router'
 import { CommentsPanel } from '../../communication/components/CommentsPanel'
 import { PlanPanel, PlanStepDialog, ProgressSummary } from '../components/PlanPanel'
+import { ValidationPanel } from '../components/ValidationPanel'
 import { useUsersQuery, type User } from '../../admin/adminApi'
 import { AuditTrail } from '../../../shared/components/AuditTrail'
 import { CommentDialog } from '../../../shared/components/CommentDialog'
@@ -242,6 +243,7 @@ function NpdDetail({ npd }: { npd: NpdView }) {
           {/* the customer's view carries no plan: the supplier's dates are not the customer's business */}
           {npd.audience !== 'CUSTOMER' && <PlanPanel npd={npd} />}
           <ProgressSummary progress={npd.progress} currentStage={npd.stage} />
+          <ValidationPanel npd={npd} />
           <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' } }}>
             <Facts title="Project" facts={projectFacts} />
             <Facts title="Schedule and ownership" facts={scheduleFacts} />

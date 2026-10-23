@@ -26,7 +26,8 @@ public final class NpdDtos {
 	/** Buttons the caller may use now, computed by the same rules that enforce them. They appear on a project, one of
 	 * its activities, one of its issues/risks or one of its approvals. */
 	public enum NpdAction {
-		ASSIGN_PLAN, EDIT_PLAN_STEP, SUBMIT_PLAN, AGREE_PLAN, SEND_BACK_PLAN, UPDATE_PROJECT, CLOSE_STAGE, ADD_ACTIVITY,
+		ASSIGN_PLAN, EDIT_PLAN_STEP, SUBMIT_PLAN, AGREE_PLAN, SEND_BACK_PLAN, SUBMIT_VALIDATION, DECIDE_VALIDATION,
+		UPDATE_PROJECT, CLOSE_STAGE, ADD_ACTIVITY,
 		EDIT_ACTIVITY, MARK_BLOCKED, UNBLOCK, UPDATE_OWN_ACTIVITY, MANAGE_PROMPT_CHECKLIST, RESPOND_TO_PROMPT,
 		RAISE_ISSUE, UPDATE_ISSUE, REQUEST_APPROVAL, DECIDE_APPROVAL
 	}
@@ -50,6 +51,22 @@ public final class NpdDtos {
 	/** Progress of a project, from the activities the caller can see. {@code percent} is the share of those
 	 * activities that are DONE; each stage reports its own counts and whether it is finished, running or ahead. */
 	public record ProgressView(int percent, int done, int total, List<StageProgress> stages) {
+	}
+
+	/** One decision of the quality validation / customer final approval loop (flow doc steps 9-10). {@code party} is
+	 * SUPPLIER_INTERNAL, SUPPLIER_QUALITY, ERGO_QUALITY, CUSTOMER_NPD or CUSTOMER_QUALITY (CUSTOMER for the supplier's
+	 * view, which never learns more than the outcome). {@code returnStage} is where a rejection sent the project back. */
+	public record ValidationDecisionView(int round, String party, String decision, String comment, String decidedBy,
+			Instant at, NpdStage returnStage) {
+	}
+
+	/** Where the project is in the loop, and what has been decided so far, as far as the caller may know. */
+	public record ValidationView(ValidationStatus status, int round, List<ValidationDecisionView> decisions) {
+	}
+
+	/** Approve or reject as the caller's own party. A rejection needs a comment; Supplier Quality and ERGO Quality
+	 * also say which development stage the project goes back to ({@code returnStage}, before Final Sample Readiness). */
+	public record ValidationDecisionForm(@NotNull Boolean approved, @Size(max = 2000) String comment, NpdStage returnStage) {
 	}
 
 	public enum StageState {
@@ -198,7 +215,7 @@ public final class NpdDtos {
 			Long ownerUserId, String owner, Long qualityOwnerUserId, String qualityOwner, RiskLevel riskLevel,
 			PlanStatus planStatus, List<PlanHistoryView> planHistory, Long samplePoId, String samplePoNumber,
 			List<ActivityView> activities, List<IssueRiskView> issuesRisks, List<ApprovalView> approvals,
-			List<StageHistoryView> stageHistory, ProgressView progress, Set<NpdAction> actions, Instant createdAt,
+			List<StageHistoryView> stageHistory, ProgressView progress, ValidationView validation, Set<NpdAction> actions, Instant createdAt,
 			Instant updatedAt) implements NpdView {
 	}
 
@@ -213,7 +230,7 @@ public final class NpdDtos {
 			Named customer, Long samplePoId, String samplePoNumber, String partNumber, String revision, String description,
 			NpdStage stage, LocalDate targetSampleDate, LocalDate actualSampleSubmissionDate, Long delayDays,
 			List<ActivityView> activities, List<IssueRiskView> issuesRisks, List<ApprovalView> approvals,
-			List<ExternalStageHistoryView> stageHistory, ProgressView progress, Set<NpdAction> actions,
+			List<ExternalStageHistoryView> stageHistory, ProgressView progress, ValidationView validation, Set<NpdAction> actions,
 			Instant createdAt, Instant updatedAt) implements NpdView {
 	}
 
@@ -225,7 +242,7 @@ public final class NpdDtos {
 			LocalDate targetSampleDate, LocalDate actualSampleSubmissionDate, Long delayDays,
 			List<ActivityView> activities, List<IssueRiskView> issuesRisks,
 			List<ExternalStageHistoryView> stageHistory, PlanStatus planStatus, List<PlanHistoryView> planHistory,
-			ProgressView progress, Set<NpdAction> actions, Instant createdAt, Instant updatedAt) implements NpdView {
+			ProgressView progress, ValidationView validation, Set<NpdAction> actions, Instant createdAt, Instant updatedAt) implements NpdView {
 	}
 
 }

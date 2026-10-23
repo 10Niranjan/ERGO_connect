@@ -30,6 +30,8 @@ import com.ergo.connect.npd.domain.NpdDtos.PromptChecklistForm;
 import com.ergo.connect.npd.domain.NpdDtos.PromptResponseForm;
 import com.ergo.connect.common.audit.AuditLogService.AuditEntry;
 import com.ergo.connect.npd.domain.NpdService;
+import com.ergo.connect.npd.domain.NpdValidationService;
+import com.ergo.connect.npd.domain.NpdDtos.ValidationDecisionForm;
 
 import jakarta.validation.Valid;
 
@@ -73,8 +75,11 @@ class NpdController {
 
 	private final NpdService npd;
 
-	NpdController(NpdService npd) {
+	private final NpdValidationService validation;
+
+	NpdController(NpdService npd, NpdValidationService validation) {
 		this.npd = npd;
+		this.validation = validation;
 	}
 
 	@GetMapping
@@ -141,6 +146,20 @@ class NpdController {
 	@PreAuthorize(OWNERS)
 	NpdView sendBackPlan(@PathVariable long id, @Valid @RequestBody PlanReturnForm body) {
 		return npd.sendBackPlan(id, body.comment());
+	}
+
+	/** Flow doc step 9: Supplier Quality approves internally and submits the project to ERGO Quality and Supplier Quality. */
+	@PostMapping("/{id}/validation/submit")
+	@PreAuthorize(OWN_ACTIVITY_EDITORS)
+	NpdView submitValidation(@PathVariable long id, @Valid @RequestBody CommentForm body) {
+		return validation.submit(id, body.comment());
+	}
+
+	/** Flow doc steps 9-10: ERGO Quality, Supplier Quality, Customer NPD and Customer Quality each approve or reject as their own party. */
+	@PostMapping("/{id}/validation/decide")
+	@PreAuthorize(OWN_ACTIVITY_EDITORS)
+	NpdView decideValidation(@PathVariable long id, @Valid @RequestBody ValidationDecisionForm body) {
+		return validation.decide(id, body);
 	}
 
 	@PostMapping("/{id}/close-stage")

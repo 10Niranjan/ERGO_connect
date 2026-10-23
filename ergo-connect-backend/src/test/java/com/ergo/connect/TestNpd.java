@@ -108,6 +108,21 @@ public final class TestNpd {
 		return project;
 	}
 
+	/** Supplier Quality approves internally and submits; ERGO Quality and a Supplier Quality colleague both approve (flow doc step 9). */
+	public static void validate(MockMvc mvc, Login supplierQuality, Login supplierQualityColleague, Login ergoQuality, long projectId)
+			throws Exception {
+		send(mvc, post("/api/npd/{id}/validation/submit", projectId), supplierQuality, "{}", 200);
+		send(mvc, post("/api/npd/{id}/validation/decide", projectId), ergoQuality, "{\"approved\": true}", 200);
+		// a colleague validates: nobody approves their own submission
+		send(mvc, post("/api/npd/{id}/validation/decide", projectId), supplierQualityColleague, "{\"approved\": true}", 200);
+	}
+
+	/** Customer NPD and Customer Quality both approve the project's final review (flow doc step 10). */
+	public static void customerApprove(MockMvc mvc, Login customerNpd, Login customerQuality, long projectId) throws Exception {
+		send(mvc, post("/api/npd/{id}/validation/decide", projectId), customerNpd, "{\"approved\": true}", 200);
+		send(mvc, post("/api/npd/{id}/validation/decide", projectId), customerQuality, "{\"approved\": true}", 200);
+	}
+
 	private static String send(MockMvc mvc, MockHttpServletRequestBuilder request, Login user, String body,
 			int expectedStatus) throws Exception {
 		request.header(HttpHeaders.AUTHORIZATION, user.bearer()).contentType(MediaType.APPLICATION_JSON).content(body);
