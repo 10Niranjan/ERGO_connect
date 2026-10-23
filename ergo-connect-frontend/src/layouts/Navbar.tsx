@@ -51,7 +51,6 @@ export function Navbar({ session, onToggleMobile }: NavbarProps) {
       <AppBar position="sticky" elevation={0}>
         <Toolbar sx={{ gap: 2 }}>
           <IconButton
-            color="inherit"
             aria-label="open navigation menu"
             edge="start"
             onClick={onToggleMobile}
@@ -61,7 +60,7 @@ export function Navbar({ session, onToggleMobile }: NavbarProps) {
           </IconButton>
 
           {/* Title / active role display */}
-          <Typography variant="h6" component="div" sx={{ fontWeight: 700, display: { xs: 'none', sm: 'block' } }}>
+          <Typography variant="h6" component="div" sx={{ fontWeight: 600, display: { xs: 'none', sm: 'block' } }}>
             ERGO Connect
           </Typography>
 
@@ -74,12 +73,7 @@ export function Navbar({ session, onToggleMobile }: NavbarProps) {
               disabled={switching.isLoading}
               onChange={(event) => void changeRole(event.target.value as Role)}
               inputProps={{ 'aria-label': 'Active role' }}
-              sx={{
-                color: 'inherit',
-                minWidth: 180,
-                '.MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.5)' },
-                '.MuiSvgIcon-root': { color: 'inherit' },
-              }}
+              sx={{ minWidth: 180 }}
             >
               {session.roles.map((role) => (
                 <MenuItem key={role.code} value={role.code}>
@@ -88,13 +82,13 @@ export function Navbar({ session, onToggleMobile }: NavbarProps) {
               ))}
             </Select>
           ) : (
-            <Chip label={roleName} sx={{ color: 'inherit', borderColor: 'rgba(255,255,255,0.5)' }} variant="outlined" />
+            <Chip label={roleName} color="primary" variant="outlined" sx={{ bgcolor: 'primary.light', borderColor: 'transparent' }} />
           )}
 
           <NotificationsBell />
 
           <IconButton aria-label="Account menu" onClick={(event) => setMenuAnchor(event.currentTarget)}>
-            <Avatar sx={{ width: 32, height: 32, fontSize: 14 }}>{initials}</Avatar>
+            <Avatar sx={{ width: 32, height: 32, fontSize: 13, fontWeight: 600, bgcolor: 'primary.light', color: 'primary.main' }}>{initials}</Avatar>
           </IconButton>
           <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={() => setMenuAnchor(null)}>
             <MenuItem disabled>

@@ -28,6 +28,7 @@ import {
 } from '@mui/material'
 import type { ElementType } from 'react'
 import { NavLink } from 'react-router'
+import { BrandLogo } from '@/components/ui/BrandLogo'
 import type { Session } from '@/features/auth/store/authSlice'
 
 export const DRAWER_WIDTH = 260
@@ -73,31 +74,7 @@ export function Sidebar({ session, mobileOpen, onCloseMobile }: SidebarProps) {
           minHeight: 64,
         }}
       >
-        <Box
-          sx={{
-            width: 38,
-            height: 38,
-            borderRadius: 1.5,
-            bgcolor: 'primary.main',
-            color: 'primary.contrastText',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontWeight: 800,
-            fontSize: '1.15rem',
-            boxShadow: '0 2px 6px rgba(11, 79, 138, 0.3)',
-          }}
-        >
-          E
-        </Box>
-        <Box>
-          <Typography variant="subtitle1" sx={{ fontWeight: 800, color: 'primary.main', lineHeight: 1.2 }}>
-            ERGO Connect
-          </Typography>
-          <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 500 }}>
-            Collaboration Platform
-          </Typography>
-        </Box>
+        <BrandLogo height={40} />
       </Box>
 
       <Divider />
@@ -151,18 +128,12 @@ export function Sidebar({ session, mobileOpen, onCloseMobile }: SidebarProps) {
                       py: 0.8,
                       px: 1.5,
                       color: 'text.secondary',
-                      transition: 'all 0.15s ease-in-out',
-                      '&:hover': {
-                        bgcolor: 'action.hover',
+                      transition: 'all 100ms linear',
+                      '&:hover': { bgcolor: 'grey.50', color: 'text.primary' },
+                      '&.active': {
+                        bgcolor: 'primary.light',
                         color: 'primary.main',
                         '& .MuiListItemIcon-root': { color: 'primary.main' },
-                      },
-                      '&.active': {
-                        bgcolor: 'primary.main',
-                        color: 'primary.contrastText',
-                        fontWeight: 600,
-                        boxShadow: '0 2px 8px rgba(11, 79, 138, 0.25)',
-                        '& .MuiListItemIcon-root': { color: 'primary.contrastText' },
                         '& .MuiTypography-root': { fontWeight: 600 },
                       },
                     }}
@@ -189,9 +160,9 @@ export function Sidebar({ session, mobileOpen, onCloseMobile }: SidebarProps) {
       <Divider />
 
       {/* User / Company card at sidebar bottom */}
-      <Box sx={{ p: 2, bgcolor: 'rgba(0, 0, 0, 0.02)' }}>
+      <Box sx={{ p: 2, bgcolor: 'grey.50' }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-          <Avatar sx={{ width: 34, height: 34, fontSize: 13, bgcolor: 'primary.main' }}>{initials}</Avatar>
+          <Avatar sx={{ width: 34, height: 34, fontSize: 13, fontWeight: 600, bgcolor: 'primary.light', color: 'primary.main' }}>{initials}</Avatar>
           <Box sx={{ minWidth: 0, flexGrow: 1 }}>
             <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
               {session.user.firstName} {session.user.lastName}
