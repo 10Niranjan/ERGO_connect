@@ -1,10 +1,8 @@
 import MenuIcon from '@mui/icons-material/Menu'
-import SwapHorizIcon from '@mui/icons-material/SwapHoriz'
 import {
   AppBar,
   Avatar,
   Box,
-  Button,
   Chip,
   Divider,
   IconButton,
@@ -17,10 +15,8 @@ import {
 } from '@mui/material'
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
-import { DemoRoleModal } from '@/features/auth/components/DemoRoleModal'
 import { useLogoutMutation, useSwitchRoleMutation } from '@/features/auth/services/authApi'
 import type { Role, Session } from '@/features/auth/store/authSlice'
-import { DEMO_STORAGE_KEY } from '@/features/auth/utils/demoAccounts'
 import { NotificationsBell } from '@/features/notifications/components/NotificationsBell'
 
 interface NavbarProps {
@@ -32,7 +28,6 @@ export function Navbar({ session, onToggleMobile }: NavbarProps) {
   const [switchRole, switching] = useSwitchRoleMutation()
   const [logout] = useLogoutMutation()
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
-  const [demoModalOpen, setDemoModalOpen] = useState(false)
   const navigate = useNavigate()
 
   const changeRole = async (role: Role) => {
@@ -45,7 +40,6 @@ export function Navbar({ session, onToggleMobile }: NavbarProps) {
   }
 
   const handleSignOut = () => {
-    sessionStorage.removeItem(DEMO_STORAGE_KEY)
     void logout().then(() => navigate('/login', { replace: true }))
   }
 
@@ -72,29 +66,6 @@ export function Navbar({ session, onToggleMobile }: NavbarProps) {
           </Typography>
 
           <Box sx={{ flexGrow: 1 }} />
-
-          {/* Presenter's 1-Click Demo Role Switcher */}
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<SwapHorizIcon />}
-            onClick={() => setDemoModalOpen(true)}
-            sx={{
-              color: 'inherit',
-              borderColor: 'rgba(255,255,255,0.6)',
-              textTransform: 'none',
-              fontWeight: 700,
-              fontSize: '0.8rem',
-              borderRadius: 2,
-              px: 1.5,
-              '&:hover': {
-                borderColor: '#fff',
-                bgcolor: 'rgba(255,255,255,0.1)',
-              },
-            }}
-          >
-            Switch Demo Role
-          </Button>
 
           {session.roles.length > 1 ? (
             <Select
@@ -138,9 +109,6 @@ export function Navbar({ session, onToggleMobile }: NavbarProps) {
           </Menu>
         </Toolbar>
       </AppBar>
-
-      {/* Demo Role Switcher Modal */}
-      <DemoRoleModal open={demoModalOpen} onClose={() => setDemoModalOpen(false)} />
     </>
   )
 }
