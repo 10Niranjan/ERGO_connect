@@ -1107,7 +1107,7 @@ class NpdTests {
 		call(post("/api/quotes/{id}/decision", invitationId), ergoRfq, "{\"decision\": \"SELECT_FOR_CUSTOMER\"}")
 			.andExpect(status().isOk());
 		call(post("/api/rfqs/{id}/customer-quotes", id), ergoRfq,
-				"{\"quoteId\": %d, \"type\": \"SUPPLIER_QUOTE\", \"remarks\": \"ok\"}".formatted(invitationId))
+				"{\"quoteId\": %d, \"type\": \"ERGO_QUOTE\", \"remarks\": \"ok\", \"ergoQuote\": {\"currencyId\": %d, \"productionPiecePrice\": 120, \"validityDate\": \"%s\"}}".formatted(invitationId, inr, java.time.LocalDate.now().plusDays(30)))
 			.andExpect(status().isOk());
 		long sent = JsonPath
 			.<Number>read(
@@ -1115,7 +1115,7 @@ class NpdTests {
 						.getContentAsString(),
 					"$.quotes[0].id")
 			.longValue();
-		call(post("/api/customer-quotes/{id}/respond", sent), buyer, "{\"response\": \"APPROVED\"}")
+		call(post("/api/customer-quotes/{id}/respond", sent), buyer, "{\"response\": \"APPROVED\", \"comment\": \"Go ahead\"}")
 			.andExpect(status().isOk());
 		return id;
 	}

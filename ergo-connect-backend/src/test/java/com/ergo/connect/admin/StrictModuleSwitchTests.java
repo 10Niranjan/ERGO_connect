@@ -184,7 +184,7 @@ class StrictModuleSwitchTests {
 			.andExpect(status().isOk());
 
 		// sending the quote to the customer
-		String send = "{\"quoteId\": %d, \"type\": \"SUPPLIER_QUOTE\", \"remarks\": \"ok\"}".formatted(quote);
+		String send = "{\"quoteId\": %d, \"type\": \"ERGO_QUOTE\", \"remarks\": \"ok\", \"ergoQuote\": {\"currencyId\": %d, \"productionPiecePrice\": 120, \"validityDate\": \"%s\"}}".formatted(quote, inr, java.time.LocalDate.now().plusDays(30));
 		for (String cap : List.of("V", "NV")) {
 			cap("RFQ", cap);
 			call(post("/api/rfqs/{id}/customer-quotes", rfq), ergoRfq, send).andExpect(status().is4xxClientError());
@@ -199,14 +199,14 @@ class StrictModuleSwitchTests {
 			.getResponse().getContentAsString(), "$.quotes[0].id").longValue();
 		for (String cap : List.of("V", "NV")) {
 			cap("RFQ", cap);
-			call(post("/api/customer-quotes/{id}/respond", sent), buyer, "{\"response\": \"APPROVED\"}")
+			call(post("/api/customer-quotes/{id}/respond", sent), buyer, "{\"response\": \"APPROVED\", \"comment\": \"Go ahead\"}")
 				.andExpect(status().is4xxClientError());
 			assertThat(rfqStatus(rfq)).isEqualTo("SENT_TO_CUSTOMER");
 			assertThat(jdbc.queryForObject("SELECT response_status FROM customer_quote_submissions WHERE rfq_id = ?",
 					String.class, rfq)).isEqualTo("WAITING");
 		}
 		cap("RFQ", "O");
-		call(post("/api/customer-quotes/{id}/respond", sent), buyer, "{\"response\": \"APPROVED\"}")
+		call(post("/api/customer-quotes/{id}/respond", sent), buyer, "{\"response\": \"APPROVED\", \"comment\": \"Go ahead\"}")
 			.andExpect(status().isOk());
 		assertThat(rfqStatus(rfq)).isEqualTo("CUSTOMER_APPROVED");
 	}
@@ -400,11 +400,11 @@ class StrictModuleSwitchTests {
 		call(post("/api/quotes/{id}/decision", quote), ergoRfq, "{\"decision\": \"SELECT_FOR_CUSTOMER\"}")
 			.andExpect(status().isOk());
 		call(post("/api/rfqs/{id}/customer-quotes", id), ergoRfq,
-				"{\"quoteId\": %d, \"type\": \"SUPPLIER_QUOTE\", \"remarks\": \"ok\"}".formatted(quote))
+				"{\"quoteId\": %d, \"type\": \"ERGO_QUOTE\", \"remarks\": \"ok\", \"ergoQuote\": {\"currencyId\": %d, \"productionPiecePrice\": 120, \"validityDate\": \"%s\"}}".formatted(quote, inr, java.time.LocalDate.now().plusDays(30)))
 			.andExpect(status().isOk());
 		long sent = JsonPath.<Number>read(call(get("/api/rfqs/{id}/customer-quotes", id), buyer, null).andReturn()
 			.getResponse().getContentAsString(), "$.quotes[0].id").longValue();
-		call(post("/api/customer-quotes/{id}/respond", sent), buyer, "{\"response\": \"APPROVED\"}")
+		call(post("/api/customer-quotes/{id}/respond", sent), buyer, "{\"response\": \"APPROVED\", \"comment\": \"Go ahead\"}")
 			.andExpect(status().isOk());
 		return id;
 	}

@@ -391,7 +391,7 @@ public class QuoteService {
 		CurrentUser me = CurrentUser.get();
 		Invitation invitation = visible(me, id);
 		require(QuoteAction.valueOf(decision.name()), me, invitation);
-		if (!customerQuotes.findByAssignmentIdAndResponseStatus(invitation.id, ResponseStatus.WAITING).isEmpty()) {
+		if (!customerQuotes.findByAssignmentIdAndResponseStatusIn(invitation.id, ResponseStatus.OPEN).isEmpty()) {
 			throw ApiException.conflict("This quote is with the customer; its decision can change once they respond");
 		}
 		if (decision == Decision.MARK_NOT_SELECTED) {

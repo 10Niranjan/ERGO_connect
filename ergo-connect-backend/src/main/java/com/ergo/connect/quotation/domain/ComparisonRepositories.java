@@ -35,7 +35,8 @@ interface CustomerQuoteRepository extends Repository<CustomerQuote, Long> {
 
 	List<CustomerQuote> findByRfqIdAndCustomerCompanyIdOrderByIdDesc(Long rfqId, Long customerCompanyId);
 
-	List<CustomerQuote> findByAssignmentIdAndResponseStatus(Long assignmentId, ComparisonDtos.ResponseStatus responseStatus);
+	List<CustomerQuote> findByAssignmentIdAndResponseStatusIn(Long assignmentId,
+			Collection<ComparisonDtos.ResponseStatus> responseStatuses);
 
 	/** At most one per RFQ: approval is terminal, and no further quote can be sent once approved. */
 	Optional<CustomerQuote> findFirstByRfqIdAndResponseStatusOrderByIdDesc(Long rfqId,

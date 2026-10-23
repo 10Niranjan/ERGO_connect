@@ -174,7 +174,7 @@ class ComparisonTests {
 	}
 
 	@Test
-	void aSelectedSupplierQuoteGoesToTheCustomerAsIsAndTheCustomerApproves() throws Exception {
+	void aGeneratedErgoQuotationGoesToTheCustomerAndTheCustomerApproves() throws Exception {
 		submit(x, sellerX, inr, "90");
 		submit(y, sellerY, inr, "95");
 		call(post("/api/rfqs/{id}/customer-quotes", rfqId), ergoRfq, sendAsIs(x)).andExpect(status().isConflict());
@@ -192,7 +192,7 @@ class ComparisonTests {
 			.isEqualTo("Higher piece price than X");
 
 		call(post("/api/rfqs/{id}/customer-quotes", rfqId), ergoRfq, sendAsIs(x))
-			.andExpect(jsonPath("$.quotes[0].type").value("SUPPLIER_QUOTE"))
+			.andExpect(jsonPath("$.quotes[0].type").value("ERGO_QUOTE"))
 			.andExpect(jsonPath("$.quotes[0].status").value("WAITING"));
 		call(get("/api/rfqs/{id}", rfqId), ergoRfq, null).andExpect(jsonPath("$.status").value("SENT_TO_CUSTOMER"));
 		call(get("/api/rfqs/{id}", rfqId), buyer, null).andExpect(jsonPath("$.status").value("QUOTE_RECEIVED"));
@@ -206,9 +206,10 @@ class ComparisonTests {
 		long sent = JsonPath.<Number>read(call(get("/api/rfqs/{id}/customer-quotes", rfqId), buyer, null)
 			.andExpect(jsonPath("$.audience").value("CUSTOMER"))
 			.andExpect(jsonPath("$.quotes", hasSize(1)))
-			.andExpect(jsonPath("$.quotes[0].content.supplierName").value(supplierName)) // client decision: as-is
-			.andExpect(jsonPath("$.quotes[0].content.supplierQuote.productionPiecePrice").value(90.0))
-			.andExpect(jsonPath("$.quotes[0].content.remarks").value("Best lead time"))
+			.andExpect(jsonPath("$.quotes[0].content.ergoQuote.productionPiecePrice").value(110.0))
+			.andExpect(jsonPath("$.quotes[0].content.supplierName").doesNotExist())
+			.andExpect(jsonPath("$.quotes[0].content.remarks").value("Incl. inspection"))
+			.andExpect(content().string(not(containsString(supplierName))))
 			.andExpect(jsonPath("$.quotes[0].actions", hasItem("APPROVE")))
 			.andExpect(content().string(not(containsString("margin"))))
 			.andExpect(content().string(not(containsString("supplierVersion"))))
@@ -217,17 +218,17 @@ class ComparisonTests {
 
 		Login otherCustomer = users.login(users.company("CUSTOMER"), "CUSTOMER_RFQ");
 		call(get("/api/rfqs/{id}/customer-quotes", rfqId), otherCustomer, null).andExpect(status().isNotFound());
-		call(post("/api/customer-quotes/{id}/respond", sent), otherCustomer, "{\"response\": \"APPROVED\"}")
+		call(post("/api/customer-quotes/{id}/respond", sent), otherCustomer, "{\"response\": \"APPROVED\", \"comment\": \"Go ahead\"}")
 			.andExpect(status().isNotFound());
 		Login quality = users.login(customer, "CUSTOMER_QUALITY");
 		call(get("/api/rfqs/{id}/customer-quotes", rfqId), quality, null).andExpect(status().isForbidden());
 		call(get("/api/rfqs/{id}/customer-quotes", rfqId), sellerX, null).andExpect(status().isForbidden());
-		call(post("/api/customer-quotes/{id}/respond", sent), quality, "{\"response\": \"APPROVED\"}")
+		call(post("/api/customer-quotes/{id}/respond", sent), quality, "{\"response\": \"APPROVED\", \"comment\": \"Go ahead\"}")
 			.andExpect(status().isForbidden());
 
 		call(post("/api/customer-quotes/{id}/respond", sent), buyer, "{\"response\": \"DECLINED\"}")
 			.andExpect(status().isUnprocessableContent()); // declining needs a reason
-		call(post("/api/customer-quotes/{id}/respond", sent), buyer, "{\"response\": \"APPROVED\"}")
+		call(post("/api/customer-quotes/{id}/respond", sent), buyer, "{\"response\": \"APPROVED\", \"comment\": \"Go ahead\"}")
 			.andExpect(jsonPath("$.quotes[0].status").value("APPROVED"))
 			.andExpect(jsonPath("$.quotes[0].actions", hasSize(0)));
 		call(post("/api/customer-quotes/{id}/respond", sent), buyer, "{\"response\": \"DECLINED\", \"comment\": \"x\"}")
@@ -287,7 +288,7 @@ class ComparisonTests {
 		try {
 			for (String role : List.of("CUSTOMER_KAM", "CUSTOMER_MANAGEMENT")) {
 				Login limited = users.login(customer, role);
-				call(post("/api/customer-quotes/{id}/respond", sent), limited, "{\"response\": \"APPROVED\"}")
+				call(post("/api/customer-quotes/{id}/respond", sent), limited, "{\"response\": \"APPROVED\", \"comment\": \"Go ahead\"}")
 					.andExpect(status().isForbidden());
 				call(post("/api/customer-quotes/{id}/respond", sent), limited,
 						"{\"response\": \"DECLINED\", \"comment\": \"x\"}")
@@ -305,7 +306,7 @@ class ComparisonTests {
 		submit(x, sellerX, inr, "90");
 		call(post("/api/quotes/{id}/decision", x), ergoRfq, "{\"decision\": \"SELECT_FOR_CUSTOMER\"}");
 		call(post("/api/rfqs/{id}/customer-quotes", rfqId), ergoRfq, "{\"quoteId\": %d, \"type\": \"ERGO_QUOTE\"}"
-			.formatted(x)).andExpect(status().isUnprocessableContent());
+			.formatted(x)).andExpect(status().isBadRequest());
 		call(post("/api/rfqs/{id}/customer-quotes", rfqId), ergoRfq, sendErgoQuote(x, "110", LocalDate.now().minusDays(1)))
 			.andExpect(status().isUnprocessableContent());
 
@@ -333,9 +334,6 @@ class ComparisonTests {
 		call(get("/api/rfqs/{id}", rfqId), ergoRfq, null)
 			.andExpect(jsonPath("$.status").value("CUSTOMER_REVISION_REQUESTED"));
 
-		// this supplier quote was already shown as an ERGO quote; showing it as-is now would reveal the margin
-		call(post("/api/rfqs/{id}/customer-quotes", rfqId), ergoRfq, sendAsIs(x)).andExpect(status().isConflict());
-
 		// ERGO asks the supplier for a better price and sends a new quote
 		call(post("/api/quotes/{id}/reopen", x), ergoRfq, "{\"comment\": \"Customer target is 100\"}")
 			.andExpect(jsonPath("$.status").value("REOPENED"));
@@ -354,6 +352,45 @@ class ComparisonTests {
 		call(get("/api/rfqs/{id}/customer-quotes", rfqId), buyer, null)
 			.andExpect(jsonPath("$.quotes[*].status", contains("WAITING", "REVISION_REQUESTED")))
 			.andExpect(jsonPath("$.quotes[1].responseComment").value("Our target is 100"));
+	}
+
+	@Test
+	void aCustomerCanPutAQuoteOnHoldAndAnswerItLater() throws Exception {
+		submit(x, sellerX, inr, "90");
+		call(post("/api/quotes/{id}/decision", x), ergoRfq, "{\"decision\": \"SELECT_FOR_CUSTOMER\"}");
+		// flow doc §4: a supplier's quotation is never forwarded as it is
+		call(post("/api/rfqs/{id}/customer-quotes", rfqId), ergoRfq,
+				"{\"quoteId\": %d, \"type\": \"SUPPLIER_QUOTE\", \"ergoQuote\": {\"currencyId\": %d, \"productionPiecePrice\": 110, \"validityDate\": \"%s\"}}"
+					.formatted(x, inr, LocalDate.now().plusDays(30)))
+			.andExpect(status().isUnprocessableContent());
+		call(post("/api/rfqs/{id}/customer-quotes", rfqId), ergoRfq, sendAsIs(x)).andExpect(status().isOk());
+		long sent = JsonPath.<Number>read(call(get("/api/rfqs/{id}/customer-quotes", rfqId), buyer, null)
+			.andReturn().getResponse().getContentAsString(), "$.quotes[0].id").longValue();
+
+		// every decision carries a comment
+		for (String response : List.of("APPROVED", "ON_HOLD", "DECLINED", "REVISION_REQUESTED")) {
+			call(post("/api/customer-quotes/{id}/respond", sent), buyer, "{\"response\": \"%s\"}".formatted(response))
+				.andExpect(status().isUnprocessableContent());
+		}
+		call(post("/api/customer-quotes/{id}/respond", sent), buyer,
+				"{\"response\": \"ON_HOLD\", \"comment\": \"Budget review next month\"}")
+			.andExpect(jsonPath("$.quotes[0].status").value("ON_HOLD"))
+			.andExpect(jsonPath("$.quotes[0].actions", hasItem("APPROVE")))
+			.andExpect(jsonPath("$.quotes[0].actions", not(hasItem("PUT_ON_HOLD"))));
+		call(get("/api/rfqs/{id}", rfqId), buyer, null).andExpect(jsonPath("$.status").value("ON_HOLD"));
+		call(get("/api/rfqs/{id}", rfqId), ergoRfq, null).andExpect(jsonPath("$.status").value("CUSTOMER_ON_HOLD"));
+		call(post("/api/customer-quotes/{id}/respond", sent), buyer, "{\"response\": \"ON_HOLD\", \"comment\": \"x\"}")
+			.andExpect(status().isConflict());
+		// the quote still waits for the customer: ERGO cannot send another one meanwhile
+		call(post("/api/rfqs/{id}/customer-quotes", rfqId), ergoRfq, sendAsIs(x)).andExpect(status().isConflict());
+
+		call(post("/api/customer-quotes/{id}/respond", sent), buyer,
+				"{\"response\": \"APPROVED\", \"comment\": \"Budget approved\"}")
+			.andExpect(jsonPath("$.quotes[0].status").value("APPROVED"))
+			.andExpect(jsonPath("$.quotes[0].actions", hasSize(0)));
+		call(get("/api/rfqs/{id}", rfqId), ergoRfq, null).andExpect(jsonPath("$.status").value("CUSTOMER_APPROVED"));
+		call(post("/api/customer-quotes/{id}/respond", sent), buyer, "{\"response\": \"DECLINED\", \"comment\": \"x\"}")
+			.andExpect(status().isConflict());
 	}
 
 	// ---------------------------------------------------------------- helpers
@@ -382,8 +419,8 @@ class ComparisonTests {
 				 "moq": 500, "productionLeadTimeDays": 45}""".formatted(LocalDate.now().plusDays(60), currency, price);
 	}
 
-	private static String sendAsIs(long quote) {
-		return "{\"quoteId\": %d, \"type\": \"SUPPLIER_QUOTE\", \"remarks\": \"Best lead time\"}".formatted(quote);
+	private String sendAsIs(long quote) {
+		return sendErgoQuote(quote, "110", LocalDate.now().plusDays(30));
 	}
 
 	private String sendErgoQuote(long quote, String price, LocalDate validity) {

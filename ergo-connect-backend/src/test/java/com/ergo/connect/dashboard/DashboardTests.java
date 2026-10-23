@@ -267,7 +267,7 @@ class DashboardTests {
 		mvc.perform(json(post("/api/quotes/{id}/decision", invitationId), "{\"decision\": \"SELECT_FOR_CUSTOMER\"}",
 				ergoRfq)).andExpect(status().isOk());
 		mvc.perform(json(post("/api/rfqs/{id}/customer-quotes", rfqId),
-				"{\"quoteId\": %d, \"type\": \"SUPPLIER_QUOTE\", \"remarks\": \"ok\"}".formatted(invitationId),
+				"{\"quoteId\": %d, \"type\": \"ERGO_QUOTE\", \"remarks\": \"ok\", \"ergoQuote\": {\"currencyId\": %d, \"productionPiecePrice\": 120, \"validityDate\": \"%s\"}}".formatted(invitationId, inr, java.time.LocalDate.now().plusDays(30)),
 				ergoRfq)).andExpect(status().isOk());
 		long sentQuoteId = JsonPath
 			.<Number>read(mvc
@@ -276,7 +276,7 @@ class DashboardTests {
 				.getResponse()
 				.getContentAsString(), "$.quotes[0].id")
 			.longValue();
-		mvc.perform(json(post("/api/customer-quotes/{id}/respond", sentQuoteId), "{\"response\": \"APPROVED\"}",
+		mvc.perform(json(post("/api/customer-quotes/{id}/respond", sentQuoteId), "{\"response\": \"APPROVED\", \"comment\": \"Go ahead\"}",
 				buyerA)).andExpect(status().isOk());
 
 		long npdId = JsonPath

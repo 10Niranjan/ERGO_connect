@@ -36,13 +36,11 @@ import com.ergo.connect.masterdata.api.Directory.CompanyRef;
 import com.ergo.connect.masterdata.api.Directory.UserRef;
 import com.ergo.connect.masterdata.api.MasterDataApi;
 import com.ergo.connect.masterdata.api.MasterDataApi.Ref;
-import com.ergo.connect.quotation.domain.ComparisonDtos.CustomerProcessStep;
 import com.ergo.connect.quotation.domain.ComparisonDtos.CustomerQuoteAction;
 import com.ergo.connect.quotation.domain.ComparisonDtos.CustomerQuoteContent;
 import com.ergo.connect.quotation.domain.ComparisonDtos.CustomerQuoteView;
 import com.ergo.connect.quotation.domain.ComparisonDtos.CustomerQuotes;
 import com.ergo.connect.quotation.domain.ComparisonDtos.CustomerQuotesView;
-import com.ergo.connect.quotation.domain.ComparisonDtos.CustomerSupplierQuote;
 import com.ergo.connect.quotation.domain.ComparisonDtos.ErgoCustomerQuoteView;
 import com.ergo.connect.quotation.domain.ComparisonDtos.ErgoCustomerQuotes;
 import com.ergo.connect.quotation.domain.ComparisonDtos.ErgoQuoteForm;
@@ -63,9 +61,9 @@ import com.ergo.connect.rfq.api.RfqApi.RfqRef;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Quotes ERGO sends the customer and the customer's answer (SRS §5.3, §12.7.2, §13.3.9-13.3.10, §14.4). Client
- * decision: ERGO forwards one supplier's quote as-is (the customer sees that supplier, its prices and cost breakdown)
- * or sends its own quote (no supplier, margin hidden). Customers see only what was sent to their own company.
+ * Quotes ERGO generates for the customer and the customer's answer (SRS §5.3, §12.7.2, §13.3.9-13.3.10, §14.4; flow
+ * doc §4-5). A supplier's quotation is never forwarded: the customer gets ERGO's own quote (no supplier, margin hidden).
+ * The customer answers approve / correction required / reject / on hold, each with a comment; on hold is answered again.
  */
 @Service
 @Transactional
@@ -154,45 +152,20 @@ public class CustomerQuoteService {
 		SupplierQuote quote = quotes.findByAssignmentId(invitation.id).orElseThrow();
 		QuoteData submitted = reader.lastSubmitted(List.of(quote)).get(quote.id);
 		LocalDate today = LocalDate.now();
-		boolean sentTheOtherWayBefore = customerQuotes.findByRfqIdOrderByIdDesc(rfqId).stream()
-			.anyMatch(q -> q.assignmentId.equals(invitation.id) && q.quoteType != form.type());
-		if (sentTheOtherWayBefore) {
-			throw ApiException.conflict("This supplier's quote was already sent to the customer the other way "
-					+ "round (as-is vs. an ERGO quote). Sending it the other way now could reveal the margin or the "
-					+ "supplier's identity; keep the same type, or base the new quote on a different supplier.");
+		if (form.type() == QuoteType.SUPPLIER_QUOTE) {
+			throw ApiException.unprocessable("A supplier's quotation is never forwarded to the customer; "
+					+ "generate ERGO's quotation instead");
 		}
 
 		CustomerQuote sent = new CustomerQuote();
 		sent.rfqId = rfqId;
 		sent.customerCompanyId = rfq.customerCompanyId();
-		sent.quoteType = form.type();
+		sent.quoteType = QuoteType.ERGO_QUOTE;
 		sent.assignmentId = invitation.id;
 		sent.supplierQuoteVersion = quote.currentVersion;
 		sent.submittedByUserId = me.userId();
-		String remarks = QuoteService.text(form.remarks());
-		CustomerQuoteContent content = switch (form.type()) {
-			case SUPPLIER_QUOTE -> {
-				if (submitted.validityDate().isBefore(today)) {
-					throw ApiException.unprocessable("The supplier's quote expired on " + submitted.validityDate()
-							+ ". Ask the supplier for a revision first.");
-				}
-				sent.currencyId = submitted.currency().id();
-				sent.quotedProductionPiecePrice = submitted.productionPiecePrice();
-				sent.quotedPpapPiecePrice = submitted.ppapPiecePrice();
-				sent.quotedToolingCost = submitted.toolingCostTotal();
-				CompanyRef supplier = directory.company(invitation.supplierCompanyId).orElseThrow();
-				yield new CustomerQuoteContent(QuoteType.SUPPLIER_QUOTE, supplier.name(), customerView(submitted), null,
-						remarks);
-			}
-			case ERGO_QUOTE -> {
-				ErgoQuoteForm terms = form.ergoQuote();
-				if (terms == null) {
-					throw ApiException.unprocessable("Fill in ERGO's quote");
-				}
-				yield new CustomerQuoteContent(QuoteType.ERGO_QUOTE, null, null, ergoQuote(sent, terms, submitted, today),
-						remarks);
-			}
-		};
+		CustomerQuoteContent content = new CustomerQuoteContent(QuoteType.ERGO_QUOTE,
+				ergoQuote(sent, form.ergoQuote(), submitted, today), QuoteService.text(form.remarks()));
 		sent.customerView = json.writeValueAsString(content);
 		ModuleSwitch.requireWritable(Module.QUOTATION, Module.RFQ); // both locked until commit: no switch change mid-operation
 		rfqs.sentToCustomer(rfqId); // 409 unless the RFQ is ready for a quote to the customer
@@ -210,22 +183,27 @@ public class CustomerQuoteService {
 					&& CUSTOMER_RESPONDERS.contains(me.role()))
 			.orElseThrow(() -> ApiException.notFound("Quote"));
 		CustomerRfqRef rfqRef = rfqs.forCustomer(quote.rfqId); // the RFQ's own customer scope applies too
-		if (quote.responseStatus != ResponseStatus.WAITING) {
+		if (!ResponseStatus.OPEN.contains(quote.responseStatus)) {
 			throw ApiException.conflict("This quote has already been answered");
+		}
+		if (quote.responseStatus == ResponseStatus.ON_HOLD && form.response() == CustomerResponse.ON_HOLD) {
+			throw ApiException.conflict("This quote is already on hold");
 		}
 		if (form.response() != CustomerResponse.REVISION_REQUESTED
 				&& !ModuleAccess.canApprove(me.role(), Module.QUOTATION)) {
-			throw ApiException.forbidden("Only the customer's approving role can approve or decline a quote; "
-					+ "you can request a revision");
+			throw ApiException.forbidden("Only the customer's approving role can approve, reject or hold a quote; "
+					+ "you can request a correction");
 		}
 		String comment = QuoteService.text(form.comment());
-		if (form.response() != CustomerResponse.APPROVED && comment == null) {
-			throw ApiException.unprocessable(form.response() == CustomerResponse.DECLINED
-					? "Tell ERGO why you decline" : "Tell ERGO what should change");
+		if (comment == null) { // flow doc §5: every decision carries a comment
+			throw ApiException.unprocessable(switch (form.response()) {
+				case APPROVED -> "Add a comment with your approval";
+				case DECLINED -> "Tell ERGO why you reject";
+				case ON_HOLD -> "Tell ERGO why the decision is on hold";
+				case REVISION_REQUESTED -> "Tell ERGO what should be corrected";
+			});
 		}
-		if (comment != null) {
-			audit.reason(comment);
-		}
+		audit.reason(comment);
 		quote.responseStatus = ResponseStatus.valueOf(form.response().name());
 		quote.responseByUserId = me.userId();
 		quote.responseAt = Instant.now();
@@ -235,8 +213,9 @@ public class CustomerQuoteService {
 		notifier.send(NotificationKind.CUSTOMER_QUOTE_RESPONDED, "rfq", quote.rfqId, rfqRef.number(),
 				switch (form.response()) {
 					case APPROVED -> "Approved";
-					case REVISION_REQUESTED -> "Revision requested";
-					case DECLINED -> "Declined";
+					case ON_HOLD -> "On hold";
+					case REVISION_REQUESTED -> "Correction required";
+					case DECLINED -> "Rejected";
 				}, Recipients.ergo(Role.ERGO_ADMIN, Role.ERGO_RFQ));
 		return list(quote.rfqId);
 	}
@@ -245,18 +224,6 @@ public class CustomerQuoteService {
 	 * ERGO's terms for the customer. The margin on the supplier's production piece price is worked out here with the
 	 * rate of the day and frozen with the quote; it stays empty when ERGO has no rate for the pair.
 	 */
-	/** Only what the client decision promises the customer: name (carried separately), prices and cost breakdown. */
-	private static CustomerSupplierQuote customerView(QuoteData q) {
-		return new CustomerSupplierQuote(q.validityDate(), q.currency(), q.incoterm(), q.paymentTerm(),
-				q.toolingCostTotal(), q.ppapPiecePrice(), q.productionPiecePrice(), q.costs(), q.moq(),
-				q.materialLeadTimeWeeks(), q.toolingLeadTimeDays(), q.sampleLeadTimeDays(), q.productionLeadTimeDays(),
-				q.processSteps().stream()
-					.map(step -> new CustomerProcessStep(step.process() == null ? null : step.process().name(),
-							step.stepName(), step.cycleTimeSeconds(),
-							step.sourcingType() == null ? null : step.sourcingType().name()))
-					.toList());
-	}
-
 	private ErgoQuoteTerms ergoQuote(CustomerQuote sent, ErgoQuoteForm terms, QuoteData supplier, LocalDate today) {
 		masterData.requireActive(Ref.CURRENCY, terms.currencyId(), "Currency");
 		masterData.requireActive(Ref.PAYMENT_TERM, terms.paymentTermId(), "Payment term");
@@ -284,13 +251,19 @@ public class CustomerQuoteService {
 	}
 
 	private Set<CustomerQuoteAction> actions(CurrentUser me, CustomerQuote quote, CustomerRfqRef rfq) {
-		if (!CUSTOMER_RESPONDERS.contains(me.role()) || quote.responseStatus != ResponseStatus.WAITING
+		if (!CUSTOMER_RESPONDERS.contains(me.role()) || !ResponseStatus.OPEN.contains(quote.responseStatus)
 				|| !rfq.awaitingAnswer()) {
 			return EnumSet.noneOf(CustomerQuoteAction.class);
 		}
-		// "A" roles may only ask for a revision; approving or declining is the "CO" role's final decision.
-		return ModuleAccess.canApprove(me.role(), Module.QUOTATION) ? EnumSet.allOf(CustomerQuoteAction.class)
-				: EnumSet.of(CustomerQuoteAction.REQUEST_REVISION);
+		// "A" roles may only ask for a correction; approving, rejecting or holding is the "CO" role's decision.
+		if (!ModuleAccess.canApprove(me.role(), Module.QUOTATION)) {
+			return EnumSet.of(CustomerQuoteAction.REQUEST_REVISION);
+		}
+		Set<CustomerQuoteAction> all = EnumSet.allOf(CustomerQuoteAction.class);
+		if (quote.responseStatus == ResponseStatus.ON_HOLD) {
+			all.remove(CustomerQuoteAction.PUT_ON_HOLD); // already on hold: only a final answer remains
+		}
+		return all;
 	}
 
 	private CustomerQuoteContent content(CustomerQuote quote) {

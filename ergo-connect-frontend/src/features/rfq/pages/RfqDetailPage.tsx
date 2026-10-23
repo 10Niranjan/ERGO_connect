@@ -145,9 +145,9 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
       </Stack>
 
       {actionError != null && <Alert severity="error">{problemMessage(actionError)}</Alert>}
-      {rfq.status === 'QUOTE_RECEIVED' && !isErgo && canSeeQuotes && (
+      {(rfq.status === 'QUOTE_RECEIVED' || rfq.status === 'ON_HOLD') && !isErgo && canSeeQuotes && (
         <Alert severity="info" action={<Button color="inherit" size="small" onClick={() => setTab('quotes')}>Open quote</Button>}>
-          ERGO has sent you a quote. Approve it, ask for a revision or decline it.
+          ERGO has sent you a quote. Approve it, request a correction, put it on hold or reject it - each with a comment.
         </Alert>
       )}
       {rfq.clarificationQuestion && (

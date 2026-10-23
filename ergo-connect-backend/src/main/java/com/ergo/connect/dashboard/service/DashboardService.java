@@ -91,7 +91,9 @@ public class DashboardService {
 		List<NcrDashboardItem> ncrs = items(Module.QUALITY, qualityApi::ncrDashboardItems);
 		List<DeviationDashboardItem> deviations = items(Module.QUALITY, qualityApi::deviationDashboardItems);
 
-		int awaitingCustomerApproval = (int) rfq.stream().filter(r -> "SENT_TO_CUSTOMER".equals(r.status())).count();
+		int awaitingCustomerApproval = (int) rfq.stream()
+			.filter(r -> "SENT_TO_CUSTOMER".equals(r.status()) || "CUSTOMER_ON_HOLD".equals(r.status()))
+			.count();
 		List<NpdDashboardItem> delayed = npd.stream().filter(p -> p.delayDays() != null && p.delayDays() > 0).toList();
 		List<NpdDashboardItem> highRisk = npd.stream().filter(p -> "HIGH".equals(p.riskLevel())).toList();
 		List<OrderDashboardItem> atRisk = orders.stream().filter(OrderDashboardItem::atRisk).toList();

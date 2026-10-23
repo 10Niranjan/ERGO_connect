@@ -3,10 +3,10 @@ package com.ergo.connect.quotation.domain;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 
-import com.ergo.connect.quotation.domain.QuoteDtos.CostBreakdown;
 import com.ergo.connect.quotation.domain.QuoteDtos.Named;
 import com.ergo.connect.quotation.domain.QuoteDtos.QuoteAction;
 import com.ergo.connect.quotation.domain.QuoteDtos.QuoteData;
@@ -67,18 +67,21 @@ public final class ComparisonDtos {
 
 	// ---------------------------------------------------------------- quotes sent to the customer
 
-	/** Client decision: per RFQ, ERGO forwards one supplier's quote as-is or sends its own quote. */
+	/** Flow doc §4: customers only ever get ERGO's generated quote. SUPPLIER_QUOTE exists for rows sent before that rule. */
 	public enum QuoteType {
 		SUPPLIER_QUOTE, ERGO_QUOTE
 	}
 
 	/** SRS §14.4: waiting for the customer's review, then the customer's answer. */
 	public enum ResponseStatus {
-		WAITING, APPROVED, REVISION_REQUESTED, DECLINED
+		WAITING, ON_HOLD, APPROVED, REVISION_REQUESTED, DECLINED;
+
+		/** Still waiting for the customer's final answer (an on-hold quote is not answered yet). */
+		public static final Set<ResponseStatus> OPEN = EnumSet.of(WAITING, ON_HOLD);
 	}
 
 	public enum CustomerQuoteAction {
-		APPROVE, REQUEST_REVISION, DECLINE
+		APPROVE, REQUEST_REVISION, DECLINE, PUT_ON_HOLD
 	}
 
 	/** ERGO's own quote (SRS §13.3.10), usually prefilled from the selected supplier quote. */
@@ -91,12 +94,12 @@ public final class ComparisonDtos {
 			@PositiveOrZero Integer productionLeadTimeDays, @NotNull LocalDate validityDate) {
 	}
 
-	/** {@code quoteId}: the supplier quote selected for the customer; {@code ergoQuote} only for ERGO_QUOTE. */
-	public record SendForm(@NotNull Long quoteId, @NotNull QuoteType type, @Valid ErgoQuoteForm ergoQuote,
+	/** "Generate quotation for customer": {@code quoteId} is the supplier quote it is based on; {@code type} may be omitted. */
+	public record SendForm(@NotNull Long quoteId, QuoteType type, @NotNull @Valid ErgoQuoteForm ergoQuote,
 			@Size(max = 4000) String remarks) {
 	}
 
-	/** A comment is required to request a revision or decline (SRS §14.4). */
+	/** Every decision carries a comment (flow doc §5, key rules). */
 	public record ResponseForm(@NotNull CustomerResponse response, @Size(max = 2000) String comment) {
 	}
 
@@ -107,31 +110,13 @@ public final class ComparisonDtos {
 			LocalDate validityDate) {
 	}
 
-	/** One step of the supplier's route as the customer sees it: no sub-supplier names or free-text remarks. */
-	public record CustomerProcessStep(String processName, String stepName, BigDecimal cycleTimeSeconds,
-			String sourcingType) {
-	}
-
 	/**
-	 * What the customer sees of a forwarded supplier quote (client decision: the supplier's name, prices and cost
-	 * breakdown). Deliberately narrower than {@link QuoteData}: leaves out the supplier's own quote reference,
-	 * assumptions, remarks, tooling-line remarks and process-step sub-suppliers/remarks — the supplier wrote those for
-	 * ERGO, not for another company to read.
-	 */
-	public record CustomerSupplierQuote(LocalDate validityDate, Named currency, Named incoterm, Named paymentTerm,
-			BigDecimal toolingCostTotal, BigDecimal ppapPiecePrice, BigDecimal productionPiecePrice,
-			CostBreakdown costs, Integer moq, Integer materialLeadTimeWeeks, Integer toolingLeadTimeDays,
-			Integer sampleLeadTimeDays, Integer productionLeadTimeDays, List<CustomerProcessStep> processSteps) {
-	}
-
-	/**
-	 * Exactly what the customer receives, frozen when sent. A supplier quote carries the supplier's name and its
-	 * client-approved fields (client decision); an ERGO quote carries ERGO's terms only. Absent parts are left out of
-	 * the JSON.
+	 * Exactly what the customer receives, frozen when sent: ERGO's own generated quote, never a supplier's (flow doc
+	 * §4: no supplier name, prices or cost breakdown reach the customer). {@code type} is kept for quotes sent before
+	 * that rule; those no longer carry any supplier data in the customer view.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	public record CustomerQuoteContent(QuoteType type, String supplierName, CustomerSupplierQuote supplierQuote,
-			ErgoQuoteTerms ergoQuote, String remarks) {
+	public record CustomerQuoteContent(QuoteType type, ErgoQuoteTerms ergoQuote, String remarks) {
 	}
 
 	public sealed interface CustomerQuotesView permits ErgoCustomerQuotes, CustomerQuotes {

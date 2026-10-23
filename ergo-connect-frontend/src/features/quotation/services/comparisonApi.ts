@@ -18,14 +18,6 @@ export interface Converted {
   toolingCost: number | null
 }
 
-/** No sub-supplier names or free-text remarks: the supplier wrote those for ERGO, not for the customer. */
-export interface CustomerProcessStep {
-  processName: string | null
-  stepName: string
-  cycleTimeSeconds: number | null
-  sourcingType: string | null
-}
-
 export interface TargetsView {
   toolingCost: number | null
   ppapPiecePrice: number | null
@@ -68,8 +60,8 @@ export interface ComparisonView {
 }
 
 export type QuoteType = 'SUPPLIER_QUOTE' | 'ERGO_QUOTE'
-export type ResponseStatus = 'WAITING' | 'APPROVED' | 'REVISION_REQUESTED' | 'DECLINED'
-export type CustomerResponse = 'APPROVED' | 'REVISION_REQUESTED' | 'DECLINED'
+export type ResponseStatus = 'WAITING' | 'ON_HOLD' | 'APPROVED' | 'REVISION_REQUESTED' | 'DECLINED'
+export type CustomerResponse = 'APPROVED' | 'REVISION_REQUESTED' | 'DECLINED' | 'ON_HOLD'
 export type Decision = 'SHORTLIST' | 'SELECT_FOR_CUSTOMER' | 'MARK_NOT_SELECTED' | 'CLEAR_DECISION'
 
 /** What the customer sees of an ERGO quote: ERGO's terms only. */
@@ -88,38 +80,9 @@ export interface ErgoQuoteTerms {
   validityDate: string
 }
 
-/**
- * What the customer sees of a forwarded supplier quote: name, prices and cost breakdown (client decision) — narrower
- * than the shared `QuoteData`, on purpose (no quote reference, assumptions, remarks or sub-supplier names).
- */
-export interface CustomerSupplierQuote {
-  validityDate: string | null
-  currency: Named | null
-  incoterm: Named | null
-  paymentTerm: Named | null
-  toolingCostTotal: number | null
-  ppapPiecePrice: number | null
-  productionPiecePrice: number | null
-  costs: {
-    rawMaterialCost: number | null
-    processingCost: number | null
-    overheadCost: number | null
-    packagingCost: number | null
-    profit: number | null
-  }
-  moq: number | null
-  materialLeadTimeWeeks: number | null
-  toolingLeadTimeDays: number | null
-  sampleLeadTimeDays: number | null
-  productionLeadTimeDays: number | null
-  processSteps: CustomerProcessStep[]
-}
-
-/** Exactly what the customer received: a supplier's quote as-is, or ERGO's terms. */
+/** Exactly what the customer received: ERGO's generated quotation. A supplier's quote never reaches the customer. */
 export interface CustomerQuoteContent {
   type: QuoteType
-  supplierName?: string
-  supplierQuote?: CustomerSupplierQuote
   ergoQuote?: ErgoQuoteTerms
   remarks?: string
 }
@@ -150,7 +113,7 @@ export interface CustomerQuoteView {
   respondedBy: string | null
   respondedAt: string | null
   responseComment: string | null
-  actions: ('APPROVE' | 'REQUEST_REVISION' | 'DECLINE')[]
+  actions: ('APPROVE' | 'REQUEST_REVISION' | 'DECLINE' | 'PUT_ON_HOLD')[]
 }
 
 export type CustomerQuotesView =

@@ -37,7 +37,7 @@ public interface RfqApi {
 
 	/** SRS §14.4 customer responses. */
 	enum CustomerResponse {
-		APPROVED, REVISION_REQUESTED, DECLINED
+		APPROVED, REVISION_REQUESTED, DECLINED, ON_HOLD
 	}
 
 	/** What a supplier may see of an RFQ. Client decision: no customer name, no targets, no notes, no remarks. */

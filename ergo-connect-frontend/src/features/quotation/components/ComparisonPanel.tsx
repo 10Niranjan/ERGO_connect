@@ -257,7 +257,7 @@ function Comparison({ view }: { view: ComparisonView }) {
                   <Stack spacing={0.5} sx={{ alignItems: 'flex-start' }}>
                     {l.actions.includes('SEND_TO_CUSTOMER') && (
                       <Button size="small" variant="contained" onClick={() => setSending(l)}>
-                        Send to customer
+                        Generate quotation for customer
                       </Button>
                     )}
                     {l.actions.includes('EVALUATE') && (
@@ -400,8 +400,7 @@ function SentQuotes({ rfqId }: { rfqId: number }) {
             <TableBody>
               {data.quotes.map((q) => {
                 const terms = q.content.ergoQuote
-                const supplierQuote = q.content.supplierQuote
-                const code = terms?.currency.code ?? supplierQuote?.currency?.code
+                const code = terms?.currency.code
                 return (
                   <TableRow key={q.id}>
                     <TableCell>
@@ -410,11 +409,11 @@ function SentQuotes({ rfqId }: { rfqId: number }) {
                         {q.sentBy}
                       </Typography>
                     </TableCell>
-                    <TableCell>{q.type === 'ERGO_QUOTE' ? 'ERGO quote' : 'Supplier quote as-is'}</TableCell>
+                    <TableCell>{q.type === 'ERGO_QUOTE' ? 'ERGO quotation' : 'Supplier quote (sent before the generate rule)'}</TableCell>
                     <TableCell>
                       {q.supplier.name}, version {q.supplierVersion}
                     </TableCell>
-                    <TableCell align="right">{formatMoney(terms?.productionPiecePrice ?? supplierQuote?.productionPiecePrice ?? null, code)}</TableCell>
+                    <TableCell align="right">{formatMoney(terms?.productionPiecePrice ?? null, code)}</TableCell>
                     <TableCell align="right">{q.marginAmount == null ? '—' : `${formatMoney(q.marginAmount, code)} (${q.marginPercentage}%)`}</TableCell>
                     <TableCell>
                       <Chip size="small" label={RESPONSE_STATUS[q.status].label} color={RESPONSE_STATUS[q.status].color} />

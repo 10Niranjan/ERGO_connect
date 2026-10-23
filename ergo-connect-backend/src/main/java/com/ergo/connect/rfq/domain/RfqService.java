@@ -13,6 +13,7 @@ import static com.ergo.connect.rfq.domain.RfqStatus.CANCELLED;
 import static com.ergo.connect.rfq.domain.RfqStatus.CLARIFICATION_REQUIRED;
 import static com.ergo.connect.rfq.domain.RfqStatus.CLOSED;
 import static com.ergo.connect.rfq.domain.RfqStatus.CUSTOMER_APPROVED;
+import static com.ergo.connect.rfq.domain.RfqStatus.CUSTOMER_ON_HOLD;
 import static com.ergo.connect.rfq.domain.RfqStatus.CUSTOMER_REVISION_REQUESTED;
 import static com.ergo.connect.rfq.domain.RfqStatus.DRAFT;
 import static com.ergo.connect.rfq.domain.RfqStatus.QUOTES_COMPLETE;
@@ -108,7 +109,7 @@ public class RfqService {
 
 	/** Once suppliers have answered, an RFQ that goes no further is closed (with a reason), not cancelled. */
 	private static final Set<RfqStatus> CLOSABLE = EnumSet.of(QUOTES_PARTIAL, QUOTES_COMPLETE, UNDER_COMPARISON,
-			SENT_TO_CUSTOMER, CUSTOMER_REVISION_REQUESTED);
+			SENT_TO_CUSTOMER, CUSTOMER_ON_HOLD, CUSTOMER_REVISION_REQUESTED);
 
 	/** A downloadable file: metadata plus content. */
 	public record DocumentFile(DocumentInfo info, byte[] content) {

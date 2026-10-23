@@ -357,7 +357,7 @@ class NotificationsTests {
 		int customerBefore = totalOf(buyerA);
 		int supplierBefore = totalOf(sellerX);
 		call(post("/api/rfqs/{id}/customer-quotes", rfqId), ergoRfq,
-				"{\"quoteId\": %d, \"type\": \"SUPPLIER_QUOTE\", \"remarks\": \"ok\"}".formatted(ix))
+				"{\"quoteId\": %d, \"type\": \"ERGO_QUOTE\", \"remarks\": \"ok\", \"ergoQuote\": {\"currencyId\": %d, \"productionPiecePrice\": 120, \"validityDate\": \"%s\"}}".formatted(ix, inr, java.time.LocalDate.now().plusDays(30)))
 			.andExpect(status().isOk());
 		assertLatest(buyerA, "A quote is ready for your decision", "ACTION_REQUIRED", number, "/rfqs/" + rfqId);
 		assertCount(buyerA, customerBefore + 1);
@@ -366,7 +366,7 @@ class NotificationsTests {
 
 		long sent = ((Number) JsonPath.read(call(get("/api/rfqs/{id}/customer-quotes", rfqId), buyerA, null).andReturn()
 			.getResponse().getContentAsString(), "$.quotes[0].id")).longValue();
-		call(post("/api/customer-quotes/{id}/respond", sent), buyerA, "{\"response\": \"APPROVED\"}")
+		call(post("/api/customer-quotes/{id}/respond", sent), buyerA, "{\"response\": \"APPROVED\", \"comment\": \"Go ahead\"}")
 			.andExpect(status().isOk());
 		assertLatest(ergoRfq, "Customer responded to a quote", "RESPONSE_RECEIVED", number + " - Approved",
 				"/rfqs/" + rfqId);

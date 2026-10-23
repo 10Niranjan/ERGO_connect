@@ -11,6 +11,7 @@ import static com.ergo.connect.rfq.domain.RfqStatus.CANCELLED;
 import static com.ergo.connect.rfq.domain.RfqStatus.CLOSED;
 import static com.ergo.connect.rfq.domain.RfqStatus.CUSTOMER_APPROVED;
 import static com.ergo.connect.rfq.domain.RfqStatus.CUSTOMER_DECLINED;
+import static com.ergo.connect.rfq.domain.RfqStatus.CUSTOMER_ON_HOLD;
 import static com.ergo.connect.rfq.domain.RfqStatus.CUSTOMER_REVISION_REQUESTED;
 import static com.ergo.connect.rfq.domain.RfqStatus.QUOTES_COMPLETE;
 import static com.ergo.connect.rfq.domain.RfqStatus.QUOTES_PARTIAL;
@@ -65,7 +66,7 @@ class RfqApiService implements RfqApi {
 
 	/** ERGO evaluates quotes once some are in, until the customer has decided. */
 	static final Set<RfqStatus> EVALUATING = EnumSet.of(QUOTES_PARTIAL, QUOTES_COMPLETE, UNDER_COMPARISON,
-			SENT_TO_CUSTOMER, CUSTOMER_REVISION_REQUESTED);
+			SENT_TO_CUSTOMER, CUSTOMER_ON_HOLD, CUSTOMER_REVISION_REQUESTED);
 
 	/** ERGO may send the customer a quote: quotes are in and no earlier one awaits the customer's answer. */
 	static final Set<RfqStatus> OFFERING = EnumSet.of(QUOTES_PARTIAL, QUOTES_COMPLETE, UNDER_COMPARISON,
@@ -144,7 +145,7 @@ class RfqApiService implements RfqApi {
 		ModuleSwitch.requireReadable(Module.RFQ);
 		Rfq r = rfqService.visible(me, rfqId);
 		return new CustomerRfqRef(r.id, r.number, r.customerCompanyId,
-				ModuleSwitch.writable(Module.RFQ) && r.status == SENT_TO_CUSTOMER);
+				ModuleSwitch.writable(Module.RFQ) && (r.status == SENT_TO_CUSTOMER || r.status == CUSTOMER_ON_HOLD));
 	}
 
 	@Override
@@ -245,11 +246,12 @@ class RfqApiService implements RfqApi {
 	public void customerResponded(long rfqId, CustomerResponse response) {
 		ModuleSwitch.requireWritable(Module.RFQ); // a read-only or hidden RFQ module is not changed by another module either
 		Rfq rfq = rfqs.findById(rfqId).orElseThrow();
-		if (rfq.status != SENT_TO_CUSTOMER) {
+		if (rfq.status != SENT_TO_CUSTOMER && rfq.status != CUSTOMER_ON_HOLD) {
 			throw ApiException.conflict("This RFQ is no longer waiting for your answer");
 		}
 		rfq.status = switch (response) {
 			case APPROVED -> CUSTOMER_APPROVED; // appears in the ready-for-NPD queue; never converted automatically
+			case ON_HOLD -> CUSTOMER_ON_HOLD; // not final: the customer answers again later
 			case REVISION_REQUESTED -> CUSTOMER_REVISION_REQUESTED;
 			case DECLINED -> CUSTOMER_DECLINED;
 		};
@@ -322,7 +324,7 @@ class RfqApiService implements RfqApi {
 					CUSTOMER_REVISION_REQUESTED ->
 				Awaiting.ERGO;
 			case SENT_TO_SUPPLIERS, QUOTES_PARTIAL -> Awaiting.SUPPLIER;
-			case SENT_TO_CUSTOMER -> Awaiting.CUSTOMER;
+			case SENT_TO_CUSTOMER, CUSTOMER_ON_HOLD -> Awaiting.CUSTOMER;
 			default -> Awaiting.NONE;
 		};
 	}

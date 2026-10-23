@@ -14,16 +14,18 @@ export const STATUS: Record<RfqStatus | CustomerRfqStatus, { label: string; colo
   QUOTES_COMPLETE: { label: 'Quotes received', color: 'primary' },
   UNDER_COMPARISON: { label: 'Under comparison', color: 'primary' },
   SENT_TO_CUSTOMER: { label: 'Sent to customer', color: 'secondary' },
-  CUSTOMER_REVISION_REQUESTED: { label: 'Revision requested', color: 'warning' },
+  CUSTOMER_ON_HOLD: { label: 'On hold by customer', color: 'warning' },
+  CUSTOMER_REVISION_REQUESTED: { label: 'Correction required', color: 'warning' },
   CUSTOMER_APPROVED: { label: 'Approved', color: 'success' },
-  CUSTOMER_DECLINED: { label: 'Declined', color: 'error' },
+  CUSTOMER_DECLINED: { label: 'Rejected', color: 'error' },
   CLOSED: { label: 'Closed', color: 'default' },
   CANCELLED: { label: 'Cancelled', color: 'default' },
   IN_PROGRESS: { label: 'Quotation in progress', color: 'primary' },
   QUOTE_RECEIVED: { label: 'Quote received', color: 'secondary' },
-  REVISION_REQUESTED: { label: 'Revision requested', color: 'warning' },
+  ON_HOLD: { label: 'On hold', color: 'warning' },
+  REVISION_REQUESTED: { label: 'Correction required', color: 'warning' },
   APPROVED: { label: 'Approved', color: 'success' },
-  DECLINED: { label: 'Declined', color: 'error' },
+  DECLINED: { label: 'Rejected', color: 'error' },
 }
 
 export const PRIORITIES: Record<Priority, string> = { LOW: 'Low', NORMAL: 'Normal', HIGH: 'High', URGENT: 'Urgent' }
