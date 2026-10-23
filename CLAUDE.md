@@ -1,5 +1,7 @@
 # ERGO Connect — Claude Code standing context
 
+> **START HERE (active work): read `docs/FLOW_ALIGNMENT.md` first.** The client's flow document now overrides the older SRS and the build-order list below: slices 1-2 (On Hold decision; multi-item RFQ, sub-RFQs, quotes per part, per-part customer quotation) are done, slices 3-6 (Sample PO + KAM project, NPD plan, dual quality gate + customer final approval, production PO + OFP project) are still to build. That file says what was done, where to start and how.
+
 Production B2B platform for ERGO: RFQ → Quotation → NPD → OFP → Quality → Delivery → Closure, shared by three org types (ERGO, Customers, Suppliers) and 18 roles. It handles financial, quality and compliance data. **Correctness and access control come before speed.**
 
 ## Sources of truth (read before building anything)
