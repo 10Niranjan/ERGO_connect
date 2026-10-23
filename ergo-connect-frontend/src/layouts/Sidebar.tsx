@@ -6,6 +6,7 @@ import ChatIcon from '@mui/icons-material/Chat'
 import DashboardIcon from '@mui/icons-material/Dashboard'
 import EngineeringIcon from '@mui/icons-material/Engineering'
 import FactCheckIcon from '@mui/icons-material/FactCheck'
+import DescriptionIcon from '@mui/icons-material/Description'
 import FolderIcon from '@mui/icons-material/Folder'
 import LocalShippingIcon from '@mui/icons-material/LocalShipping'
 import PeopleIcon from '@mui/icons-material/People'
@@ -39,6 +40,7 @@ const ICONS: Record<string, ElementType> = {
   rfq: RequestQuoteIcon,
   assignment: AssignmentIcon,
   engineering: EngineeringIcon,
+  description: DescriptionIcon,
   shipping: LocalShippingIcon,
   inspection: FactCheckIcon,
   ncr: ReportProblemIcon,

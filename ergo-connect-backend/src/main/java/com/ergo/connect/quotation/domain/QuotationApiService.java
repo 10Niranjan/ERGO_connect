@@ -78,6 +78,31 @@ class QuotationApiService implements QuotationApi {
 		return approvedParts().stream().filter(p -> p.rfqItemId() == rfqItemId).findFirst();
 	}
 
+	@Override
+	@Transactional(readOnly = true)
+	public List<CustomerApprovedPart> customerApprovedParts() {
+		CurrentUser me = CurrentUser.get();
+		if (!ModuleSwitch.readable(Module.QUOTATION) || me.companyType() != CompanyType.CUSTOMER) {
+			return List.of();
+		}
+		// the customer's own live parts (RFQ record scope), so only the caller's own company's parts are ever looked at
+		Map<Long, RfqApi.CustomerPart> own = rfqs.customerParts().stream()
+			.collect(Collectors.toMap(RfqApi.CustomerPart::itemId, Function.identity()));
+		if (own.isEmpty()) {
+			return List.of();
+		}
+		return invitations.findByRfqIdIn(own.values().stream().map(RfqApi.CustomerPart::rfqId).collect(Collectors.toSet()))
+			.stream()
+			.filter(i -> i.status == QuoteStatus.CUSTOMER_APPROVED && own.containsKey(i.rfqItemId))
+			.map(i -> {
+				RfqApi.CustomerPart part = own.get(i.rfqItemId);
+				CustomerQuoteLine line = lines.findFirstByAssignmentIdOrderByIdDesc(i.id).orElseThrow();
+				return new CustomerApprovedPart(part.rfqId(), part.rfqNumber(), part.itemId(), part.partNumber(),
+						customerQuotes.findById(line.submissionId).orElseThrow().responseAt);
+			})
+			.toList();
+	}
+
 	private List<ApprovedPart> approvedParts(List<Invitation> approved) {
 		if (approved.isEmpty()) {
 			return List.of();

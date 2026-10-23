@@ -30,6 +30,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import com.ergo.connect.IntegrationTest;
+import com.ergo.connect.TestNpd;
 import com.ergo.connect.TestRfq;
 import com.ergo.connect.TestUsers;
 import com.ergo.connect.TestUsers.Login;
@@ -77,6 +78,8 @@ class OfpTests {
 
 	Login buyerA;
 
+	Login npdCustomerA;
+
 	Login seller;
 
 	@BeforeEach
@@ -96,6 +99,7 @@ class OfpTests {
 		ergoRfq = users.login(ergo, "ERGO_RFQ");
 		ergoQuality = users.login(ergo, "ERGO_QUALITY");
 		buyerA = users.login(customerA, "CUSTOMER_RFQ");
+		npdCustomerA = users.login(customerA, "CUSTOMER_NPD");
 		seller = users.login(supplier, "SUPPLIER_RFQ");
 	}
 
@@ -1126,11 +1130,9 @@ class OfpTests {
 			.longValue();
 	}
 
+	/** Customer A raises the Sample PO and its KAM accepts it: an NPD project in PLANNING with its plan released to the supplier (flow doc step 7), so it can be moved through its stages. */
 	private long convert(long rfqId) throws Exception {
-		return JsonPath
-			.<Number>read(call(post("/api/npd/convert/{id}", partOf(rfqId)), ergoNpd, "{}").andExpect(status().isCreated())
-				.andReturn().getResponse().getContentAsString(), "$.id")
-			.longValue();
+		return TestNpd.release(mvc, npdCustomerA, ergoKam, ergoNpd, ergoQuality, supplier, partOf(rfqId));
 	}
 
 	/** Closes every remaining NPD stage (no mandatory activities were added, so each Close Stage succeeds

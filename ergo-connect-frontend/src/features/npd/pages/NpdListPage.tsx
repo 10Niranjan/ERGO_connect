@@ -19,7 +19,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { problemMessage } from '../../../shared/problem'
 import { formatDate } from '../../rfq/labels'
-import { NPD_STAGE, RISK_LEVEL, stageProgress } from '../labels'
+import { NPD_STAGE, PLAN_STATUS, RISK_LEVEL, stageProgress } from '../labels'
 import { useNpdListQuery, type RiskLevel } from '../npdApi'
 
 // SRS §12.8.1. Table view only in 3a (no Kanban/Gantt): this list is small, so filtering stays client-side.
@@ -45,8 +45,8 @@ export function NpdListPage() {
         <Typography variant="h5" component="h1">
           NPD projects
         </Typography>
-        <Button variant="contained" onClick={() => navigate('/npd/conversion-queue')}>
-          Conversion queue
+        <Button variant="contained" onClick={() => navigate('/npd/sample-pos')}>
+          Sample POs
         </Button>
       </Stack>
       <Stack direction="row" spacing={2}>
@@ -80,9 +80,10 @@ export function NpdListPage() {
               <TableCell>Supplier</TableCell>
               <TableCell>Part</TableCell>
               <TableCell>Stage</TableCell>
+              <TableCell>Plan</TableCell>
               <TableCell>Target sample date</TableCell>
               <TableCell>Delay</TableCell>
-              <TableCell>Owner</TableCell>
+              <TableCell>NPD owner</TableCell>
               <TableCell>Risk</TableCell>
             </TableRow>
           </TableHead>
@@ -104,6 +105,9 @@ export function NpdListPage() {
                       </Typography>
                     </Stack>
                   </TableCell>
+                  <TableCell>
+                    <Chip size="small" label={PLAN_STATUS[r.planStatus].label} color={PLAN_STATUS[r.planStatus].color} />
+                  </TableCell>
                   <TableCell>{formatDate(r.targetSampleDate)}</TableCell>
                   <TableCell sx={r.delayDays != null && r.delayDays > 0 ? { color: 'error.main', fontWeight: 600 } : undefined}>
                     {r.delayDays == null ? '—' : `${r.delayDays} d`}
@@ -117,7 +121,7 @@ export function NpdListPage() {
             })}
             {!isLoading && shown.length === 0 && (
               <TableRow>
-                <TableCell colSpan={10} sx={{ color: 'text.secondary' }}>
+                <TableCell colSpan={11} sx={{ color: 'text.secondary' }}>
                   No NPD projects yet.
                 </TableCell>
               </TableRow>

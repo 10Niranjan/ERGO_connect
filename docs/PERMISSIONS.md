@@ -310,3 +310,27 @@ Only an account of the **ERGO company** can hold it, and only an existing Super 
 | Create users, set roles, activate, reset password | Super Admin | Users screen (`/api/users...`) |
 | Give the Super Admin role | an existing Super Admin, to an ERGO-company user only | §10.1 |
 | Anything on a customer's or supplier's record | their own roles, per the grid, in their own company | layer 2 |
+
+## 11. Changes for the flow document (2026-10-23, Slice 3, migration V35)
+
+The shipped sheet (`DefaultAccessSheet`) and the seeded table moved in two cells, agreed with the client:
+
+| Role | Module | Was | Now | Why |
+|---|---|---|---|---|
+| ERGO_KAM | NPD | V | **A** | The KAM decides a customer's Sample PO and creates the sample project (flow doc step 7). |
+| SUPPLIER_RFQ | NPD | NV | **V** | The plan is assigned to Supplier NPD, RFQ and Quality (step 7); RFQ only reads it. |
+
+The migration changes a cell only if it still holds the old shipped value (an ERGO Admin's edit is kept) and bumps
+`access_config.version`.
+
+- **The KAM's A on NPD is deliberately narrow.** It covers Sample PO return / accept and project creation
+  (`SamplePoService`, confined to the KAM's assigned accounts). `NpdService.EDITORS` excludes ERGO_KAM
+  (`ModuleAccess.actorsExcept`), so a KAM still cannot edit a project, work customer or supplier steps, raise issues or
+  request approvals. A security review found that a plain "A" would have allowed all of that.
+- **Sample PO**: raised only by the customer-side NPD approver (`approve('NPD','CUSTOMER')` = Customer NPD); returned or
+  accepted only by ERGO_KAM and ERGO_MANAGEMENT that can act on NPD; read by customer NPD viewers (own company), ERGO
+  roles with NPD view (KAM: assigned accounts only). Suppliers never reach a Sample PO.
+- **Plan release gates the supplier**: while `npd_projects.plan_status = AWAITING_PLAN` the supplier cannot see the
+  project through any path (list, detail, dashboard, notifications, comments, `NpdApi.projectRef`), and stages cannot be
+  closed. `POST /api/npd/{id}/plan/assign` (ERGO_NPD / ERGO_MANAGEMENT, the "O" roles) releases it.
+- New record kind `sample-po` for notifications (`RecordScope`, `ModuleSwitch.ownerOf` = NPD).

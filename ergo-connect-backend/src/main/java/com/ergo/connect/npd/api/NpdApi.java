@@ -59,9 +59,13 @@ public interface NpdApi {
 
 	List<NpdDashboardItem> dashboardItems();
 
-	/** SRS §12.5.1 Management Dashboard "Approved projects ready for NPD conversion": {@code RfqApi.customerApproved}
-	 * already scoped per caller, minus those already converted (security review, ARCHITECTURE.md §8 2026-10-05). */
-	int unconvertedApprovedRfqCount();
+	/** Management and KAM dashboards: Sample POs submitted by customers that wait for the KAM's decision (the KAM sees
+	 * only its assigned accounts', Management all; 0 for every other role). */
+	int samplePosAwaitingCount();
+
+	/** The customer of a Sample PO if the current caller may see it (SamplePoService's own record scope); empty otherwise.
+	 * A Sample PO has no supplier, so only the customer side is returned. Used by the communication module for notifications. */
+	Optional<com.ergo.connect.common.record.RecordParties> samplePoPartiesVisibleToCaller(long samplePoId);
 
 	/** ERGO Management's "Pending approvals" widget (§12.5.1): count of every {@code PENDING} approval across every
 	 * NPD project, for the unrestricted-view roles only (ERGO Admin/Management/RFQ/NPD) - 0 for everyone else,

@@ -27,14 +27,16 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import com.ergo.connect.IntegrationTest;
+import com.ergo.connect.TestNpd;
 import com.ergo.connect.TestRfq;
 import com.ergo.connect.TestUsers;
 import com.ergo.connect.TestUsers.Login;
 import com.jayway.jsonpath.JsonPath;
 
 /**
- * Phase 3a: the manual RFQ->NPD conversion queue and the 9-stage NPD workflow (SRS §13.4, §14.5, §17.4), record
- * scope (§10.6) and the mandatory-activity gate on Close Stage.
+ * The 9-stage NPD workflow (SRS §13.4, §14.5, §17.4), record scope (§10.6) and the mandatory-activity gate on Close
+ * Stage. Projects start the way the flow doc has it (Sample PO accepted by the KAM, see {@code SamplePoTests} for that
+ * flow itself); the supplier meets a project only once ERGO NPD has released the plan to it.
  */
 @IntegrationTest
 class NpdTests {
@@ -80,6 +82,11 @@ class NpdTests {
 
 	Login npdSupplierB;
 
+	/** An ERGO KAM assigned to both customers: accepts the Sample POs that start the projects below. */
+	Login kamBoth;
+
+	Login npdCustomerB;
+
 	@BeforeEach
 	void setUp() throws Exception {
 		users = new TestUsers(jdbc, mvc);
@@ -99,39 +106,17 @@ class NpdTests {
 		npdCustomerA = users.login(customerA, "CUSTOMER_NPD");
 		npdSupplier = users.login(supplier, "SUPPLIER_NPD");
 		npdSupplierB = users.login(supplierB, "SUPPLIER_NPD");
+		npdCustomerB = users.login(customerB, "CUSTOMER_NPD");
+		kamBoth = users.login(ergo, "ERGO_KAM");
+		users.assignAccounts(kamBoth.userId(), customerA, customerB);
 	}
 
 	@Test
-	void onlyNpdAndManagementConvertAndTheSameRfqCannotBeConvertedTwice() throws Exception {
-		long rfqId = approvedRfq(buyerA, "90");
+	void aProjectStartsInPlanningWithItsFirstStageHistoryRowAndAnAuditEntry() throws Exception {
+		long projectId = convert(approvedRfq(buyerA, "90"));
 
-		List<List<String>> actionsForRfq = JsonPath.read(
-				call(get("/api/npd/conversion-queue"), ergoRfq, null).andReturn().getResponse().getContentAsString(),
-				"$[?(@.rfqId == " + rfqId + ")].actions");
-		assertThat(actionsForRfq).hasSize(1);
-		assertThat(actionsForRfq.getFirst()).isEmpty(); // ERGO_RFQ cannot convert
-		List<List<String>> actionsForNpd = JsonPath.read(
-				call(get("/api/npd/conversion-queue"), ergoNpd, null).andReturn().getResponse().getContentAsString(),
-				"$[?(@.rfqId == " + rfqId + ")].actions");
-		assertThat(actionsForNpd).hasSize(1);
-		assertThat(actionsForNpd.getFirst()).containsExactly("CONVERT");
-
-		call(post("/api/npd/convert/{id}", partOf(rfqId)), ergoRfq, "{}").andExpect(status().isForbidden());
-		long projectId = JsonPath
-			.<Number>read(
-					call(post("/api/npd/convert/{id}", partOf(rfqId)), ergoNpd, "{\"comment\": \"Kickoff\"}")
-						.andExpect(status().isCreated())
-						.andExpect(jsonPath("$.npdNumber", containsString("NPD-")))
-						.andExpect(jsonPath("$.stage").value("PLANNING"))
-						.andExpect(jsonPath("$.rfqId").value((int) rfqId))
-						.andReturn().getResponse().getContentAsString(), "$.id")
-			.longValue();
-
-		// the queue no longer offers an already-converted RFQ, and converting it again is a conflict
-		call(get("/api/npd/conversion-queue"), ergoNpd, null)
-			.andExpect(jsonPath("$[*].rfqId", not(hasItem((int) rfqId))));
-		call(post("/api/npd/convert/{id}", partOf(rfqId)), ergoManagement, "{}").andExpect(status().isConflict());
-
+		call(get("/api/npd/{id}", projectId), ergoNpd, null).andExpect(jsonPath("$.stage").value("PLANNING"))
+			.andExpect(jsonPath("$.npdNumber", containsString("NPD-")));
 		// the very first stage_history row: PLANNING with no previous stage
 		List<String> stages = jdbc.queryForList("""
 				SELECT stage_name FROM npd_stage_history WHERE npd_project_id = ? ORDER BY npd_stage_history_id""",
@@ -140,33 +125,16 @@ class NpdTests {
 		assertThat(jdbc.queryForObject(
 				"SELECT previous_stage_name FROM npd_stage_history WHERE npd_project_id = ?", String.class, projectId))
 			.isNull();
-		// the automatic audit trail also picked up the conversion
+		// the automatic audit trail also picked up the creation
 		assertThat(jdbc.queryForList(
 				"SELECT event_type FROM audit_logs WHERE entity_name = 'NpdProject' AND record_id = ?", String.class,
 				projectId)).contains("CREATE");
 	}
 
 	@Test
-	void convertingAnRfqWithNoApprovedQuoteFails() throws Exception {
-		long id = JsonPath
-			.<Number>read(call(post("/api/rfqs"), buyerA, """
-					{"targetQuoteDate": "%s", "currencyId": %d, "items": [{"partNumber": "PN-NOQ", "description": "Bracket", "materialSpec": "EN8", "targetProductionPiecePrice": 99.5,
-					 "processSteps": [{"stepName": "Casting"}]}]}""".formatted(LocalDate.now().plusDays(10), inr))
-				.andReturn().getResponse().getContentAsString(), "$.id")
-			.longValue();
-		call(post("/api/rfqs/{id}/submit", id), buyerA, "{}").andExpect(status().isOk());
-		call(post("/api/rfqs/{id}/start-review", id), ergoRfq, null).andExpect(status().isOk());
-
-		// ERGO_ADMIN (unrestricted RFQ scope), not ERGO_NPD: RfqApi.forErgo only lets ERGO_NPD see RFQs that are
-		// already CUSTOMER_APPROVED, so ERGO_NPD would get 404 here rather than reach the "no approved quote" check.
-		call(post("/api/npd/convert/{id}", partOf(id)), ergoManagement, "{}").andExpect(status().isUnprocessableContent())
-			.andExpect(jsonPath("$.detail", containsString("approved customer quote")));
-	}
-
-	@Test
-	void keyAccountManagersSeeOnlyTheirAssignedCustomersProjectsAndOfpQualityViewEverythingButConvertNothing() throws Exception {
+	void keyAccountManagersSeeOnlyTheirAssignedCustomersProjectsAndOfpQualityViewEverythingButReleaseNoPlan() throws Exception {
 		long projectA = convert(approvedRfq(buyerA, "90"));
-		long projectB = convert(approvedRfq(buyerB, "95"));
+		long projectB = convertFor(npdCustomerB, approvedRfq(buyerB, "95"));
 		Login kam = users.login(users.company("ERGO"), "ERGO_KAM");
 		users.assignAccounts(kam.userId(), customerA);
 		Login ofp = users.login(users.company("ERGO"), "ERGO_OFP");
@@ -177,16 +145,16 @@ class NpdTests {
 		call(get("/api/npd/{id}", projectA), kam, null).andExpect(status().isOk());
 		call(get("/api/npd/{id}", projectB), kam, null).andExpect(status().isNotFound());
 
-		// role sheet: ERGO OFP (V) and ERGO Quality (A) see every project, but only the O roles convert
+		// role sheet: ERGO OFP (V) and ERGO Quality (A) see every project, but only the O roles release a plan
 		for (Login viewer : List.of(ofp, quality)) {
 			call(get("/api/npd"), viewer, null).andExpect(jsonPath("$[*].id", hasItem((int) projectA)))
 				.andExpect(jsonPath("$[*].id", hasItem((int) projectB)));
 			call(get("/api/npd/{id}", projectB), viewer, null).andExpect(status().isOk());
 		}
-		call(get("/api/npd/conversion-queue"), ofp, null).andExpect(status().isOk())
-			.andExpect(jsonPath("$", org.hamcrest.Matchers.empty())); // no RFQ access, so nothing to convert
-		call(post("/api/npd/convert/{id}", projectA), quality, "{}").andExpect(status().isForbidden());
-		call(post("/api/npd/convert/{id}", projectA), ofp, "{}").andExpect(status().isForbidden());
+		call(post("/api/npd/{id}/plan/assign", projectA), quality, "{}").andExpect(status().isForbidden());
+		call(post("/api/npd/{id}/plan/assign", projectA), ofp, "{}").andExpect(status().isForbidden());
+		// the KAM (A on NPD) creates projects but does not release their plan
+		call(post("/api/npd/{id}/plan/assign", projectA), kam, "{}").andExpect(status().isForbidden());
 
 		// ERGO sees the supplier (its own internal view, SRS §12.8.1's own list column); no customer/supplier
 		// role ever reaches this endpoint at all, checked above and in the RFQ-side anonymity tests
@@ -207,7 +175,7 @@ class NpdTests {
 
 	@Test
 	void closeStageIsBlockedUntilMandatoryActivitiesAreDoneAndEveryMoveIsRecorded() throws Exception {
-		long projectId = convert(approvedRfq(buyerA, "90"));
+		long projectId = convertReleased(approvedRfq(buyerA, "90"));
 
 		long mandatoryActivity = JsonPath
 			.<List<Number>>read(
@@ -282,22 +250,34 @@ class NpdTests {
 	}
 
 	@Test
-	void customerRfqIsViewOnlyAndSupplierRfqReachesNothing() throws Exception {
-		// role sheet: CUSTOMER_RFQ has V on NPD (its own company's projects, read-only); SUPPLIER_RFQ has no NPD access
+	void customerRfqAndSupplierRfqAreViewOnlyAndTheSupplierMeetsTheProjectOnlyOnceThePlanIsReleased() throws Exception {
+		// role sheet: CUSTOMER_RFQ and SUPPLIER_RFQ have V on NPD (their own company's projects, read-only)
 		long projectId = convert(approvedRfq(buyerA, "90"));
 
 		call(get("/api/npd/{id}", projectId), buyerA, null).andExpect(status().isOk())
 			.andExpect(jsonPath("$.audience").value("CUSTOMER"))
 			.andExpect(jsonPath("$.actions", org.hamcrest.Matchers.empty()));
 		call(get("/api/npd/{id}", projectId), buyerB, null).andExpect(status().isNotFound()); // another company's
-		call(get("/api/npd/{id}", projectId), seller, null).andExpect(status().isForbidden());
-		call(get("/api/npd/mine"), seller, null).andExpect(status().isForbidden());
+		// the plan is still being built: the supplier's own RFQ team cannot open the project yet, nor list it
+		call(get("/api/npd/{id}", projectId), seller, null).andExpect(status().isNotFound());
+		call(get("/api/npd/mine"), seller, null).andExpect(status().isOk()).andExpect(jsonPath("$", hasSize(0)));
+
+		long step = TestNpd.addSupplierStep(mvc, ergoNpd, projectId, supplier, "Tooling readiness", true);
+		TestNpd.assignPlan(mvc, ergoNpd, projectId);
+		call(get("/api/npd/{id}", projectId), seller, null).andExpect(status().isOk())
+			.andExpect(jsonPath("$.audience").value("SUPPLIER"))
+			.andExpect(jsonPath("$.actions", org.hamcrest.Matchers.empty()))
+			.andExpect(jsonPath("$.activities[0].actions", org.hamcrest.Matchers.empty()));
+		call(get("/api/npd/mine"), seller, null).andExpect(jsonPath("$", hasSize(1)));
+		// view-only: it cannot touch the step that is its company's own
+		call(post("/api/npd/activities/{id}/progress", step), seller, """
+				{"status": "DONE", "issueFlag": false, "riskFlag": false}""").andExpect(status().isForbidden());
 
 		for (Login outsider : List.of(buyerA, seller)) {
-			call(get("/api/npd/conversion-queue"), outsider, null).andExpect(status().isForbidden());
 			call(get("/api/npd"), outsider, null).andExpect(status().isForbidden());
 			call(put("/api/npd/{id}", projectId), outsider, "{}").andExpect(status().isForbidden());
 			call(post("/api/npd/{id}/close-stage", projectId), outsider, "{}").andExpect(status().isForbidden());
+			call(post("/api/npd/{id}/plan/assign", projectId), outsider, "{}").andExpect(status().isForbidden());
 			call(post("/api/npd/{id}/activities", projectId), outsider, activityForm("Sneak in", true))
 				.andExpect(status().isForbidden());
 		}
@@ -354,6 +334,7 @@ class NpdTests {
 			.getFirst()
 			.longValue();
 
+		TestNpd.assignPlan(mvc, ergoNpd, projectId);
 		// the supplier's own activity: succeeds
 		String progressed = call(post("/api/npd/activities/{id}/progress", supplierActivityId), npdSupplier, """
 				{"status": "IN_PROGRESS", "issueFlag": false, "riskFlag": false, "remarks": "underway"}""")
@@ -456,7 +437,7 @@ class NpdTests {
 
 	@Test
 	void aClosedProjectFreezesIssueAndApprovalWritesToo() throws Exception {
-		long projectId = convert(approvedRfq(buyerA, "90"));
+		long projectId = convertReleased(approvedRfq(buyerA, "90"));
 		long issueId = JsonPath
 			.<List<Number>>read(
 					call(post("/api/npd/{id}/issues", projectId), ergoNpd,
@@ -484,8 +465,6 @@ class NpdTests {
 	@Test
 	void onlyTheMatchingApproverRoleCanDecideAndNotTwice() throws Exception {
 		long projectId = convert(approvedRfq(buyerA, "90"));
-		Login npdCustomerB = users.login(customerB, "CUSTOMER_NPD");
-
 		long sampleApprovalId = approvalId(projectId, "CUSTOMER_SAMPLE_APPROVAL");
 
 		// wrong company: visible() already confines a customer decider to their own project (404, not revealed)
@@ -556,7 +535,7 @@ class NpdTests {
 
 	@Test
 	void closeStageIsBlockedByAPendingApprovalEvenWhenTheActivityIsDoneAndUnblocksOnceApproved() throws Exception {
-		long projectId = convert(approvedRfq(buyerA, "90"));
+		long projectId = convertReleased(approvedRfq(buyerA, "90"));
 		long activityId = JsonPath
 			.<List<Number>>read(
 					call(post("/api/npd/{id}/activities", projectId), ergoNpd,
@@ -629,7 +608,7 @@ class NpdTests {
 	 * still blocked; only once it is reopened and driven to PASSED does the gate open. */
 	@Test
 	void closeStageAtFinalSampleReadinessIsGatedOnQualityInspectionsResolvingToPassOrDeviation() throws Exception {
-		long projectId = advanceToFinalSampleReadiness(convert(approvedRfq(buyerA, "90")));
+		long projectId = advanceToFinalSampleReadiness(convertReleased(approvedRfq(buyerA, "90")));
 
 		// zero inspections: still blocked
 		call(post("/api/npd/{id}/close-stage", projectId), ergoNpd, "{}").andExpect(status().isConflict())
@@ -674,7 +653,7 @@ class NpdTests {
 	/** RELEASED_WITH_DEVIATION also satisfies the gate, same as PASSED. */
 	@Test
 	void closeStageAtFinalSampleReadinessIsAllowedWhenTheOnlyInspectionWasReleasedWithDeviation() throws Exception {
-		long projectId = advanceToFinalSampleReadiness(convert(approvedRfq(buyerA, "90")));
+		long projectId = advanceToFinalSampleReadiness(convertReleased(approvedRfq(buyerA, "90")));
 		long inspectionId = JsonPath
 			.<Number>read(call(post("/api/quality/inspections"), ergoQuality, """
 					{"linkedModule": "NPD", "linkedRecordId": %d, "partNumber": "PN-STD", "customerVisible": false}"""
@@ -693,7 +672,7 @@ class NpdTests {
 	/** A CLOSED inspection whose last pre-close disposition was PASSED still satisfies the gate. */
 	@Test
 	void closeStageAtFinalSampleReadinessIsAllowedWhenTheOnlyInspectionIsClosedAfterPassing() throws Exception {
-		long projectId = advanceToFinalSampleReadiness(convert(approvedRfq(buyerA, "90")));
+		long projectId = advanceToFinalSampleReadiness(convertReleased(approvedRfq(buyerA, "90")));
 		passNpdInspection(projectId);
 		long inspectionId = jdbc.queryForObject("""
 				SELECT inspection_id FROM inspections WHERE linked_module = 'NPD' AND linked_record_id = ?""",
@@ -750,6 +729,7 @@ class NpdTests {
 		call(post("/api/npd/{id}/activities", projectId), ergoNpd,
 				ownedActivityForm("Supplier task", "SUPPLIER", supplier)).andExpect(status().isCreated());
 
+		TestNpd.assignPlan(mvc, ergoNpd, projectId);
 		// an issue owned by the supplier but linked to the customer's own activity: raising it must not let it
 		// surface in the customer's view, where IssueRiskView.ownerCompanyName would otherwise leak the supplier's
 		// name through the linked-activity side of the customer's own visibility
@@ -791,6 +771,10 @@ class NpdTests {
 		call(get("/api/npd/mine"), npdCustomerA, null).andExpect(status().isOk())
 			.andExpect(jsonPath("$", hasSize(1)))
 			.andExpect(jsonPath("$[0].id").value((int) projectId));
+		// the supplier hears of the project only once the plan has been released to it (flow doc step 7)
+		call(get("/api/npd/mine"), npdSupplier, null).andExpect(status().isOk()).andExpect(jsonPath("$", hasSize(0)));
+		TestNpd.addSupplierStep(mvc, ergoNpd, projectId, supplier, "Tooling readiness", true);
+		TestNpd.assignPlan(mvc, ergoNpd, projectId);
 		call(get("/api/npd/mine"), npdSupplier, null).andExpect(status().isOk())
 			.andExpect(jsonPath("$", hasSize(1)))
 			.andExpect(jsonPath("$[0].id").value((int) projectId));
@@ -807,15 +791,10 @@ class NpdTests {
 		long rfqId = approvedRfq(buyerA, "90");
 		String supplierName = jdbc.queryForObject("SELECT company_name FROM companies WHERE company_id = ?",
 				String.class, supplier);
-		long projectId = JsonPath
-			.<Number>read(
-					call(post("/api/npd/convert/{id}", partOf(rfqId)), ergoNpd,
-							"{\"comment\": \"Kickoff with %s\"}".formatted(supplierName)).andExpect(status().isCreated())
-						.andReturn()
-						.getResponse()
-						.getContentAsString(),
-					"$.id")
-			.longValue();
+		long projectId = TestNpd.createProject(mvc, kamBoth, TestNpd.raise(mvc, npdCustomerA, partOf(rfqId)), ergoNpd,
+				ergoQuality, "Kickoff with %s".formatted(supplierName));
+		TestNpd.addSupplierStep(mvc, ergoNpd, projectId, supplier, "Tooling readiness", false);
+		TestNpd.assignPlan(mvc, ergoNpd, projectId);
 		call(post("/api/npd/{id}/close-stage", projectId), ergoNpd,
 				"{\"comment\": \"Confirmed with %s at a tight price\"}".formatted(supplierName))
 			.andExpect(jsonPath("$.stage").value("COMMERCIAL_SOURCING_READINESS"));
@@ -830,11 +809,12 @@ class NpdTests {
 		assertThat(JsonPath.<List<String>>read(customerView, "$.stageHistory[*].stage"))
 			.containsExactly("PLANNING", "COMMERCIAL_SOURCING_READINESS");
 
+		// the supplier's step may carry remarks of its own, the stage history never does
 		String supplierView = call(get("/api/npd/{id}", projectId), npdSupplier, null).andExpect(status().isOk())
 			.andReturn()
 			.getResponse()
 			.getContentAsString();
-		assertThat(supplierView).doesNotContain("\"remarks\"");
+		assertThat(JsonPath.<List<Object>>read(supplierView, "$.stageHistory[*].remarks")).isEmpty();
 		assertThat(supplierView).doesNotContain("riskLevel");
 
 		// ERGO's own view still carries the full remarks and riskLevel
@@ -876,6 +856,7 @@ class NpdTests {
 					"$.activities[?(@.id == " + activityId + ")].promptChecklists[*].id")
 			.getFirst()
 			.longValue();
+		TestNpd.assignPlan(mvc, ergoNpd, projectId);
 		call(post("/api/npd/prompt-checklists/{id}/response", checklistId), npdSupplier,
 				"{\"responseValue\": \"Yes\", \"remarks\": \"Confirmed with our tool room\"}")
 			.andExpect(status().isOk());
@@ -1004,6 +985,7 @@ class NpdTests {
 			.getFirst()
 			.longValue();
 
+		TestNpd.assignPlan(mvc, ergoNpd, projectId);
 		// this project's own customer, not the activity's own (supplier's) company: rejected, not revealed
 		call(post("/api/npd/prompt-checklists/{id}/response", checklistId), npdCustomerA,
 				"{\"responseValue\": \"Yes\"}").andExpect(status().isNotFound());
@@ -1029,6 +1011,7 @@ class NpdTests {
 			.getFirst()
 			.longValue();
 
+		TestNpd.assignPlan(mvc, ergoNpd, projectId);
 		call(post("/api/npd/activities/{id}/block", supplierActivityId), npdCustomerA, "{\"comment\": \"not mine\"}")
 			.andExpect(status().isNotFound());
 		call(post("/api/npd/activities/{id}/block", supplierActivityId), npdSupplier,
@@ -1056,6 +1039,7 @@ class NpdTests {
 			.getFirst()
 			.longValue();
 
+		TestNpd.assignPlan(mvc, ergoNpd, projectId);
 		call(post("/api/npd/activities/{id}/progress", activityId), qualitySupplier, """
 				{"status": "IN_PROGRESS", "issueFlag": false, "riskFlag": false}""").andExpect(status().isOk());
 		// role sheet: Supplier OFP has no NPD access at all
@@ -1090,16 +1074,24 @@ class NpdTests {
 		return id;
 	}
 
-	/** The id of the RFQ's first part: NPD projects start from approved parts (flow doc §5). */
+	/** The id of the RFQ's first part: projects start from approved parts (flow doc §5). */
 	private long partOf(long rfqId) throws Exception {
 		return TestRfq.itemIds(mvc, ergoRfq, rfqId).getFirst();
 	}
 
+	/** Customer A raises the Sample PO, the KAM accepts it: a project in PLANNING whose plan is still being built. */
 	private long convert(long rfqId) throws Exception {
-		return JsonPath
-			.<Number>read(call(post("/api/npd/convert/{id}", partOf(rfqId)), ergoNpd, "{}").andExpect(status().isCreated())
-				.andReturn().getResponse().getContentAsString(), "$.id")
-			.longValue();
+		return convertFor(npdCustomerA, rfqId);
+	}
+
+	/** As {@link #convert}, with the plan released to the supplier (one optional supplier step): the project can now move
+	 * through its stages. */
+	private long convertReleased(long rfqId) throws Exception {
+		return TestNpd.release(mvc, npdCustomerA, kamBoth, ergoNpd, ergoQuality, supplier, partOf(rfqId));
+	}
+
+	private long convertFor(Login customerNpd, long rfqId) throws Exception {
+		return TestNpd.start(mvc, customerNpd, kamBoth, ergoNpd, ergoQuality, partOf(rfqId));
 	}
 
 	/** Repeatedly closes stages (none of these stages have any activity in these tests, so every mandatory list is

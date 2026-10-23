@@ -25,6 +25,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import com.ergo.connect.IntegrationTest;
+import com.ergo.connect.TestNpd;
 import com.ergo.connect.TestUsers;
 import com.ergo.connect.TestUsers.Login;
 import com.jayway.jsonpath.JsonPath;
@@ -248,14 +249,12 @@ class DashboardTests {
 		mvc.perform(json(post("/api/rfqs/{id}/start-review", rfqId), "{}", ergoRfq)).andExpect(status().isOk());
 		com.ergo.connect.TestRfq.approveWhole(mvc, buyerA, ergoRfq, seller, supplier, inr, rfqId, "90");
 
-		long npdId = JsonPath
-			.<Number>read(mvc.perform(json(post("/api/npd/convert/{id}",
-					com.ergo.connect.TestRfq.itemIds(mvc, ergoRfq, rfqId).getFirst()), "{}", ergoNpd))
-				.andExpect(status().isCreated())
-				.andReturn()
-				.getResponse()
-				.getContentAsString(), "$.id")
-			.longValue();
+		// the Sample PO is accepted by a KAM for this customer; the plan is released so the supplier sees the project too
+		Login customerNpdA = users.login(customerA, "CUSTOMER_NPD");
+		Login kam = users.login(ergo, "ERGO_KAM");
+		users.assignAccounts(kam.userId(), customerA);
+		long npdId = TestNpd.release(mvc, customerNpdA, kam, ergoNpd, ergoQuality, supplier,
+				com.ergo.connect.TestRfq.itemIds(mvc, ergoRfq, rfqId).getFirst());
 		mvc.perform(json(put("/api/npd/{id}",
 				npdId), "{\"riskLevel\": \"HIGH\"}", ergoNpd)).andExpect(status().isOk());
 
@@ -266,7 +265,6 @@ class DashboardTests {
 
 		// The customer and the supplier building this exact project never see it. CUSTOMER_RFQ/SUPPLIER_RFQ have no
 		// NPD-module visibility at all (SRS §10.6), so CUSTOMER_NPD/SUPPLIER_NPD logins are needed to reach it.
-		Login customerNpdA = users.login(customerA, "CUSTOMER_NPD");
 		mvc.perform(get("/api/dashboard").header(HttpHeaders.AUTHORIZATION, customerNpdA.bearer()))
 			.andExpect(jsonPath("$.npdItems[0].riskLevel").value(nullValue()));
 		Login supplierNpd = users.login(supplier, "SUPPLIER_NPD");

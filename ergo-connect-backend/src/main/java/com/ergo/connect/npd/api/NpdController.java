@@ -18,7 +18,6 @@ import com.ergo.connect.npd.domain.NpdDtos.ActivityProgressForm;
 import com.ergo.connect.npd.domain.NpdDtos.ApprovalDecisionForm;
 import com.ergo.connect.npd.domain.NpdDtos.ApprovalForm;
 import com.ergo.connect.npd.domain.NpdDtos.CommentForm;
-import com.ergo.connect.npd.domain.NpdDtos.ConversionQueueRow;
 import com.ergo.connect.npd.domain.NpdDtos.IssueRiskForm;
 import com.ergo.connect.npd.domain.NpdDtos.IssueStatusForm;
 import com.ergo.connect.npd.domain.NpdDtos.NpdListRow;
@@ -34,8 +33,8 @@ import jakarta.validation.Valid;
 
 /**
  * SRS §10.6 NPD Management, §18 NPD APIs, §14.5 workflow. Layer 1 (which roles may attempt what) is here; layer 2
- * (which projects, in which stage, whose own activity/issue/approval) is NpdService. The conversion queue, the
- * ERGO project list and convert stay ERGO-only/ERGO-scoped; {@code /mine} is the separate, narrower entry point
+ * (which projects, in which stage, whose own activity/issue/approval) is NpdService. The
+ * ERGO project list stays ERGO-only/ERGO-scoped; {@code /mine} is the separate, narrower entry point
  * {@code list()} would otherwise never provide 3b's customer/supplier roles.
  */
 @RestController
@@ -44,7 +43,7 @@ class NpdController {
 
 	// The role sheet (ModuleAccess), NPD column; NpdService applies the record scope and the per-action rules.
 
-	/** The ERGO project list and conversion queue. */
+	/** The ERGO project list. */
 	private static final String VIEWERS = "@access.view('NPD', 'ERGO')";
 
 	/** Everyone with any NPD access: the ERGO roles plus the customer and supplier roles that reach their own projects. */
@@ -53,7 +52,7 @@ class NpdController {
 	/** ERGO roles that create / edit / submit in NPD ("A" and up). */
 	private static final String EDITORS = "@access.act('NPD', 'ERGO')";
 
-	/** ERGO's owning roles ("O"): convert an RFQ, close a stage. */
+	/** ERGO's owning roles ("O"): release the plan to the supplier, close a stage. */
 	private static final String OWNERS = "@access.approve('NPD', 'ERGO')";
 
 	/** EDITORS plus the owning company's own activity/issue/checklist actions (the service confines each to its own
@@ -71,19 +70,6 @@ class NpdController {
 
 	NpdController(NpdService npd) {
 		this.npd = npd;
-	}
-
-	@GetMapping("/conversion-queue")
-	@PreAuthorize(VIEWERS)
-	List<ConversionQueueRow> conversionQueue() {
-		return npd.conversionQueue();
-	}
-
-	@PostMapping("/convert/{rfqItemId}")
-	@PreAuthorize(OWNERS)
-	@ResponseStatus(HttpStatus.CREATED)
-	NpdView convert(@PathVariable long rfqItemId, @Valid @RequestBody CommentForm body) {
-		return npd.convert(rfqItemId, body.comment());
 	}
 
 	@GetMapping
@@ -115,6 +101,13 @@ class NpdController {
 	@PreAuthorize(EDITORS)
 	NpdView updateProject(@PathVariable long id, @Valid @RequestBody NpdProjectForm body) {
 		return npd.updateProject(id, body);
+	}
+
+	/** Flow doc step 7: ERGO NPD releases the plan to the supplier. */
+	@PostMapping("/{id}/plan/assign")
+	@PreAuthorize(OWNERS)
+	NpdView assignPlan(@PathVariable long id, @Valid @RequestBody CommentForm body) {
+		return npd.assignPlan(id, body.comment());
 	}
 
 	@PostMapping("/{id}/close-stage")

@@ -24,6 +24,13 @@ public interface QuotationApi {
 	/** One approved part, if it is within the current ERGO caller's scope. */
 	Optional<ApprovedPart> approvedPart(long rfqItemId);
 
+	/** A part of the caller's own company whose quotation it approved (flow doc step 6: Customer NPD raises a Sample PO for it). Never carries the supplier. */
+	record CustomerApprovedPart(long rfqId, String rfqNumber, long rfqItemId, String partNumber, java.time.Instant approvedAt) {
+	}
+
+	/** The caller's own approved parts; empty for every ERGO and supplier caller. */
+	List<CustomerApprovedPart> customerApprovedParts();
+
 	/**
 	 * Flow doc §4 dashboards: where each part stands, per caller - ERGO the full status and the supplier, the RFQ's
 	 * customer where its quotation stands (no supplier), a supplier its own parts (never what the customer decided).

@@ -18,7 +18,7 @@ public final class DefaultAccessSheet {
 	static {
 		row(Role.ERGO_ADMIN, "V", "V", "V", "V", "V");
 		row(Role.ERGO_MANAGEMENT, "O", "O", "O", "O", "O");
-		row(Role.ERGO_KAM, "A", "V", "V", "V", "V");
+		row(Role.ERGO_KAM, "A", "V", "A", "V", "V");
 		row(Role.ERGO_RFQ, "O", "O", "V", "V", "V");
 		row(Role.ERGO_NPD, "V", "V", "O", "V", "V");
 		row(Role.ERGO_OFP, "NV", "NV", "V", "O", "A");
@@ -29,7 +29,7 @@ public final class DefaultAccessSheet {
 		row(Role.CUSTOMER_QUALITY, "V", "NV", "A", "V", "O");
 		row(Role.CUSTOMER_KAM, "A", "A", "V", "V", "V");
 		row(Role.CUSTOMER_MANAGEMENT, "A", "A", "A", "A", "A");
-		row(Role.SUPPLIER_RFQ, "A", "A", "NV", "NV", "NV");
+		row(Role.SUPPLIER_RFQ, "A", "A", "V", "NV", "NV");
 		row(Role.SUPPLIER_NPD, "NV", "NV", "A", "NV", "V");
 		row(Role.SUPPLIER_OFP, "NV", "NV", "NV", "A", "V");
 		row(Role.SUPPLIER_QUALITY, "V", "NV", "A", "A", "A");

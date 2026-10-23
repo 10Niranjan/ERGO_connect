@@ -34,20 +34,20 @@ public sealed interface DashboardView {
 
 	/** §12.5.1 ERGO Management Dashboard. ERGO Admin and ERGO Management only (§10.11 unrestricted "V"). */
 	record ManagementDashboard(Audience audience, int openRfqCount, int quotesPendingSubmissionCount,
-			int quotesAwaitingCustomerApprovalCount, int approvedForConversionCount, int activeNpdCount,
+			int quotesAwaitingCustomerApprovalCount, int samplePosAwaitingCount, int activeNpdCount,
 			List<NpdDashboardItem> delayedNpdProjects, List<NpdDashboardItem> highRiskNpdProjects,
 			List<OrderDashboardItem> ordersAtRisk, int openNcrCount, int openDeviationCount,
 			List<SupplierPerformanceRow> supplierPerformance, int pendingApprovalsCount,
 			List<PartStatusItem> partItems) implements DashboardView {
 
 		public ManagementDashboard(int openRfqCount, int quotesPendingSubmissionCount,
-				int quotesAwaitingCustomerApprovalCount, int approvedForConversionCount, int activeNpdCount,
+				int quotesAwaitingCustomerApprovalCount, int samplePosAwaitingCount, int activeNpdCount,
 				List<NpdDashboardItem> delayedNpdProjects, List<NpdDashboardItem> highRiskNpdProjects,
 				List<OrderDashboardItem> ordersAtRisk, int openNcrCount, int openDeviationCount,
 				List<SupplierPerformanceRow> supplierPerformance, int pendingApprovalsCount,
 				List<PartStatusItem> partItems) {
 			this(Audience.MANAGEMENT, openRfqCount, quotesPendingSubmissionCount, quotesAwaitingCustomerApprovalCount,
-					approvedForConversionCount, activeNpdCount, delayedNpdProjects, highRiskNpdProjects, ordersAtRisk,
+					samplePosAwaitingCount, activeNpdCount, delayedNpdProjects, highRiskNpdProjects, ordersAtRisk,
 					openNcrCount, openDeviationCount, supplierPerformance, pendingApprovalsCount, partItems);
 		}
 	}

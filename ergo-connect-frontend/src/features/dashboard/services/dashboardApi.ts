@@ -93,7 +93,7 @@ export interface ManagementDashboard {
   openRfqCount: number
   quotesPendingSubmissionCount: number
   quotesAwaitingCustomerApprovalCount: number
-  approvedForConversionCount: number
+  samplePosAwaitingCount: number
   activeNpdCount: number
   delayedNpdProjects: NpdDashboardItem[]
   highRiskNpdProjects: NpdDashboardItem[]

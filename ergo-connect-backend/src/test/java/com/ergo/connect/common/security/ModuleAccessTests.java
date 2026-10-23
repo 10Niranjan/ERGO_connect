@@ -28,7 +28,7 @@ class ModuleAccessTests {
 	static {
 		SHEET.put(Role.ERGO_ADMIN, new Level[] { V, V, V, V, V });
 		SHEET.put(Role.ERGO_MANAGEMENT, new Level[] { O, O, O, O, O });
-		SHEET.put(Role.ERGO_KAM, new Level[] { A, V, V, V, V });
+		SHEET.put(Role.ERGO_KAM, new Level[] { A, V, A, V, V }); // NPD: A so the KAM can decide Sample POs (flow doc step 7)
 		SHEET.put(Role.ERGO_RFQ, new Level[] { O, O, V, V, V });
 		SHEET.put(Role.ERGO_NPD, new Level[] { V, V, O, V, V });
 		SHEET.put(Role.ERGO_OFP, new Level[] { NONE, NONE, V, O, A });
@@ -39,7 +39,7 @@ class ModuleAccessTests {
 		SHEET.put(Role.CUSTOMER_QUALITY, new Level[] { V, NONE, A, V, CO });
 		SHEET.put(Role.CUSTOMER_KAM, new Level[] { A, A, V, V, V });
 		SHEET.put(Role.CUSTOMER_MANAGEMENT, new Level[] { A, A, A, A, A });
-		SHEET.put(Role.SUPPLIER_RFQ, new Level[] { A, A, NONE, NONE, NONE });
+		SHEET.put(Role.SUPPLIER_RFQ, new Level[] { A, A, V, NONE, NONE }); // NPD: V, the plan is assigned to it too (flow doc step 7)
 		SHEET.put(Role.SUPPLIER_NPD, new Level[] { NONE, NONE, A, NONE, V });
 		SHEET.put(Role.SUPPLIER_OFP, new Level[] { NONE, NONE, NONE, A, V });
 		SHEET.put(Role.SUPPLIER_QUALITY, new Level[] { V, NONE, A, A, A });

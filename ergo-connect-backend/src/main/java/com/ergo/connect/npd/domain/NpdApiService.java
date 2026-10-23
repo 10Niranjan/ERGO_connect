@@ -59,13 +59,16 @@ class NpdApiService implements NpdApi {
 
 	private final NpdService npdService;
 
+	private final SamplePoService samplePoService;
+
 	private final Directory directory;
 
 	NpdApiService(NpdProjectRepository projects, NpdApprovalRepository approvals, NpdService npdService,
-			Directory directory) {
+			SamplePoService samplePoService, Directory directory) {
 		this.projects = projects;
 		this.approvals = approvals;
 		this.npdService = npdService;
+		this.samplePoService = samplePoService;
 		this.directory = directory;
 	}
 
@@ -119,7 +122,10 @@ class NpdApiService implements NpdApi {
 		if (!ModuleSwitch.readable(Module.NPD)) {
 			return Optional.empty();
 		}
+		// Until the plan is released to the supplier (flow doc step 7) nothing may be linked to the project: a quality
+		// record carries the project id and part number, and the supplier reads its own company's records.
 		return projects.findById(npdProjectId)
+			.filter(p -> p.planStatus != PlanStatus.AWAITING_PLAN)
 			.map(p -> new ProjectRef(p.id, p.customerCompanyId, p.supplierCompanyId));
 	}
 
@@ -142,7 +148,7 @@ class NpdApiService implements NpdApi {
 			visible = projects.findByCustomerCompanyIdInOrderByIdDesc(Set.of(me.companyId()));
 		}
 		else if (SUPPLIER_VIEWERS.contains(me.role())) {
-			visible = projects.findBySupplierCompanyIdOrderByIdDesc(me.companyId());
+			visible = projects.findBySupplierCompanyIdAndPlanStatusNotOrderByIdDesc(me.companyId(), PlanStatus.AWAITING_PLAN);
 		}
 		else {
 			visible = List.of();
@@ -161,11 +167,14 @@ class NpdApiService implements NpdApi {
 
 	@Override
 	@Transactional(readOnly = true)
-	public int unconvertedApprovedRfqCount() {
-		if (!ModuleSwitch.readable(Module.NPD)) {
-			return 0;
-		}
-		return npdService.unconvertedApprovedRfqCount();
+	public int samplePosAwaitingCount() {
+		return ModuleSwitch.readable(Module.NPD) ? samplePoService.awaitingCount() : 0;
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public Optional<com.ergo.connect.common.record.RecordParties> samplePoPartiesVisibleToCaller(long samplePoId) {
+		return samplePoService.customerIfVisible(samplePoId).map(c -> new com.ergo.connect.common.record.RecordParties(c, null));
 	}
 
 	@Override

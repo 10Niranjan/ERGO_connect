@@ -58,6 +58,7 @@ class RecordScope {
 			case "rfq" -> rfqApi.partiesVisibleToCaller(id);
 			case "quotation" -> quotationApi.partiesVisibleToCaller(id);
 			case "npd" -> npdApi.partiesVisibleToCaller(id);
+			case "sample-po" -> npdApi.samplePoPartiesVisibleToCaller(id);
 			case "ofp" -> ofpApi.orderPartiesVisibleToCaller(id);
 			case "inspection" -> qualityApi.inspectionPartiesVisibleToCaller(id);
 			case "ncr" -> qualityApi.ncrPartiesVisibleToCaller(id);
@@ -85,6 +86,7 @@ class RecordScope {
 			case "rfq" -> "/rfqs/" + id;
 			case "quotation" -> "/quotes/" + id;
 			case "npd" -> "/npd/" + id;
+			case "sample-po" -> "/npd/sample-pos/" + id;
 			case "ofp" -> "/ofp/" + id;
 			case "inspection" -> "/quality/" + id;
 			case "ncr" -> "/quality/ncrs/" + id;

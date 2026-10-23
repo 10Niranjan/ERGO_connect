@@ -11,7 +11,7 @@ export function ManagementDashboardView({ view }: { view: ManagementDashboard })
         <KpiTile label="Open RFQs" value={view.openRfqCount} />
         <KpiTile label="Quotes pending submission" value={view.quotesPendingSubmissionCount} />
         <KpiTile label="Quotes awaiting customer approval" value={view.quotesAwaitingCustomerApprovalCount} />
-        <KpiTile label="Approved for NPD conversion" value={view.approvedForConversionCount} />
+        <KpiTile label="Sample POs awaiting KAM" value={view.samplePosAwaitingCount} />
         <KpiTile label="Active NPD projects" value={view.activeNpdCount} />
         <KpiTile label="Open NCRs" value={view.openNcrCount} flagged />
         <KpiTile label="Open deviations" value={view.openDeviationCount} flagged />

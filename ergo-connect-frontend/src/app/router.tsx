@@ -20,6 +20,7 @@ import {
   NPD_ERGO_VIEW,
   NPD_MINE_VIEW,
   NPD_VIEW,
+  SAMPLE_PO_VIEW,
   OFP_CREATE,
   OFP_VIEW,
   PERMISSIONS_VIEW,
@@ -41,7 +42,8 @@ import { CommunicationCenterPage } from '@/features/communication/pages/Communic
 import { DashboardPage } from '@/features/dashboard/pages/DashboardPage'
 import { DocumentDetailPage } from '@/features/documents/pages/DocumentDetailPage'
 import { DocumentLibraryPage } from '@/features/documents/pages/DocumentLibraryPage'
-import { ConversionQueuePage } from '@/features/npd/pages/ConversionQueuePage'
+import { SamplePoDetailPage } from '@/features/npd/pages/SamplePoDetailPage'
+import { SamplePoListPage } from '@/features/npd/pages/SamplePoListPage'
 import { MyNpdProjectsPage } from '@/features/npd/pages/MyNpdProjectsPage'
 import { NpdDetailPage } from '@/features/npd/pages/NpdDetailPage'
 import { NpdListPage } from '@/features/npd/pages/NpdListPage'
@@ -97,10 +99,16 @@ export const router = createBrowserRouter([
           { element: <RequirePermission rules={ASSIGNED_RFQ_VIEW} />, children: [{ path: '/quotes', element: <AssignedRfqsPage /> }] },
           { element: <RequirePermission rules={QUOTE_VIEW} />, children: [{ path: '/quotes/:id', element: <QuotePage /> }] },
           {
+            element: <RequirePermission rules={SAMPLE_PO_VIEW} />,
+            children: [
+              { path: '/npd/sample-pos', element: <SamplePoListPage /> },
+              { path: '/npd/sample-pos/:id', element: <SamplePoDetailPage /> },
+            ],
+          },
+          {
             element: <RequirePermission rules={NPD_ERGO_VIEW} />,
             children: [
               { path: '/npd', element: <NpdListPage /> },
-              { path: '/npd/conversion-queue', element: <ConversionQueuePage /> },
             ],
           },
           {

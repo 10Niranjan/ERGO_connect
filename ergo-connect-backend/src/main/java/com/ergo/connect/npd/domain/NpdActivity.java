@@ -37,8 +37,7 @@ class NpdActivity {
 	@Column(updatable = false)
 	Long npdProjectId;
 
-	/** One of {@link NpdStage}'s values: the project's stage when this activity was created. Not changed by edits. */
-	@Column(updatable = false)
+	/** One of {@link NpdStage}'s values: the stage whose Close Stage this activity gates. */
 	@Enumerated(EnumType.STRING)
 	NpdStage phaseName;
 

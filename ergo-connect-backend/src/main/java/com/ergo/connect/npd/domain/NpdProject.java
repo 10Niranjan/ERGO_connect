@@ -19,7 +19,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 
 /**
- * The manual RFQ->NPD conversion result and its 9-stage workflow (SRS §13.4.1, §14.5). Field changes are audited
+ * A sample development project (created by the KAM from an accepted Sample PO) and its 9-stage workflow (SRS §13.4.1, §14.5). Field changes are audited
  * automatically; stage changes only ever happen in NpdService's workflow actions, which also write an explicit
  * npd_stage_history row. Package-private fields: only this package touches them.
  */
@@ -65,10 +65,21 @@ class NpdProject {
 
 	LocalDate actualSampleSubmissionDate;
 
+	/** The Sample PO this project was created from (flow doc step 7); null for projects that predate it. */
+	@Column(updatable = false)
+	Long samplePoId;
+
 	/** Unused by 3a (no "Handover to OFP" action yet); a later phase sets it for real. */
 	boolean handoverReadyFlag;
 
 	Long ownerUserId;
+
+	/** The ERGO Quality user the KAM assigned (flow doc step 7). */
+	Long qualityOwnerUserId;
+
+	/** Released to the supplier from ASSIGNED_TO_SUPPLIER on; the supplier cannot see the project before. */
+	@Enumerated(EnumType.STRING)
+	PlanStatus planStatus = PlanStatus.AGREED;
 
 	@Enumerated(EnumType.STRING)
 	RiskLevel riskLevel;

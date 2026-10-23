@@ -4,7 +4,7 @@ import type { AuditEntry, Named } from '@/features/rfq/rfqApi'
 
 /** Buttons the backend allows for this user, role and record right now (project-, activity-, issue- or approval-level). */
 export type NpdAction =
-  | 'CONVERT'
+  | 'ASSIGN_PLAN'
   | 'UPDATE_PROJECT'
   | 'CLOSE_STAGE'
   | 'ADD_ACTIVITY'
@@ -19,7 +19,7 @@ export type NpdAction =
   | 'REQUEST_APPROVAL'
   | 'DECIDE_APPROVAL'
 
-/** SRS §14.5's fixed, forward-only 9-stage sequence (PENDING_CONVERSION precedes the project existing at all). */
+/** SRS §14.5's fixed, forward-only 9-stage sequence (PENDING_CONVERSION is never a real project's stage). */
 export type NpdStage =
   | 'PENDING_CONVERSION'
   | 'PLANNING'
@@ -48,19 +48,8 @@ export type ApprovalType =
   | 'CUSTOMER_QUALITY_ACCEPTANCE'
 export type ApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
 
-/** SRS §12.8.2: a customer-approved RFQ part waiting for manual conversion, not yet converted. */
-export interface ConversionQueueRow {
-  rfqId: number
-  /** The approved part: each approved part of an RFQ converts on its own (flow doc §5). */
-  rfqItemId: number
-  rfqNumber: string
-  customerName: string
-  partNumber: string
-  revision: string | null
-  description: string | null
-  approvedAt: string
-  actions: NpdAction[]
-}
+/** Where the plan stands (flow doc step 7): the supplier sees a project only once ERGO NPD has assigned the plan to it. */
+export type PlanStatus = 'AWAITING_PLAN' | 'ASSIGNED_TO_SUPPLIER' | 'AGREED'
 
 /** SRS §12.8.1 NPD project list columns. */
 export interface NpdListRow {
@@ -75,6 +64,7 @@ export interface NpdListRow {
   delayDays: number | null
   owner: string | null
   riskLevel: RiskLevel | null
+  planStatus: PlanStatus
 }
 
 /** SRS §12.15's customer "NPD" / supplier "NPD Tasks" nav entry: the caller's own company's projects only, with no
@@ -118,6 +108,8 @@ export interface ActivityForm {
   issueFlag: boolean
   approvalRequired: boolean
   requiredApprovalType: ApprovalType | null
+  /** The stage whose Close Stage this activity gates. Omit for the current stage; a later one plans ahead (ERGO only). */
+  stage?: NpdStage | null
 }
 
 /** The owning company's own narrower progress update (SRS §17.4) — customer/supplier use only this, never
@@ -249,7 +241,7 @@ export interface ActivityView {
 }
 
 /** SRS §13.4.2: one row per stage move, oldest first. `previousStage` is null for the very first row. ERGO-only
- * (`ErgoNpdView`): `remarks` is whatever free text ERGO typed on convert/closeStage, which could name the other
+ * (`ErgoNpdView`): `remarks` is whatever free text ERGO typed on project creation or closeStage, which could name the other
  * party or a price — see `ExternalStageHistoryView` for the customer/supplier variant. */
 export interface StageHistoryView {
   stage: NpdStage
@@ -297,7 +289,13 @@ export interface ErgoNpdView extends NpdViewBase {
   quoteReference: string | null
   ownerUserId: number | null
   owner: string | null
+  /** The ERGO Quality user the KAM assigned. */
+  qualityOwnerUserId: number | null
+  qualityOwner: string | null
   riskLevel: RiskLevel | null
+  planStatus: PlanStatus
+  samplePoId: number | null
+  samplePoNumber: string | null
   approvals: ApprovalView[]
   stageHistory: StageHistoryView[]
 }
@@ -308,6 +306,8 @@ export interface ErgoNpdView extends NpdViewBase {
 export interface CustomerNpdView extends NpdViewBase {
   audience: 'CUSTOMER'
   customer: Named
+  samplePoId: number | null
+  samplePoNumber: string | null
   approvals: ApprovalView[]
   stageHistory: ExternalStageHistoryView[]
 }
@@ -322,18 +322,8 @@ export interface SupplierNpdView extends NpdViewBase {
 
 export type NpdView = ErgoNpdView | CustomerNpdView | SupplierNpdView
 
-// Converting removes the RFQ from the queue and creates a project: both the Npd tag (queue + list + detail) and Rfq
-// (the way quotation's actions invalidate Rfq) are invalidated, the same cross-invalidation pattern as comparisonApi.
-const npdApi = api.enhanceEndpoints({ addTagTypes: ['Npd', 'Rfq'] }).injectEndpoints({
+const npdApi = api.enhanceEndpoints({ addTagTypes: ['Npd'] }).injectEndpoints({
   endpoints: (build) => ({
-    conversionQueue: build.query<ConversionQueueRow[], void>({
-      query: () => '/npd/conversion-queue',
-      providesTags: ['Npd'],
-    }),
-    convertRfq: build.mutation<NpdView, { rfqItemId: number; comment?: string }>({
-      query: ({ rfqItemId, comment }) => ({ url: `/npd/convert/${rfqItemId}`, method: 'POST', body: { comment: comment ?? null } }),
-      invalidatesTags: ['Npd', 'Rfq'],
-    }),
     npdList: build.query<NpdListRow[], void>({ query: () => '/npd', providesTags: ['Npd'] }),
     /** SRS §12.15's customer "NPD" / supplier "NPD Tasks" nav entry. */
     myNpdProjects: build.query<NpdOwnProjectRow[], void>({ query: () => '/npd/mine', providesTags: ['Npd'] }),
@@ -347,6 +337,11 @@ const npdApi = api.enhanceEndpoints({ addTagTypes: ['Npd', 'Rfq'] }).injectEndpo
     }),
     updateNpdProject: build.mutation<NpdView, { id: number; form: NpdProjectForm }>({
       query: ({ id, form }) => ({ url: `/npd/${id}`, method: 'PUT', body: form }),
+      invalidatesTags: ['Npd'],
+    }),
+    /** Flow doc step 7: ERGO NPD releases the plan to the supplier, which then sees the project and its steps. */
+    assignNpdPlan: build.mutation<NpdView, { id: number; comment?: string }>({
+      query: ({ id, comment }) => ({ url: `/npd/${id}/plan/assign`, method: 'POST', body: { comment: comment ?? null } }),
       invalidatesTags: ['Npd'],
     }),
     closeNpdStage: build.mutation<NpdView, { id: number; comment?: string }>({
@@ -406,8 +401,7 @@ const npdApi = api.enhanceEndpoints({ addTagTypes: ['Npd', 'Rfq'] }).injectEndpo
 })
 
 export const {
-  useConversionQueueQuery,
-  useConvertRfqMutation,
+  useAssignNpdPlanMutation,
   useNpdListQuery,
   useMyNpdProjectsQuery,
   useNpdProjectQuery,

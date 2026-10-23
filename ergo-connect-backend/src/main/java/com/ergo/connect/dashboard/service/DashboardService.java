@@ -106,7 +106,7 @@ public class DashboardService {
 					.count();
 
 		return new ManagementDashboard(rfq.size(), count(Module.QUOTATION, quotationApi::pendingSubmissionCount), awaitingCustomerApproval,
-				count(Module.NPD, npdApi::unconvertedApprovedRfqCount), npd.size(), delayed, highRisk, atRisk, ncrs.size(),
+				count(Module.NPD, npdApi::samplePosAwaitingCount), npd.size(), delayed, highRisk, atRisk, ncrs.size(),
 				deviations.size(), supplierPerformance(), pendingApprovals,
 				items(Module.QUOTATION, quotationApi::partStatusItems));
 	}

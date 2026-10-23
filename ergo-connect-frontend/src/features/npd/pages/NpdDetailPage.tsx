@@ -27,7 +27,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { OFP_CREATE, useCan } from '@/features/permissions'
 import { HandoverDialog } from '../../ofp/components/HandoverDialog'
 import { Link as RouterLink, useParams } from 'react-router'
@@ -49,6 +49,7 @@ import {
   ISSUE_RISK_TYPE,
   NPD_STAGE,
   NPD_STAGE_ORDER,
+  PLAN_STATUS,
   PROMPT_RESPONSE_TYPE,
   RISK_LEVEL,
   stageProgress,
@@ -56,6 +57,7 @@ import {
 import {
   useAddNpdActivityMutation,
   useAddPromptChecklistMutation,
+  useAssignNpdPlanMutation,
   useBlockNpdActivityMutation,
   useCloseNpdStageMutation,
   useDecideApprovalMutation,
@@ -84,7 +86,9 @@ import {
   type IssueRiskStatus,
   type IssueRiskType,
   type IssueRiskView,
+  type NpdStage,
   type NpdView,
+  type PlanStatus,
   type PromptChecklistForm,
   type PromptChecklistView,
   type PromptResponseType,
@@ -104,11 +108,13 @@ function NpdDetail({ npd }: { npd: NpdView }) {
   const delayDays = npd.delayDays
   const [tab, setTab] = useState('overview')
   const [closing, setClosing] = useState(false)
+  const [assigning, setAssigning] = useState(false)
   const [handingOver, setHandingOver] = useState(false)
   // Server enforces stage + role + once-only; this only avoids showing the button where it can never work.
   const canHandover = useCan(OFP_CREATE) && npd.audience === 'ERGO' && npd.stage === 'APPROVED_FOR_PRODUCTION_HANDOVER'
   const [editingProject, setEditingProject] = useState(false)
   const [closeStage, closeState] = useCloseNpdStageMutation()
+  const [assignPlan, assignState] = useAssignNpdPlanMutation()
   // Only ERGO Admin/NPD ever hold UPDATE_PROJECT; skipped otherwise so the users list is never fetched for nothing.
   const isEditor = npd.actions.includes('UPDATE_PROJECT')
   const { data: ergoUsers = [], isLoading: usersLoading } = useUsersQuery(undefined, { skip: !isEditor })
@@ -116,6 +122,15 @@ function NpdDetail({ npd }: { npd: NpdView }) {
   const progress = stageProgress(npd.stage)
   const ergo = npd.audience === 'ERGO' ? npd : null
   const hasApprovals = npd.audience === 'ERGO' || npd.audience === 'CUSTOMER'
+
+  async function doAssignPlan(comment: string) {
+    try {
+      await assignPlan({ id: npd.id, comment: comment || undefined }).unwrap()
+      setAssigning(false)
+    } catch {
+      // shown in the dialog
+    }
+  }
 
   async function doCloseStage(comment: string) {
     try {
@@ -126,7 +141,7 @@ function NpdDetail({ npd }: { npd: NpdView }) {
     }
   }
 
-  const projectFacts: [string, string][] = [
+  const projectFacts: [string, ReactNode][] = [
     ['NPD number', npd.npdNumber],
     ['RFQ', npd.rfqNumber ?? '—'],
   ]
@@ -135,11 +150,25 @@ function NpdDetail({ npd }: { npd: NpdView }) {
   projectFacts.push(['Part number', npd.partNumber], ['Revision', npd.revision ?? '—'])
   if ('quoteReference' in npd) projectFacts.push(['Quote reference', npd.quoteReference ?? '—'])
   projectFacts.push(['Stage', stage.label])
+  // Only ERGO and the customer see the Sample PO (it is the customer's own document); the supplier view has no such field.
+  if (npd.audience !== 'SUPPLIER' && npd.samplePoId != null) {
+    projectFacts.push([
+      'Sample PO',
+      <Link key="sample-po" component={RouterLink} to={`/npd/sample-pos/${npd.samplePoId}`}>
+        {npd.samplePoNumber}
+      </Link>,
+    ])
+  }
 
   const scheduleFacts: [string, string][] = []
   // Risk level is ERGO's own internal project rating (CustomerNpdView/SupplierNpdView carry no such field).
   if (npd.audience === 'ERGO') {
-    scheduleFacts.push(['Owner', npd.owner ?? 'Not assigned'], ['Risk level', npd.riskLevel ? RISK_LEVEL[npd.riskLevel].label : '—'])
+    scheduleFacts.push(
+      ['ERGO NPD owner', npd.owner ?? 'Not assigned'],
+      ['ERGO Quality owner', npd.qualityOwner ?? 'Not assigned'],
+      ['Plan', PLAN_STATUS[npd.planStatus].label],
+      ['Risk level', npd.riskLevel ? RISK_LEVEL[npd.riskLevel].label : '—'],
+    )
   }
   scheduleFacts.push(
     ['Target sample date', formatDate(npd.targetSampleDate)],
@@ -155,6 +184,7 @@ function NpdDetail({ npd }: { npd: NpdView }) {
               {npd.npdNumber}
             </Typography>
             <Chip label={stage.label} color={stage.color} size="small" />
+            {ergo && <Chip label={PLAN_STATUS[ergo.planStatus].label} color={PLAN_STATUS[ergo.planStatus].color} size="small" variant="outlined" />}
             <Typography variant="caption" color="text.secondary">
               {progress.label}
             </Typography>
@@ -176,11 +206,16 @@ function NpdDetail({ npd }: { npd: NpdView }) {
           <Typography variant="body2" color="text.secondary">
             Target sample {formatDate(npd.targetSampleDate)}
             {delayDays != null && delayDays > 0 && ` · ${delayDays}d delay`}
-            {npd.audience === 'ERGO' && ` · Owner ${npd.owner ?? 'not assigned'}`}
+            {npd.audience === 'ERGO' && ` · NPD ${npd.owner ?? 'not assigned'} · Quality ${npd.qualityOwner ?? 'not assigned'}`}
           </Typography>
         </Stack>
         <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', alignItems: 'flex-start' }}>
           {ergo && ergo.actions.includes('UPDATE_PROJECT') && <Button onClick={() => setEditingProject(true)}>Edit project</Button>}
+          {npd.actions.includes('ASSIGN_PLAN') && (
+            <Button variant="contained" onClick={() => setAssigning(true)}>
+              Assign plan to supplier
+            </Button>
+          )}
           {canHandover && <Button variant="contained" onClick={() => setHandingOver(true)}>Handover to OFP</Button>}
           {npd.actions.includes('CLOSE_STAGE') && (
             <Button variant="contained" onClick={() => setClosing(true)}>
@@ -222,6 +257,19 @@ function NpdDetail({ npd }: { npd: NpdView }) {
       )}
 
       {handingOver && <HandoverDialog npdProjectId={npd.id} onClose={() => setHandingOver(false)} />}
+      {assigning && (
+        <CommentDialog
+          title="Assign plan to supplier"
+          label="Comment (optional)"
+          required={false}
+          confirmLabel="Assign plan"
+          intro="The supplier's NPD, RFQ and Quality teams will see this project and the steps assigned to them. Make sure the plan template is complete before you continue."
+          busy={assignState.isLoading}
+          error={assignState.error}
+          onConfirm={(comment) => void doAssignPlan(comment)}
+          onClose={() => setAssigning(false)}
+        />
+      )}
       {closing && (
         <CommentDialog
           title="Close current stage"
@@ -487,6 +535,8 @@ function ActivitiesTab({ npd, ergoUsers, usersLoading }: { npd: NpdView; ergoUse
           usersLoading={usersLoading}
           customer={ergo.customer}
           supplier={ergo.supplier}
+          currentStage={npd.stage}
+          planStatus={ergo.planStatus}
           onClose={() => setDialog(null)}
         />
       )}
@@ -531,6 +581,8 @@ function ActivityDialog(props: {
   usersLoading: boolean
   customer: Named
   supplier: Named
+  currentStage: NpdStage
+  planStatus: PlanStatus
   onClose: () => void
 }) {
   const { activity, usersLoading, onClose } = props
@@ -555,6 +607,8 @@ function ActivityDialogForm({
   ergoUsers,
   customer,
   supplier,
+  currentStage,
+  planStatus,
   onClose,
 }: {
   npdId: number
@@ -564,12 +618,20 @@ function ActivityDialogForm({
   ergoUsers: User[]
   customer: Named
   supplier: Named
+  currentStage: NpdStage
+  planStatus: PlanStatus
   onClose: () => void
 }) {
   const isNew = activity === null
   const [addActivity, adding] = useAddNpdActivityMutation()
   const [updateActivity, updating] = useUpdateNpdActivityMutation()
+  // A new step may sit in the current stage or a later one (ERGO NPD plans ahead); an existing step can move stage only while the plan is still being built.
+  const canPickStage = isNew || planStatus === 'AWAITING_PLAN'
+  const stageOptions = NPD_STAGE_ORDER.filter(
+    (s) => s !== 'CLOSED' && (NPD_STAGE_ORDER.indexOf(s) >= NPD_STAGE_ORDER.indexOf(currentStage) || s === activity?.phaseName),
+  )
   const [state, setState] = useState({
+    stage: (activity?.phaseName ?? currentStage) as NpdStage,
     activityName: text(activity?.activityName),
     activityDescription: text(activity?.activityDescription),
     ownerOrganizationType: (activity?.ownerOrganizationType ?? 'ERGO') as CompanyType,
@@ -614,6 +676,7 @@ function ActivityDialogForm({
       // Cleared to null whenever the checkbox is off, regardless of any value left over in state from before it was
       // unchecked — the backend rejects any other pairing of the two fields.
       requiredApprovalType: state.approvalRequired ? state.requiredApprovalType || null : null,
+      stage: canPickStage ? state.stage : null,
     }
     try {
       if (isNew) await addActivity({ id: npdId, form }).unwrap()
@@ -642,6 +705,21 @@ function ActivityDialogForm({
           onChange={(e) => setState((s) => ({ ...s, activityDescription: e.target.value }))}
           slotProps={{ htmlInput: { maxLength: 4000 } }}
         />
+        {canPickStage && (
+          <TextField
+            select
+            label="Stage"
+            value={state.stage}
+            onChange={(e) => setState((s) => ({ ...s, stage: e.target.value as NpdStage }))}
+            helperText="The stage whose Close Stage this step gates. Choose a later stage to plan ahead."
+          >
+            {stageOptions.map((s) => (
+              <MenuItem key={s} value={s}>
+                {NPD_STAGE[s].label}
+              </MenuItem>
+            ))}
+          </TextField>
+        )}
         <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: 'repeat(2, 1fr)' }}>
           <TextField
             select

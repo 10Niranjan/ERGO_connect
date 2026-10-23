@@ -1,5 +1,16 @@
 import type { ChipColor } from '@/types'
-import type { ActivityStatus, ApprovalStatus, ApprovalType, IssueRiskStatus, IssueRiskType, NpdStage, PromptResponseType, RiskLevel } from '../services/npdApi'
+import type {
+  ActivityStatus,
+  ApprovalStatus,
+  ApprovalType,
+  IssueRiskStatus,
+  IssueRiskType,
+  NpdStage,
+  PlanStatus,
+  PromptResponseType,
+  RiskLevel,
+} from '../services/npdApi'
+import type { SamplePoStatus } from '../services/samplePoApi'
 
 export const NPD_STAGE: Record<NpdStage, { label: string; color: ChipColor }> = {
   PENDING_CONVERSION: { label: 'Pending Conversion', color: 'default' },
@@ -27,7 +38,7 @@ export const RISK_LEVEL: Record<RiskLevel, { label: string; color: ChipColor }> 
   HIGH: { label: 'High', color: 'error' },
 }
 
-/** The 9 real workflow stages in order. PENDING_CONVERSION precedes conversion and is never a project's own stage. */
+/** The 9 real workflow stages in order. PENDING_CONVERSION is never a project's own stage. */
 export const NPD_STAGE_ORDER: NpdStage[] = [
   'PLANNING',
   'COMMERCIAL_SOURCING_READINESS',
@@ -75,4 +86,16 @@ export const APPROVAL_STATUS: Record<ApprovalStatus, { label: string; color: Chi
   PENDING: { label: 'Pending', color: 'warning' },
   APPROVED: { label: 'Approved', color: 'success' },
   REJECTED: { label: 'Rejected', color: 'error' },
+}
+
+export const PLAN_STATUS: Record<PlanStatus, { label: string; color: ChipColor }> = {
+  AWAITING_PLAN: { label: 'Awaiting plan', color: 'warning' },
+  ASSIGNED_TO_SUPPLIER: { label: 'Assigned to supplier', color: 'info' },
+  AGREED: { label: 'Agreed', color: 'success' },
+}
+
+export const SAMPLE_PO_STATUS: Record<SamplePoStatus, { label: string; color: ChipColor }> = {
+  SUBMITTED: { label: 'Submitted to KAM', color: 'info' },
+  RETURNED: { label: 'Returned for correction', color: 'warning' },
+  ACCEPTED: { label: 'Accepted', color: 'success' },
 }

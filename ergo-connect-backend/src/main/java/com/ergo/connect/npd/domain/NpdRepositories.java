@@ -19,11 +19,33 @@ interface NpdProjectRepository extends Repository<NpdProject, Long> {
 
 	List<NpdProject> findByCustomerCompanyIdInOrderByIdDesc(Collection<Long> customerCompanyIds);
 
-	/** A supplier's own company's projects (SRS §12.15 "NPD Tasks" nav entry point). */
-	List<NpdProject> findBySupplierCompanyIdOrderByIdDesc(Long supplierCompanyId);
+	/** A supplier's own company's projects (SRS §12.15 "NPD Tasks" nav entry point), once the plan is released to it. */
+	List<NpdProject> findBySupplierCompanyIdAndPlanStatusNotOrderByIdDesc(Long supplierCompanyId, PlanStatus excluded);
 
-	/** Defense in depth: the DB's UNIQUE constraint is the real guarantee. */
-	boolean existsBySourceRfqItemId(Long sourceRfqItemId);
+	Optional<NpdProject> findBySamplePoId(Long samplePoId);
+
+	/** Parts that already have a project (also those created before Sample POs existed). */
+	List<NpdProject> findBySourceRfqItemIdIn(Collection<Long> rfqItemIds);
+
+	List<NpdProject> findBySamplePoIdIn(Collection<Long> samplePoIds);
+
+}
+
+interface SamplePoRepository extends Repository<SamplePo, Long> {
+
+	SamplePo save(SamplePo samplePo);
+
+	Optional<SamplePo> findById(Long id);
+
+	List<SamplePo> findAllByOrderByIdDesc();
+
+	List<SamplePo> findByCustomerCompanyIdInOrderByIdDesc(Collection<Long> customerCompanyIds);
+
+	List<SamplePo> findByRfqItemIdIn(Collection<Long> rfqItemIds);
+
+	long countByStatus(SamplePoStatus status);
+
+	long countByStatusAndCustomerCompanyIdIn(SamplePoStatus status, Collection<Long> customerCompanyIds);
 
 }
 

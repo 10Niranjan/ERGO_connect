@@ -70,14 +70,15 @@ class ModuleSwitchFacadeTests {
 		rules(RfqApi.class, Rule.WRITE, "distributing(long)", "quotationProgress(long,QuotationSummary)");
 		rules(RfqApi.class, Rule.FROZEN_EMPTY, "replaceOpenForCaller(long)");
 		// Quotation
-		rules(QuotationApi.class, Rule.HIDDEN_EMPTY, "approvedParts()", "approvedPart(long)", "partStatusItems()",
+		rules(QuotationApi.class, Rule.HIDDEN_EMPTY, "approvedParts()", "approvedPart(long)", "customerApprovedParts()",
+				"partStatusItems()",
 				"visibleToCaller(long)", "partiesVisibleToCaller(long)", "fileVisibleToCaller(long,long)",
 				"supplierMayReadRfqDocument(long,long)", "dashboardItems()", "pendingSubmissionCount()");
 		rules(QuotationApi.class, Rule.FROZEN_EMPTY, "overdueItems(LocalDate)", "replaceOpenForCaller(long)");
 		// NPD
 		rules(NpdApi.class, Rule.WRITE, "handover(long)");
 		rules(NpdApi.class, Rule.HIDDEN_EMPTY, "projectRef(long)", "partiesVisibleToCaller(long)", "dashboardItems()",
-				"unconvertedApprovedRfqCount()", "pendingApprovalsCount()");
+				"samplePosAwaitingCount()", "samplePoPartiesVisibleToCaller(long)", "pendingApprovalsCount()");
 		rules(NpdApi.class, Rule.FROZEN_EMPTY, "overdueItems(LocalDate)");
 		// OFP
 		rules(OfpApi.class, Rule.WRITE, "podDocumentReplaced(long,long)");

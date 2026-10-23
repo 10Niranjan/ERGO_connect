@@ -23,11 +23,10 @@ public final class NpdDtos {
 	private NpdDtos() {
 	}
 
-	/** Buttons the caller may use now, computed by the same rules that enforce them. CONVERT only ever appears on a
-	 * conversion-queue row (it acts on an RFQ, not a project); the rest appear on a project, one of its activities,
-	 * one of its issues/risks or one of its approvals. */
+	/** Buttons the caller may use now, computed by the same rules that enforce them. They appear on a project, one of
+	 * its activities, one of its issues/risks or one of its approvals. */
 	public enum NpdAction {
-		CONVERT, UPDATE_PROJECT, CLOSE_STAGE, ADD_ACTIVITY, EDIT_ACTIVITY, MARK_BLOCKED, UNBLOCK,
+		ASSIGN_PLAN, UPDATE_PROJECT, CLOSE_STAGE, ADD_ACTIVITY, EDIT_ACTIVITY, MARK_BLOCKED, UNBLOCK,
 		UPDATE_OWN_ACTIVITY, MANAGE_PROMPT_CHECKLIST, RESPOND_TO_PROMPT, RAISE_ISSUE, UPDATE_ISSUE, REQUEST_APPROVAL,
 		DECIDE_APPROVAL
 	}
@@ -39,15 +38,10 @@ public final class NpdDtos {
 	public record CommentForm(@Size(max = 2000) String comment) {
 	}
 
-	/** SRS §12.8.2: a customer-approved RFQ part waiting for manual conversion, not yet converted. */
-	public record ConversionQueueRow(long rfqId, long rfqItemId, String rfqNumber, String customerName, String partNumber,
-			String revision, String description, Instant approvedAt, Set<NpdAction> actions) {
-	}
-
 	/** SRS §12.8.1 NPD project list columns. ERGO-only: the other company is never in scope here (ERGO sees both). */
 	public record NpdListRow(long id, String npdNumber, String rfqNumber, String customerName, String supplierName,
 			String partNumber, NpdStage stage, LocalDate targetSampleDate, Long delayDays, String owner,
-			RiskLevel riskLevel) {
+			RiskLevel riskLevel, PlanStatus planStatus) {
 	}
 
 	/** SRS §12.15's customer "NPD" / supplier "NPD Tasks" nav entry: the caller's own company's projects, with no
@@ -71,13 +65,16 @@ public final class NpdDtos {
 	 * markBlocked/unblock touch blocked_flag). {@code requiredApprovalType} says which approval type the Close
 	 * Stage gate demands for this activity (SRS §14.5 "quality gate... where applicable"); the service requires it
 	 * non-null when {@code approvalRequired} is true and forces it to {@code null} when false, regardless of what's
-	 * sent — never trust the client's pairing of the two fields. */
+	 * sent — never trust the client's pairing of the two fields. {@code stage} is optional: the stage whose Close Stage this
+	 * activity gates (the current one when omitted; a later one when ERGO NPD plans ahead, flow doc step 7). */
+
 	public record ActivityForm(@NotBlank @Size(max = 200) String activityName,
 			@Size(max = 4000) String activityDescription, @NotNull CompanyType ownerOrganizationType,
 			Long ownerCompanyId, Long responsibleUserId, LocalDate plannedDate, LocalDate baselineDate,
 			LocalDate actualDate, Long dependencyActivityId, @NotNull ActivityStatus status,
 			@NotNull Boolean mandatory, @NotNull Boolean riskFlag, @NotNull Boolean issueFlag,
-			@NotNull Boolean approvalRequired, ApprovalType requiredApprovalType) {
+			@NotNull Boolean approvalRequired, ApprovalType requiredApprovalType,
+			NpdStage stage) {
 	}
 
 	/** The owning company's own progress update on an activity it owns (SRS §17.4: "supplier can update only
@@ -170,7 +167,8 @@ public final class NpdDtos {
 	public record ErgoNpdView(String audience, long id, String npdNumber, long rfqId, String rfqNumber, Named customer,
 			Named supplier, String partNumber, String revision, String description, String quoteReference,
 			NpdStage stage, LocalDate targetSampleDate, LocalDate actualSampleSubmissionDate, Long delayDays,
-			Long ownerUserId, String owner, RiskLevel riskLevel, List<ActivityView> activities,
+			Long ownerUserId, String owner, Long qualityOwnerUserId, String qualityOwner, RiskLevel riskLevel,
+			PlanStatus planStatus, Long samplePoId, String samplePoNumber, List<ActivityView> activities,
 			List<IssueRiskView> issuesRisks, List<ApprovalView> approvals, List<StageHistoryView> stageHistory,
 			Set<NpdAction> actions, Instant createdAt, Instant updatedAt) implements NpdView {
 	}
@@ -183,8 +181,8 @@ public final class NpdDtos {
 	 * internal project risk rating, not an SRS §12.8.3 header field) is dropped for the same reason. {@code
 	 * stageHistory} is the {@link ExternalStageHistoryView} variant (no {@code remarks}). */
 	public record CustomerNpdView(String audience, long id, String npdNumber, long rfqId, String rfqNumber,
-			Named customer, String partNumber, String revision, String description, NpdStage stage,
-			LocalDate targetSampleDate, LocalDate actualSampleSubmissionDate, Long delayDays,
+			Named customer, Long samplePoId, String samplePoNumber, String partNumber, String revision, String description,
+			NpdStage stage, LocalDate targetSampleDate, LocalDate actualSampleSubmissionDate, Long delayDays,
 			List<ActivityView> activities, List<IssueRiskView> issuesRisks, List<ApprovalView> approvals,
 			List<ExternalStageHistoryView> stageHistory, Set<NpdAction> actions, Instant createdAt, Instant updatedAt)
 			implements NpdView {

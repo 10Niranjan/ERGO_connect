@@ -1,7 +1,7 @@
 # ERGO Connect — flow-document alignment: handoff for the next Claude
 
 **Read this file first.** It is self-contained: after reading it (and `CLAUDE.md`) you can continue without asking
-the user what happened. Last updated 2026-10-23, branch `sprint-3`.
+the user what happened. Last updated 2026-10-23 (slice 3 done), branch `sprint-3`.
 
 ## 1. Why this work exists
 
@@ -153,27 +153,17 @@ Full decisions are in `ARCHITECTURE.md` §8, entries dated 2026-10-23 (three ent
 **Security review** was run on slice 2 (read-only `security-reviewer` agent): 1 High + several Low, all fixed
 (logged in `ARCHITECTURE.md` §8). Run it again for every slice.
 
+### Slice 3 — Sample PO, KAM creates the project, plan release (V35) ✅
+Decisions in `ARCHITECTURE.md` §8 (2026-10-23, two entries: decisions + security review) and `docs/PERMISSIONS.md` §11.
+- **Backend (`npd` module):** `SamplePo` entity + `SamplePoService` + `SamplePoController` (`/api/npd/sample-pos`: list, `/eligible-parts`, `/assignees`, `/{id}`, `/{id}/history`, raise, `PUT /{id}` resubmit, `/{id}/return`, `/{id}/create-project`). `NpdService.createFromSamplePo` (package-private, called only by `SamplePoService`) creates the project; `NpdService.assignPlan` (`POST /api/npd/{id}/plan/assign`) releases it. `PlanStatus` = `AWAITING_PLAN` -> `ASSIGNED_TO_SUPPLIER` -> `AGREED` (slice 4 sets `AGREED`; old projects are `AGREED`). `QuotationApi.customerApprovedParts()` feeds the customer's eligible parts (no supplier data). New notification kinds `SAMPLE_PO_SUBMITTED`, `SAMPLE_PO_RETURNED`, `NPD_PROJECT_ASSIGNED`, `NPD_PLAN_ASSIGNED`; new record kind `sample-po` (`RecordScope`, `ModuleSwitch.ownerOf`). `NpdApi.unconvertedApprovedRfqCount` became `samplePosAwaitingCount`.
+- **Rules to keep:** the supplier cannot see a project (any path, incl. `NpdApi.projectRef`) or close stages while `AWAITING_PLAN`; `NpdService.EDITORS` excludes the KAM; only Customer NPD raises, only KAM/Management decide, only ERGO_NPD/Management assign the plan.
+- **Frontend:** `features/npd` has the Sample PO list/detail pages and dialogs, plan status, owners, "Assign plan to supplier", the activity Stage selector; the conversion queue page is gone.
+- **Not built / known gaps:** the optional PO file attachment (needs the Documents module); deleting a plan step; the plan *template* is just activities (no saved reusable template); a browser smoke test of the whole path has not been done.
+
 ## 4. What is left — the slices to build (in this order)
 
-For each slice: ask `srs-analyst`-style questions only where the doc is ambiguous; write migration `V35+` (next free
-number is **V35**); backend (entities → service/workflow → `<module>.api` facade → controller → tests); frontend; then
+For each slice: ask `srs-analyst`-style questions only where the doc is ambiguous; write migration `V36+` (next free number is **V36**); backend (entities → service/workflow → `<module>.api` facade → controller → tests); frontend; then
 `security-reviewer`; `./mvnw verify` + `npm run build && npm run lint` green; log in `ARCHITECTURE.md` §8; commit.
-
-### Slice 3 — flow steps 6–7: Sample PO, KAM creates the project, ERGO NPD plan template
-Today: NPD project is created by an ERGO "O" role converting an approved part from a queue (`NpdService.convert`).
-The doc replaces that:
-1. **Sample PO** (new): after a part's quotation is approved (`CUSTOMER_APPROVED`), **Customer NPD** creates a Sample PO
-   for that part (quantity, required date, PO number/attachment, remarks) and submits it to the ERGO KAM. Customer NPD
-   must see only its own company's approved parts. Notify the KAM(s) of that account. Audit + versioning.
-2. **ERGO KAM creates the sample development project** from the approved Sample PO and **assigns ERGO NPD and ERGO
-   Quality** (KAM is scoped to assigned accounts: `Directory.accountsOf`). Retire/replace the manual "conversion queue".
-3. **ERGO NPD, after discussing with ERGO Quality, creates the NPD plan template** (steps such as raw-material
-   availability timeline, tooling readiness timeline, sample manufacturing plan date, packaging design, other steps by
-   complexity) and **assigns it to Supplier NPD, Supplier RFQ and Supplier Quality** of the supplier that quoted the part.
-4. Project info is visible to assigned teams per role/permission only (customer never sees the supplier, supplier never
-   sees the customer — keep the existing NPD anonymity rules in `NpdService.view`).
-Open questions to put to the user before coding: is the existing 9-stage `NpdStage` model replaced by the plan-template
-steps or kept as a wrapper? Which Sample PO fields are mandatory? Can the KAM also edit the Sample PO? (Ask, then log.)
 
 ### Slice 4 — flow step 8: plan submission, ERGO agreement, execution
 Supplier NPD fills the plan in ERGO NPD's template and submits it; **ERGO NPD agrees** (or sends back with comments);
@@ -222,7 +212,7 @@ approvals in `npd.domain`.)
   (`approveWhole`). `ModuleSwitchFacadeTests` forces every new `<module>.api` method to be classified (and
   `QuotationSummary` etc. need an argument in its `arguments()`). `ModuleBoundaryTest` forbids cross-module imports
   except via `<module>.api`.
-- **Flyway:** migrations are immutable once committed (V31–V34 are committed now); add V35+. Raw SQL in tests that
+- **Flyway:** migrations are immutable once committed (V31–V35 are committed now); add V36+. Raw SQL in tests that
   inserts `rfqs`/`npd_projects` must also create an `rfq_items` row and set `source_rfq_item_id`.
 - **Module switches / audit / DTO-per-audience** rules in `CLAUDE.md` still apply to everything above.
 - **Git:** work on `sprint-3`. Commit messages end with the `Co-Authored-By` trailer given in the session reminder.

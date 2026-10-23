@@ -33,6 +33,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import com.ergo.connect.IntegrationTest;
+import com.ergo.connect.TestNpd;
 import com.ergo.connect.TestRfq;
 import com.ergo.connect.TestUsers;
 import com.ergo.connect.TestUsers.Login;
@@ -45,7 +46,7 @@ import com.jayway.jsonpath.JsonPath;
 /**
  * Strict module switches (docs/PERMISSIONS.md §9): a switch binds the whole backend, so every operation that crosses
  * modules checks the switch of <i>every</i> module it touches before it changes anything - and a refusal leaves
- * nothing half done. Covers Quotation&rarr;RFQ, NPD conversion, OFP&rarr;NPD handover, Quality&rarr;NPD/OFP links and the
+ * nothing half done. Covers Quotation&rarr;RFQ, the Sample PO and its NPD project, OFP&rarr;NPD handover, Quality&rarr;NPD/OFP links and the
  * dispatch / Final Sample gates, and proves that switching back to O restores normal operation with the data and the
  * role grid untouched. V = read-only, NV = hidden; every test puts the shipped sheet back.
  */
@@ -212,29 +213,43 @@ class StrictModuleSwitchTests {
 		assertThat(rfqStatus(rfq)).isEqualTo("CUSTOMER_APPROVED");
 	}
 
-	// ---------------------------------------------------------------- NPD conversion and the OFP handover
+	// ---------------------------------------------------------------- Sample PO, NPD project and the OFP handover
 
 	@Test
-	void convertingAnRfqNeedsTheRfqAndQuotationModulesVisibleAndNpdAcceptingChanges() throws Exception {
+	void aSamplePoAndItsProjectNeedTheRfqAndQuotationModulesVisibleAndNpdAcceptingChanges() throws Exception {
 		long rfq = approvedRfq();
-		call(get("/api/npd/conversion-queue"), ergoNpd, null).andExpect(jsonPath("$[?(@.rfqId == %d)]".formatted(rfq))
-			.isNotEmpty());
+		long part = TestRfq.itemIds(mvc, ergoRfq, rfq).getFirst();
+		Login customerNpd = users.login(customer, "CUSTOMER_NPD");
+		Login kam = users.login(ergoManagement.companyId(), "ERGO_KAM");
+		users.assignAccounts(kam.userId(), customer);
 
-		// the queue is closed when the RFQ is hidden; conversion is refused with nothing created
+		// raising a Sample PO reads the RFQ and Quotation modules: refused while either is hidden, nothing created
 		cap("RFQ", "NV");
-		call(get("/api/npd/conversion-queue"), ergoNpd, null).andExpect(jsonPath("$[?(@.rfqId == %d)]".formatted(rfq))
-			.isEmpty());
-		call(post("/api/npd/convert/{id}", rfq), ergoNpd, "{}").andExpect(status().isConflict());
+		call(post("/api/npd/sample-pos"), customerNpd, TestNpd.samplePoForm(part)).andExpect(status().isConflict());
 		cap("RFQ", "O");
 		cap("QUOTATION", "NV");
-		call(post("/api/npd/convert/{id}", rfq), ergoNpd, "{}").andExpect(status().isConflict());
-		assertThat(count("SELECT count(*) FROM npd_projects WHERE source_rfq_id = ?", rfq)).isZero();
+		call(post("/api/npd/sample-pos"), customerNpd, TestNpd.samplePoForm(part)).andExpect(status().isConflict());
+		assertThat(count("SELECT count(*) FROM sample_pos WHERE rfq_item_id = ?", part)).isZero();
 
-		// a read-only RFQ / Quotation is still readable, so conversion goes through (it only reads them)
+		// a read-only RFQ / Quotation is still readable, so raising goes through (it only reads them)
 		cap("QUOTATION", "V");
 		cap("RFQ", "V");
-		long project = JsonPath.<Number>read(call(post("/api/npd/convert/{id}", rfq), ergoNpd, "{}")
-			.andExpect(status().isCreated()).andReturn().getResponse().getContentAsString(), "$.id").longValue();
+		long samplePo = TestNpd.raise(mvc, customerNpd, part);
+
+		// creating the project reads them too: refused while either is hidden, the Sample PO keeps waiting
+		String create = "{\"ergoNpdUserId\": %d, \"ergoQualityUserId\": %d}".formatted(ergoNpd.userId(),
+				ergoQuality.userId());
+		cap("RFQ", "NV");
+		call(post("/api/npd/sample-pos/{id}/create-project", samplePo), kam, create).andExpect(status().isConflict());
+		cap("RFQ", "V");
+		cap("QUOTATION", "NV");
+		call(post("/api/npd/sample-pos/{id}/create-project", samplePo), kam, create).andExpect(status().isConflict());
+		assertThat(count("SELECT count(*) FROM npd_projects WHERE sample_po_id = ?", samplePo)).isZero();
+		assertThat(jdbc.queryForObject("SELECT status FROM sample_pos WHERE sample_po_id = ?", String.class, samplePo))
+			.isEqualTo("SUBMITTED");
+
+		cap("QUOTATION", "V");
+		long project = TestNpd.createProject(mvc, kam, samplePo, ergoNpd, ergoQuality, null);
 		assertThat(project).isPositive();
 
 		// the project shows the RFQ number only while the RFQ module is visible

@@ -96,6 +96,14 @@ public final class ModuleAccess {
 		return rolesWhere(module, Level::canApprove, side);
 	}
 
+	/** {@link #actors(Module, CompanyType)} without the given roles (still live). */
+	public static Set<Role> actorsExcept(Module module, CompanyType side, Role... except) {
+		Set<Role> actors = actors(module, side);
+		Set<Role> excluded = EnumSet.noneOf(Role.class);
+		excluded.addAll(Arrays.asList(except));
+		return new LiveRoleSet(r -> actors.contains(r) && !excluded.contains(r));
+	}
+
 	/** {@link #viewers(Module, CompanyType)} without the given roles (still live). */
 	public static Set<Role> viewersExcept(Module module, CompanyType side, Role... except) {
 		Set<Role> viewers = viewers(module, side);

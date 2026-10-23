@@ -86,7 +86,7 @@ public final class ModuleSwitch {
 		return Optional.ofNullable(switch (linkedModule) {
 			case "rfq" -> Module.RFQ;
 			case "quotation" -> Module.QUOTATION;
-			case "npd", "NPD" -> Module.NPD;
+			case "npd", "NPD", "sample-po" -> Module.NPD;
 			case "ofp", "OFP", "OFP_SHIPMENT" -> Module.OFP;
 			case "inspection", "ncr", "deviation", "QUALITY_CAPA" -> Module.QUALITY;
 			default -> null;
