@@ -32,6 +32,7 @@ import { OFP_CREATE, useCan } from '@/features/permissions'
 import { HandoverDialog } from '../../ofp/components/HandoverDialog'
 import { Link as RouterLink, useParams } from 'react-router'
 import { CommentsPanel } from '../../communication/components/CommentsPanel'
+import { PlanPanel, PlanStepDialog, ProgressSummary } from '../components/PlanPanel'
 import { useUsersQuery, type User } from '../../admin/adminApi'
 import { AuditTrail } from '../../../shared/components/AuditTrail'
 import { CommentDialog } from '../../../shared/components/CommentDialog'
@@ -237,11 +238,16 @@ function NpdDetail({ npd }: { npd: NpdView }) {
       </Tabs>
 
       {tab === 'overview' && (
-        <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' } }}>
-          <Facts title="Project" facts={projectFacts} />
-          <Facts title="Schedule and ownership" facts={scheduleFacts} />
-          <Facts title="Description" facts={[['', npd.description ?? '—']]} />
-        </Box>
+        <Stack spacing={2}>
+          {/* the customer's view carries no plan: the supplier's dates are not the customer's business */}
+          {npd.audience !== 'CUSTOMER' && <PlanPanel npd={npd} />}
+          <ProgressSummary progress={npd.progress} currentStage={npd.stage} />
+          <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' } }}>
+            <Facts title="Project" facts={projectFacts} />
+            <Facts title="Schedule and ownership" facts={scheduleFacts} />
+            <Facts title="Description" facts={[['', npd.description ?? '—']]} />
+          </Box>
+        </Stack>
       )}
 
       {tab === 'activities' && <ActivitiesTab npd={npd} ergoUsers={ergoUsers} usersLoading={usersLoading} />}
@@ -263,7 +269,7 @@ function NpdDetail({ npd }: { npd: NpdView }) {
           label="Comment (optional)"
           required={false}
           confirmLabel="Assign plan"
-          intro="The supplier's NPD, RFQ and Quality teams will see this project and the steps assigned to them. Make sure the plan template is complete before you continue."
+          intro="The supplier's NPD, RFQ and Quality teams will see this project and the steps assigned to them. Make sure the plan template is complete before you continue. Your comment stays internal to ERGO."
           busy={assignState.isLoading}
           error={assignState.error}
           onConfirm={(comment) => void doAssignPlan(comment)}
@@ -386,6 +392,7 @@ function ActivitiesTab({ npd, ergoUsers, usersLoading }: { npd: NpdView; ergoUse
   const ergo = npd.audience === 'ERGO' ? npd : null
   const [dialog, setDialog] = useState<'new' | ActivityView | null>(null)
   const [progressDialog, setProgressDialog] = useState<ActivityView | null>(null)
+  const [planning, setPlanning] = useState<ActivityView | null>(null)
   const [blocking, setBlocking] = useState<ActivityView | null>(null)
   const [unblocking, setUnblocking] = useState<ActivityView | null>(null)
   const [block, blockState] = useBlockNpdActivityMutation()
@@ -496,6 +503,11 @@ function ActivitiesTab({ npd, ergoUsers, usersLoading }: { npd: NpdView; ergoUse
                         Edit
                       </Button>
                     )}
+                    {a.actions.includes('EDIT_PLAN_STEP') && (
+                      <Button size="small" onClick={() => setPlanning(a)}>
+                        Plan
+                      </Button>
+                    )}
                     {!a.actions.includes('EDIT_ACTIVITY') && a.actions.includes('UPDATE_OWN_ACTIVITY') && (
                       <Button size="small" onClick={() => setProgressDialog(a)}>
                         Update progress
@@ -541,6 +553,7 @@ function ActivitiesTab({ npd, ergoUsers, usersLoading }: { npd: NpdView; ergoUse
         />
       )}
       {progressDialog && <ActivityProgressDialog activity={progressDialog} onClose={() => setProgressDialog(null)} />}
+      {planning && <PlanStepDialog activity={planning} onClose={() => setPlanning(null)} />}
       {blocking && (
         <CommentDialog
           title={`Mark "${blocking.activityName}" blocked`}

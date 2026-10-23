@@ -1132,7 +1132,8 @@ class OfpTests {
 
 	/** Customer A raises the Sample PO and its KAM accepts it: an NPD project in PLANNING with its plan released to the supplier (flow doc step 7), so it can be moved through its stages. */
 	private long convert(long rfqId) throws Exception {
-		return TestNpd.release(mvc, npdCustomerA, ergoKam, ergoNpd, ergoQuality, supplier, partOf(rfqId));
+		return TestNpd.agreed(mvc, npdCustomerA, ergoKam, ergoNpd, ergoQuality, users.login(supplier, "SUPPLIER_NPD"), supplier,
+				partOf(rfqId));
 	}
 
 	/** Closes every remaining NPD stage (no mandatory activities were added, so each Close Stage succeeds

@@ -26,9 +26,37 @@ public final class NpdDtos {
 	/** Buttons the caller may use now, computed by the same rules that enforce them. They appear on a project, one of
 	 * its activities, one of its issues/risks or one of its approvals. */
 	public enum NpdAction {
-		ASSIGN_PLAN, UPDATE_PROJECT, CLOSE_STAGE, ADD_ACTIVITY, EDIT_ACTIVITY, MARK_BLOCKED, UNBLOCK,
-		UPDATE_OWN_ACTIVITY, MANAGE_PROMPT_CHECKLIST, RESPOND_TO_PROMPT, RAISE_ISSUE, UPDATE_ISSUE, REQUEST_APPROVAL,
-		DECIDE_APPROVAL
+		ASSIGN_PLAN, EDIT_PLAN_STEP, SUBMIT_PLAN, AGREE_PLAN, SEND_BACK_PLAN, UPDATE_PROJECT, CLOSE_STAGE, ADD_ACTIVITY,
+		EDIT_ACTIVITY, MARK_BLOCKED, UNBLOCK, UPDATE_OWN_ACTIVITY, MANAGE_PROMPT_CHECKLIST, RESPOND_TO_PROMPT,
+		RAISE_ISSUE, UPDATE_ISSUE, REQUEST_APPROVAL, DECIDE_APPROVAL
+	}
+
+	/** Flow doc step 8: what the supplier fills in on a step ERGO NPD put in the plan template, while the plan is with
+	 * it. Never the name, owner, stage, mandatory/approval flags or dependency: those stay ERGO's template.
+	 * {@code responsibleUserId} must belong to the supplier's own company. */
+	public record PlanStepForm(@NotNull LocalDate plannedDate, Long responsibleUserId,
+			@Size(max = 2000) String remarks) {
+	}
+
+	/** Send the plan back to the supplier: the comment is mandatory and reaches the supplier, so it must not name the
+	 * customer or a price. */
+	public record PlanReturnForm(@NotBlank @Size(max = 2000) String comment) {
+	}
+
+	/** One entry of the plan's trail. The comment is ERGO NPD's reason on a send-back, otherwise an optional note. */
+	public record PlanHistoryView(String event, String comment, String by, Instant at) {
+	}
+
+	/** Progress of a project, from the activities the caller can see. {@code percent} is the share of those
+	 * activities that are DONE; each stage reports its own counts and whether it is finished, running or ahead. */
+	public record ProgressView(int percent, int done, int total, List<StageProgress> stages) {
+	}
+
+	public enum StageState {
+		COMPLETED, CURRENT, UPCOMING
+	}
+
+	public record StageProgress(NpdStage stage, int done, int total, StageState state) {
 	}
 
 	public record Named(long id, String code, String name) {
@@ -168,9 +196,10 @@ public final class NpdDtos {
 			Named supplier, String partNumber, String revision, String description, String quoteReference,
 			NpdStage stage, LocalDate targetSampleDate, LocalDate actualSampleSubmissionDate, Long delayDays,
 			Long ownerUserId, String owner, Long qualityOwnerUserId, String qualityOwner, RiskLevel riskLevel,
-			PlanStatus planStatus, Long samplePoId, String samplePoNumber, List<ActivityView> activities,
-			List<IssueRiskView> issuesRisks, List<ApprovalView> approvals, List<StageHistoryView> stageHistory,
-			Set<NpdAction> actions, Instant createdAt, Instant updatedAt) implements NpdView {
+			PlanStatus planStatus, List<PlanHistoryView> planHistory, Long samplePoId, String samplePoNumber,
+			List<ActivityView> activities, List<IssueRiskView> issuesRisks, List<ApprovalView> approvals,
+			List<StageHistoryView> stageHistory, ProgressView progress, Set<NpdAction> actions, Instant createdAt,
+			Instant updatedAt) implements NpdView {
 	}
 
 	/** Never carries the supplier (§8.1 anonymity, extended to NPD): activities/checklists/issues are the
@@ -184,8 +213,8 @@ public final class NpdDtos {
 			Named customer, Long samplePoId, String samplePoNumber, String partNumber, String revision, String description,
 			NpdStage stage, LocalDate targetSampleDate, LocalDate actualSampleSubmissionDate, Long delayDays,
 			List<ActivityView> activities, List<IssueRiskView> issuesRisks, List<ApprovalView> approvals,
-			List<ExternalStageHistoryView> stageHistory, Set<NpdAction> actions, Instant createdAt, Instant updatedAt)
-			implements NpdView {
+			List<ExternalStageHistoryView> stageHistory, ProgressView progress, Set<NpdAction> actions,
+			Instant createdAt, Instant updatedAt) implements NpdView {
 	}
 
 	/** Never carries the customer, and no approvals at all (SRS §10.6: every supplier role is X on Approve).
@@ -195,8 +224,8 @@ public final class NpdDtos {
 			String partNumber, String revision, String description, String quoteReference, NpdStage stage,
 			LocalDate targetSampleDate, LocalDate actualSampleSubmissionDate, Long delayDays,
 			List<ActivityView> activities, List<IssueRiskView> issuesRisks,
-			List<ExternalStageHistoryView> stageHistory, Set<NpdAction> actions, Instant createdAt,
-			Instant updatedAt) implements NpdView {
+			List<ExternalStageHistoryView> stageHistory, PlanStatus planStatus, List<PlanHistoryView> planHistory,
+			ProgressView progress, Set<NpdAction> actions, Instant createdAt, Instant updatedAt) implements NpdView {
 	}
 
 }

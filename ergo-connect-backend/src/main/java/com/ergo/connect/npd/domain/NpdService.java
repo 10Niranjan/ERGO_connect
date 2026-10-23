@@ -66,9 +66,14 @@ import com.ergo.connect.npd.domain.NpdDtos.NpdListRow;
 import com.ergo.connect.npd.domain.NpdDtos.NpdOwnProjectRow;
 import com.ergo.connect.npd.domain.NpdDtos.NpdProjectForm;
 import com.ergo.connect.npd.domain.NpdDtos.NpdView;
+import com.ergo.connect.npd.domain.NpdDtos.PlanHistoryView;
+import com.ergo.connect.npd.domain.NpdDtos.PlanStepForm;
 import com.ergo.connect.npd.domain.NpdDtos.PromptChecklistForm;
 import com.ergo.connect.npd.domain.NpdDtos.PromptChecklistView;
 import com.ergo.connect.npd.domain.NpdDtos.PromptResponseForm;
+import com.ergo.connect.npd.domain.NpdDtos.ProgressView;
+import com.ergo.connect.npd.domain.NpdDtos.StageProgress;
+import com.ergo.connect.npd.domain.NpdDtos.StageState;
 import com.ergo.connect.npd.domain.NpdDtos.StageHistoryView;
 import com.ergo.connect.npd.domain.NpdDtos.SupplierNpdView;
 import com.ergo.connect.quality.api.QualityApi;
@@ -131,6 +136,8 @@ public class NpdService {
 
 	private final SamplePoRepository samplePos;
 
+	private final NpdPlanHistoryRepository planHistory;
+
 	private final RfqApi rfqApi;
 
 	private final QualityApi qualityApi;
@@ -146,9 +153,11 @@ public class NpdService {
 	NpdService(NpdProjectRepository projects, NpdActivityRepository activities,
 			NpdStageHistoryRepository stageHistory, NpdPromptChecklistRepository checklists,
 			NpdPromptResponseRepository responses, NpdIssueRiskRepository issueRisks,
-			NpdApprovalRepository approvals, SamplePoRepository samplePos, RfqApi rfqApi, QualityApi qualityApi,
-			Directory directory, AuditLogService audit, JdbcTemplate jdbc, Notifier notifier) {
+			NpdApprovalRepository approvals, SamplePoRepository samplePos, NpdPlanHistoryRepository planHistory,
+			RfqApi rfqApi, QualityApi qualityApi, Directory directory, AuditLogService audit, JdbcTemplate jdbc,
+			Notifier notifier) {
 		this.notifier = notifier;
+		this.planHistory = planHistory;
 		this.projects = projects;
 		this.activities = activities;
 		this.stageHistory = stageHistory;
@@ -222,9 +231,107 @@ public class NpdService {
 		}
 		reasonIfGiven(comment);
 		project.planStatus = PlanStatus.ASSIGNED_TO_SUPPLIER;
+		planEvent(me, project, NpdPlanHistoryEntry.Event.RELEASED, comment);
 		notifier.send(NotificationKind.NPD_PLAN_ASSIGNED, "npd", project.id, project.npdNumber, "Part " + project.partNumber,
 				editors(project.supplierCompanyId, Set.of(SUPPLIER_NPD, Role.SUPPLIER_RFQ, SUPPLIER_QUALITY)));
 		return view(me, project);
+	}
+
+	// ---------------------------------------------------------------- plan submission and agreement (flow doc step 8)
+
+	/** The supplier fills in a step of the plan ERGO NPD released to it: the date, who is responsible, a remark. Only
+	 * while the plan is with the supplier (assigned, or sent back); never the template itself (name, stage, owner). */
+	public NpdView updatePlanStep(long activityId, PlanStepForm form) {
+		CurrentUser me = CurrentUser.get();
+		NpdActivity activity = activities.findById(activityId).orElseThrow(() -> ApiException.notFound("Activity"));
+		lockProject(activity.npdProjectId);
+		NpdProject project = visible(me, activity.npdProjectId);
+		requireOwnActivityScope(me, activity);
+		require(NpdAction.EDIT_PLAN_STEP, me, project, activity);
+		if (form.responsibleUserId() != null) {
+			UserRef responsible = directory.users(Set.of(form.responsibleUserId())).get(form.responsibleUserId());
+			// the same rule as an activity's responsible person: someone of the step's own company, never a stranger
+			if (responsible == null || responsible.companyId() != activity.ownerCompanyId) {
+				throw ApiException.unprocessable("Responsible user must belong to your company");
+			}
+		}
+		activity.plannedDate = form.plannedDate();
+		activity.responsibleUserId = form.responsibleUserId();
+		activity.remarks = text(form.remarks());
+		return view(me, project);
+	}
+
+	/** Supplier NPD hands the filled-in plan to ERGO NPD. Every step the supplier owns needs a planned date first. */
+	public NpdView submitPlan(long id, String comment) {
+		CurrentUser me = CurrentUser.get();
+		lockProject(id);
+		NpdProject project = visible(me, id);
+		require(NpdAction.SUBMIT_PLAN, me, project);
+		List<NpdActivity> steps = activities.findByNpdProjectIdAndOwnerOrganizationTypeAndOwnerCompanyIdOrderById(id,
+				CompanyType.SUPPLIER, project.supplierCompanyId);
+		List<String> undated = steps.stream().filter(a -> a.plannedDate == null).map(a -> a.activityName).toList();
+		if (steps.isEmpty() || !undated.isEmpty()) {
+			throw ApiException.conflict(steps.isEmpty() ? "The plan has no steps for you to submit"
+					: "Give every step a planned date before submitting: " + String.join(", ", undated));
+		}
+		reasonIfGiven(comment);
+		project.planStatus = PlanStatus.SUBMITTED;
+		planEvent(me, project, NpdPlanHistoryEntry.Event.SUBMITTED, comment);
+		notifier.send(NotificationKind.NPD_PLAN_SUBMITTED, "npd", project.id, project.npdNumber, "Part " + project.partNumber,
+				planReviewers(project));
+		return view(me, project);
+	}
+
+	/** ERGO NPD agrees the supplier's plan: execution starts. */
+	public NpdView agreePlan(long id, String comment) {
+		CurrentUser me = CurrentUser.get();
+		lockProject(id);
+		NpdProject project = visible(me, id);
+		require(NpdAction.AGREE_PLAN, me, project);
+		reasonIfGiven(comment);
+		project.planStatus = PlanStatus.AGREED;
+		planEvent(me, project, NpdPlanHistoryEntry.Event.AGREED, comment);
+		notifier.send(NotificationKind.NPD_PLAN_AGREED, "npd", project.id, project.npdNumber, "Part " + project.partNumber,
+				editors(project.supplierCompanyId, Set.of(SUPPLIER_NPD, Role.SUPPLIER_RFQ, SUPPLIER_QUALITY)));
+		return view(me, project);
+	}
+
+	/** ERGO NPD sends the plan back to the supplier. The comment is mandatory, is kept in the plan's trail and reaches the
+	 * supplier. */
+	public NpdView sendBackPlan(long id, String comment) {
+		CurrentUser me = CurrentUser.get();
+		lockProject(id);
+		NpdProject project = visible(me, id);
+		require(NpdAction.SEND_BACK_PLAN, me, project);
+		String reason = required(comment, "A comment is required to send the plan back");
+		audit.reason(reason);
+		project.planStatus = PlanStatus.CHANGES_REQUESTED;
+		planEvent(me, project, NpdPlanHistoryEntry.Event.SENT_BACK, reason);
+		notifier.send(NotificationKind.NPD_PLAN_RETURNED, "npd", project.id, project.npdNumber, "Part " + project.partNumber,
+				editors(project.supplierCompanyId, Set.of(SUPPLIER_NPD)));
+		return view(me, project);
+	}
+
+	/** Takes the project row's lock, so a step edit cannot slip in between a submit and ERGO's decision on it: the plan
+	 * state read afterwards is the committed one. */
+	private void lockProject(long projectId) {
+		jdbc.query("SELECT 1 FROM npd_projects WHERE npd_project_id = ? FOR UPDATE", rs -> {
+		}, projectId);
+	}
+
+	private void planEvent(CurrentUser me, NpdProject project, NpdPlanHistoryEntry.Event event, String comment) {
+		NpdPlanHistoryEntry entry = new NpdPlanHistoryEntry();
+		entry.npdProjectId = project.id;
+		entry.event = event;
+		entry.comment = text(comment);
+		entry.byUserId = me.userId();
+		planHistory.save(entry);
+	}
+
+	/** Who reviews a submitted plan: ERGO's owning NPD roles (they alone can decide it) and the project's NPD owner. */
+	private static Recipients planReviewers(NpdProject project) {
+		Recipients owners = Recipients.ergo(OWNERS.toArray(Role[]::new));
+		return project.ownerUserId == null ? owners : Recipients.users(Set.of(project.ownerUserId)).and(owners);
 	}
 
 	// ---------------------------------------------------------------- reads
@@ -379,6 +486,7 @@ public class NpdService {
 
 	public NpdView addActivity(long projectId, ActivityForm form) {
 		CurrentUser me = CurrentUser.get();
+		lockProject(projectId);
 		NpdProject project = visible(me, projectId);
 		require(NpdAction.ADD_ACTIVITY, me, project);
 		NpdActivity activity = new NpdActivity();
@@ -386,7 +494,7 @@ public class NpdService {
 		activity.phaseName = stageFor(project, form.stage());
 		activity.ownerOrganizationType = form.ownerOrganizationType();
 		activity.ownerCompanyId = resolveOwnerCompanyId(me, project, form.ownerOrganizationType(), form.ownerCompanyId());
-		apply(activity, form, project.id);
+		apply(activity, form, project);
 		activities.save(activity);
 		assigned(project, activity);
 		return view(me, project);
@@ -395,6 +503,7 @@ public class NpdService {
 	public NpdView updateActivity(long activityId, ActivityForm form) {
 		CurrentUser me = CurrentUser.get();
 		NpdActivity activity = activities.findById(activityId).orElseThrow(() -> ApiException.notFound("Activity"));
+		lockProject(activity.npdProjectId);
 		NpdProject project = visible(me, activity.npdProjectId);
 		require(NpdAction.EDIT_ACTIVITY, me, project, activity);
 		CompanyType newOwnerType = form.ownerOrganizationType();
@@ -422,7 +531,7 @@ public class NpdService {
 		}
 		activity.ownerOrganizationType = newOwnerType;
 		activity.ownerCompanyId = newOwnerCompanyId;
-		apply(activity, form, project.id);
+		apply(activity, form, project);
 		if (ownerChanged) {
 			assigned(project, activity);
 		}
@@ -632,8 +741,10 @@ public class NpdService {
 		List<com.ergo.connect.common.event.OverdueItem> items = new java.util.ArrayList<>();
 		for (NpdActivity a : activities.findByPlannedDateBeforeAndStatusNot(today, ActivityStatus.DONE)) {
 			NpdProject project = projects.findById(a.npdProjectId).orElse(null);
-			// A closed project's activities can no longer be edited, so they could never be cleared (review 6e M2).
-			if (project != null && project.stage != NpdStage.CLOSED) {
+			// A closed project's activities can no longer be edited, so they could never be cleared (review 6e M2). Before the plan is agreed nobody
+			// can update a step either, so a planned date alone is no reason to remind.
+			// (slice 4 review L4)
+			if (project != null && project.stage != NpdStage.CLOSED && executing(project)) {
 				items.add(new com.ergo.connect.common.event.OverdueItem(NotificationKind.OVERDUE_ACTIVITY, "npd", project.id, project.npdNumber,
 						a.activityName + " was planned for " + a.plannedDate,
 						ownerSide(a).and(Recipients.ergo(Role.ERGO_ADMIN, Role.ERGO_NPD)), "npd-activity:" + a.id));
@@ -716,11 +827,18 @@ public class NpdService {
 		boolean editor = EDITORS.contains(me.role());
 		return switch (action) {
 			case UPDATE_PROJECT -> editor;
-			// a project whose plan has not even been released to the supplier cannot be moved on
+			// a project moves on only once the plan is agreed (flow doc step 8)
 			case CLOSE_STAGE -> OWNERS.contains(me.role()) && project.stage != NpdStage.CLOSED
-					&& project.planStatus != PlanStatus.AWAITING_PLAN;
-			case ADD_ACTIVITY, MANAGE_PROMPT_CHECKLIST, RAISE_ISSUE, REQUEST_APPROVAL ->
-				editor && project.stage != NpdStage.CLOSED;
+					&& project.planStatus == PlanStatus.AGREED;
+			case ADD_ACTIVITY -> editor && project.stage != NpdStage.CLOSED && !planUnderReview(project);
+			case MANAGE_PROMPT_CHECKLIST -> editor && project.stage != NpdStage.CLOSED && !planUnderReview(project);
+			case RAISE_ISSUE -> editor && project.stage != NpdStage.CLOSED;
+			// approvals (sample, quality, stage gate) belong to the work, which starts once the plan is agreed
+			case REQUEST_APPROVAL -> editor && project.stage != NpdStage.CLOSED && executing(project);
+			// the supplier's NPD team hands the filled-in plan to ERGO NPD
+			case SUBMIT_PLAN -> me.role() == SUPPLIER_NPD && SUPPLIER_EDITORS.contains(me.role())
+					&& project.planStatus.openForSupplier();
+			case AGREE_PLAN, SEND_BACK_PLAN -> OWNERS.contains(me.role()) && project.planStatus == PlanStatus.SUBMITTED;
 			// only ERGO NPD's owning roles release the plan; the KAM who created the project does not
 			case ASSIGN_PLAN -> OWNERS.contains(me.role()) && ModuleSwitch.writable(Module.NPD)
 					&& project.planStatus == PlanStatus.AWAITING_PLAN;
@@ -737,12 +855,26 @@ public class NpdService {
 		boolean ownCompany = (CUSTOMER_EDITORS.contains(me.role()) || SUPPLIER_EDITORS.contains(me.role()))
 				&& ownsActivity(me, activity);
 		return switch (action) {
-			case EDIT_ACTIVITY -> editor;
-			case MARK_BLOCKED -> !activity.blockedFlag && (editor || ownCompany);
-			case UNBLOCK -> activity.blockedFlag && (editor || ownCompany);
-			case UPDATE_OWN_ACTIVITY, RESPOND_TO_PROMPT -> editor || ownCompany;
+			case EDIT_ACTIVITY -> editor && !planUnderReview(project);
+			// the supplier fills in its own steps while the plan is with it (flow doc step 8)
+			case EDIT_PLAN_STEP -> SUPPLIER_EDITORS.contains(me.role()) && ownCompany
+					&& activity.ownerOrganizationType == CompanyType.SUPPLIER && project.planStatus.openForSupplier();
+			// work on a step starts only once the plan is agreed
+			case MARK_BLOCKED -> executing(project) && !activity.blockedFlag && (editor || ownCompany);
+			case UNBLOCK -> executing(project) && activity.blockedFlag && (editor || ownCompany);
+			case UPDATE_OWN_ACTIVITY, RESPOND_TO_PROMPT -> executing(project) && (editor || ownCompany);
 			default -> false;
 		};
+	}
+
+	/** The plan is with ERGO NPD for its decision: nobody changes the steps meanwhile. */
+	private static boolean planUnderReview(NpdProject project) {
+		return project.planStatus == PlanStatus.SUBMITTED;
+	}
+
+	/** Execution has started: the plan is agreed (projects from before the plan flow count as agreed). */
+	private static boolean executing(NpdProject project) {
+		return project.planStatus == PlanStatus.AGREED;
 	}
 
 	private static boolean ownsActivity(CurrentUser me, NpdActivity activity) {
@@ -878,7 +1010,12 @@ public class NpdService {
 	/** Shared by add and edit. Dates/status/mandatory flow straight from the form: the caller already validated the
 	 * shape; only cross-references (dependency, responsible user) and the BLOCKED guard need checking here. Owner
 	 * fields are set by the caller (resolveOwnerCompanyId), not here. */
-	private void apply(NpdActivity activity, ActivityForm form, long projectId) {
+	private void apply(NpdActivity activity, ActivityForm form, NpdProject project) {
+		long projectId = project.id;
+		// the progress endpoints are closed until the plan is agreed; this form must not be a second door to the same change
+		if (!executing(project) && (form.status() != ActivityStatus.NOT_STARTED || form.actualDate() != null)) {
+			throw ApiException.unprocessable("A step can be started or finished only once the plan is agreed");
+		}
 		if (form.status() == ActivityStatus.BLOCKED) {
 			throw ApiException.unprocessable("Use \"Mark Blocked\" to block an activity, with a reason");
 		}
@@ -1028,18 +1165,22 @@ public class NpdService {
 
 		Long delay = delayDays(p);
 		Set<NpdAction> actions = projectActions(me, p);
+		ProgressView progress = progress(p, acts);
+
+		List<NpdPlanHistoryEntry> planHistoryRows = isCustomer ? List.of() : planHistory.findByNpdProjectIdOrderById(p.id);
 
 		if (isSupplier) {
 			return new SupplierNpdView("SUPPLIER", p.id, p.npdNumber, p.sourceRfqId, rfqNumber, p.partNumber, p.revision,
 					p.description, p.quoteReference, p.stage, p.targetSampleDate, p.actualSampleSubmissionDate, delay,
-					activityViews, issueViews, externalHistoryViews, actions, p.createdAt, p.updatedAt);
+					activityViews, issueViews, externalHistoryViews, p.planStatus, planViews(planHistoryRows, true), progress, actions,
+					p.createdAt, p.updatedAt);
 		}
 		if (isCustomer) {
 			CompanyRef customer = directory.company(p.customerCompanyId).orElseThrow();
 			return new CustomerNpdView("CUSTOMER", p.id, p.npdNumber, p.sourceRfqId, rfqNumber,
 					new Named(customer.id(), customer.code(), customer.name()), samplePoId, samplePoNumber, p.partNumber, p.revision,
 					p.description, p.stage, p.targetSampleDate, p.actualSampleSubmissionDate, delay, activityViews,
-					issueViews, approvalViews, externalHistoryViews, actions, p.createdAt, p.updatedAt);
+					issueViews, approvalViews, externalHistoryViews, progress, actions, p.createdAt, p.updatedAt);
 		}
 		if (me.companyType() != CompanyType.ERGO) {
 			// the ERGO view carries both companies: only ever for an ERGO caller, whatever the role sets say
@@ -1052,8 +1193,39 @@ public class NpdService {
 				new Named(supplier.id(), supplier.code(), supplier.name()), p.partNumber, p.revision, p.description,
 				p.quoteReference, p.stage, p.targetSampleDate, p.actualSampleSubmissionDate, delay, p.ownerUserId,
 				userName(owner, p.ownerUserId), p.qualityOwnerUserId, userName(owner, p.qualityOwnerUserId), p.riskLevel,
-				p.planStatus, samplePoId, samplePoNumber, activityViews, issueViews, approvalViews, historyViews,
-				actions, p.createdAt, p.updatedAt);
+				p.planStatus, planViews(planHistoryRows, false), samplePoId, samplePoNumber, activityViews, issueViews,
+				approvalViews, historyViews, progress, actions, p.createdAt, p.updatedAt);
+	}
+
+	/** The plan's trail. ERGO sees every comment. The supplier sees ERGO NPD's send-back reason (written for it) and its own
+	 * submit note, never what ERGO typed when assigning or agreeing the plan: that is internal and could name the customer
+	 * or a price. The customer gets no plan at all (the caller passes no rows for it). */
+	private List<PlanHistoryView> planViews(List<NpdPlanHistoryEntry> rows, boolean forSupplier) {
+		Map<Long, UserRef> users = directory.users(ids(rows, r -> r.byUserId));
+		return rows.stream()
+			.map(r -> new PlanHistoryView(r.event.name(),
+					forSupplier && r.event != NpdPlanHistoryEntry.Event.SENT_BACK && r.event != NpdPlanHistoryEntry.Event.SUBMITTED ? null : r.comment,
+					userName(users, r.byUserId), r.createdAt))
+			.toList();
+	}
+
+	/** Share of the caller's visible activities that are done, in total and per stage. A stage before the project's
+	 * current one is completed, whatever its activities say; stages without activities still appear. */
+	private static ProgressView progress(NpdProject p, List<NpdActivity> visibleActivities) {
+		List<StageProgress> stages = new ArrayList<>();
+		for (NpdStage stage : NpdStage.values()) {
+			if (stage == NpdStage.PENDING_CONVERSION || stage == NpdStage.CLOSED) {
+				continue;
+			}
+			List<NpdActivity> inStage = visibleActivities.stream().filter(a -> a.phaseName == stage).toList();
+			int done = (int) inStage.stream().filter(a -> a.status == ActivityStatus.DONE).count();
+			StageState state = stage.compareTo(p.stage) < 0 ? StageState.COMPLETED
+					: stage == p.stage ? StageState.CURRENT : StageState.UPCOMING;
+			stages.add(new StageProgress(stage, done, inStage.size(), state));
+		}
+		int total = visibleActivities.size();
+		int done = (int) visibleActivities.stream().filter(a -> a.status == ActivityStatus.DONE).count();
+		return new ProgressView(total == 0 ? 0 : done * 100 / total, done, total, stages);
 	}
 
 	/** A customer's or supplier's own issues/risks: owned by their own company only. Deliberately NOT unioned with

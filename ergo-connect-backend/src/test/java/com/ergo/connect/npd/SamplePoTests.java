@@ -650,7 +650,7 @@ class SamplePoTests {
 			.getContentAsString();
 		assertThat(JsonPath.<List<String>>read(supplierView, "$.activities[*].activityName")).containsExactly("Supplier step");
 		assertThat(supplierView).doesNotContain(nameOf(customerA)).doesNotContain(poNumber).doesNotContain(customerPoNumber)
-			.doesNotContain("samplePo").doesNotContain("qualityOwner").doesNotContain("planStatus");
+			.doesNotContain("samplePo").doesNotContain("qualityOwner");
 		assertThat(supplierView).doesNotContain("\"customer\"");
 
 		String customerView = call(get("/api/npd/{id}", project), npdCustomerA, null).andExpect(status().isOk())
@@ -688,6 +688,11 @@ class SamplePoTests {
 
 		TestNpd.addSupplierStep(mvc, ergoNpd, project, supplier, "Tooling readiness", false);
 		TestNpd.assignPlan(mvc, ergoNpd, project);
+		// released is not enough: the plan must be submitted by the supplier and agreed by ERGO NPD
+		call(post("/api/npd/{id}/close-stage", project), ergoNpd, "{}").andExpect(status().isConflict());
+		TestNpd.submitPlan(mvc, npdSupplier, project);
+		call(post("/api/npd/{id}/close-stage", project), ergoNpd, "{}").andExpect(status().isConflict());
+		TestNpd.agreePlan(mvc, ergoNpd, project);
 		call(get("/api/npd/{id}", project), ergoNpd, null).andExpect(jsonPath("$.actions[*]", hasItem("CLOSE_STAGE")));
 		call(post("/api/npd/{id}/close-stage", project), ergoNpd, "{}").andExpect(status().isOk())
 			.andExpect(jsonPath("$.stage").value("COMMERCIAL_SOURCING_READINESS"));
@@ -724,7 +729,9 @@ class SamplePoTests {
 			.andExpect(status().isUnprocessableContent());
 
 		// a step planned for a later stage does not hold up the current one
-		TestNpd.assignPlan(mvc, ergoNpd, project);
+	TestNpd.assignPlan(mvc, ergoNpd, project);
+		TestNpd.submitPlan(mvc, npdSupplier, project);
+		TestNpd.agreePlan(mvc, ergoNpd, project);
 		call(put("/api/npd/activities/{id}", step), ergoNpd, ownedStepIn("Tooling readiness", "SUPPLIER", supplier, "TRIAL_EXECUTION"))
 			.andExpect(status().isConflict());
 		call(put("/api/npd/activities/{id}", firstActivityNamed(project, "Now")), ergoNpd,
@@ -1034,9 +1041,9 @@ class SamplePoTests {
 	private static String stepJson(String name, String ownerType, Long ownerCompanyId, String stage, String status) {
 		return """
 				{"activityName": "%s", "status": "%s", "mandatory": true, "riskFlag": false, "issueFlag": false,
-				 "ownerOrganizationType": "%s", "ownerCompanyId": %s, "approvalRequired": false, "stage": %s}"""
+				 "ownerOrganizationType": "%s", "ownerCompanyId": %s, "approvalRequired": false, "stage": %s, "plannedDate": "%s"}"""
 			.formatted(name, status, ownerType, ownerCompanyId == null ? "null" : ownerCompanyId,
-					stage == null ? "null" : "\"" + stage + "\"");
+					stage == null ? "null" : "\"" + stage + "\"", LocalDate.now().plusDays(14));
 	}
 
 	private static String inspection(long projectId) {

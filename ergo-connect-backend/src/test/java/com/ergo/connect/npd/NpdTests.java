@@ -216,7 +216,7 @@ class NpdTests {
 
 	@Test
 	void markingBlockedRequiresAReasonAndUnblockClearsIt() throws Exception {
-		long projectId = convert(approvedRfq(buyerA, "90"));
+		long projectId = convertReleased(approvedRfq(buyerA, "90"));
 		long activityId = JsonPath
 			.<List<Number>>read(
 					call(post("/api/npd/{id}/activities", projectId), ergoNpd, activityForm("Sample run", true))
@@ -334,7 +334,7 @@ class NpdTests {
 			.getFirst()
 			.longValue();
 
-		TestNpd.assignPlan(mvc, ergoNpd, projectId);
+		assignAndAgree(projectId);
 		// the supplier's own activity: succeeds
 		String progressed = call(post("/api/npd/activities/{id}/progress", supplierActivityId), npdSupplier, """
 				{"status": "IN_PROGRESS", "issueFlag": false, "riskFlag": false, "remarks": "underway"}""")
@@ -464,7 +464,7 @@ class NpdTests {
 
 	@Test
 	void onlyTheMatchingApproverRoleCanDecideAndNotTwice() throws Exception {
-		long projectId = convert(approvedRfq(buyerA, "90"));
+		long projectId = convertReleased(approvedRfq(buyerA, "90"));
 		long sampleApprovalId = approvalId(projectId, "CUSTOMER_SAMPLE_APPROVAL");
 
 		// wrong company: visible() already confines a customer decider to their own project (404, not revealed)
@@ -507,7 +507,7 @@ class NpdTests {
 
 	@Test
 	void ergoManagementsBlanketOverrideNeverExtendsToACustomerFacingApprovalType() throws Exception {
-		long projectId = convert(approvedRfq(buyerA, "90"));
+		long projectId = convertReleased(approvedRfq(buyerA, "90"));
 		long sampleApprovalId = approvalId(projectId, "CUSTOMER_SAMPLE_APPROVAL");
 		long qualityApprovalId = approvalId(projectId, "CUSTOMER_QUALITY_ACCEPTANCE");
 
@@ -521,7 +521,7 @@ class NpdTests {
 
 	@Test
 	void theUserWhoRequestedAnApprovalCannotDecideItThemselvesEvenIfTheyHoldTheApproverRole() throws Exception {
-		long projectId = convert(approvedRfq(buyerA, "90"));
+		long projectId = convertReleased(approvedRfq(buyerA, "90"));
 		// approvalId() always requests as ergoNpd, STAGE_GATE's own approver role
 		long stageGateApprovalId = approvalId(projectId, "STAGE_GATE");
 
@@ -794,7 +794,7 @@ class NpdTests {
 		long projectId = TestNpd.createProject(mvc, kamBoth, TestNpd.raise(mvc, npdCustomerA, partOf(rfqId)), ergoNpd,
 				ergoQuality, "Kickoff with %s".formatted(supplierName));
 		TestNpd.addSupplierStep(mvc, ergoNpd, projectId, supplier, "Tooling readiness", false);
-		TestNpd.assignPlan(mvc, ergoNpd, projectId);
+		assignAndAgree(projectId);
 		call(post("/api/npd/{id}/close-stage", projectId), ergoNpd,
 				"{\"comment\": \"Confirmed with %s at a tight price\"}".formatted(supplierName))
 			.andExpect(jsonPath("$.stage").value("COMMERCIAL_SOURCING_READINESS"));
@@ -836,8 +836,9 @@ class NpdTests {
 					call(post("/api/npd/{id}/activities", projectId), ergoNpd, """
 							{"activityName": "Tooling trial", "status": "NOT_STARTED", "mandatory": true,
 							 "riskFlag": false, "issueFlag": false, "ownerOrganizationType": "SUPPLIER",
-							 "ownerCompanyId": %d, "responsibleUserId": %d, "approvalRequired": false}"""
-								.formatted(supplier, npdSupplier.userId())).andExpect(status().isCreated())
+							 "ownerCompanyId": %d, "responsibleUserId": %d, "approvalRequired": false,
+							 "plannedDate": "%s"}"""
+								.formatted(supplier, npdSupplier.userId(), java.time.LocalDate.now().plusDays(14))).andExpect(status().isCreated())
 						.andReturn()
 						.getResponse()
 						.getContentAsString(),
@@ -856,7 +857,7 @@ class NpdTests {
 					"$.activities[?(@.id == " + activityId + ")].promptChecklists[*].id")
 			.getFirst()
 			.longValue();
-		TestNpd.assignPlan(mvc, ergoNpd, projectId);
+		assignAndAgree(projectId);
 		call(post("/api/npd/prompt-checklists/{id}/response", checklistId), npdSupplier,
 				"{\"responseValue\": \"Yes\", \"remarks\": \"Confirmed with our tool room\"}")
 			.andExpect(status().isOk());
@@ -914,7 +915,7 @@ class NpdTests {
 
 	@Test
 	void onlyCustomerNpdGivesTheCustomersFinalApprovalAndCustomerQualityOnlyActs() throws Exception {
-		long projectId = convert(approvedRfq(buyerA, "90"));
+		long projectId = convertReleased(approvedRfq(buyerA, "90"));
 		Login qualityCustomerA = users.login(customerA, "CUSTOMER_QUALITY");
 		long sampleApprovalId = approvalId(projectId, "CUSTOMER_SAMPLE_APPROVAL");
 		long milestoneApprovalId = approvalId(projectId, "CUSTOMER_MILESTONE_ACKNOWLEDGMENT");
@@ -935,7 +936,7 @@ class NpdTests {
 
 	@Test
 	void customerViewNeverContainsErgoOnlyApprovalTypesOnlyTheThreeCustomerFacingOnes() throws Exception {
-		long projectId = convert(approvedRfq(buyerA, "90"));
+		long projectId = convertReleased(approvedRfq(buyerA, "90"));
 		approvalId(projectId, "STAGE_GATE");
 		approvalId(projectId, "QUALITY_GATE");
 		approvalId(projectId, "CUSTOMER_SAMPLE_APPROVAL");
@@ -985,7 +986,7 @@ class NpdTests {
 			.getFirst()
 			.longValue();
 
-		TestNpd.assignPlan(mvc, ergoNpd, projectId);
+		assignAndAgree(projectId);
 		// this project's own customer, not the activity's own (supplier's) company: rejected, not revealed
 		call(post("/api/npd/prompt-checklists/{id}/response", checklistId), npdCustomerA,
 				"{\"responseValue\": \"Yes\"}").andExpect(status().isNotFound());
@@ -1011,7 +1012,7 @@ class NpdTests {
 			.getFirst()
 			.longValue();
 
-		TestNpd.assignPlan(mvc, ergoNpd, projectId);
+		assignAndAgree(projectId);
 		call(post("/api/npd/activities/{id}/block", supplierActivityId), npdCustomerA, "{\"comment\": \"not mine\"}")
 			.andExpect(status().isNotFound());
 		call(post("/api/npd/activities/{id}/block", supplierActivityId), npdSupplier,
@@ -1039,7 +1040,7 @@ class NpdTests {
 			.getFirst()
 			.longValue();
 
-		TestNpd.assignPlan(mvc, ergoNpd, projectId);
+		assignAndAgree(projectId);
 		call(post("/api/npd/activities/{id}/progress", activityId), qualitySupplier, """
 				{"status": "IN_PROGRESS", "issueFlag": false, "riskFlag": false}""").andExpect(status().isOk());
 		// role sheet: Supplier OFP has no NPD access at all
@@ -1084,10 +1085,18 @@ class NpdTests {
 		return convertFor(npdCustomerA, rfqId);
 	}
 
+	/** The plan is assigned to the supplier, submitted by its NPD team and agreed: the project is in execution. */
+	private void assignAndAgree(long projectId) throws Exception {
+		TestNpd.assignPlan(mvc, ergoNpd, projectId);
+		TestNpd.submitPlan(mvc, users.login(supplier, "SUPPLIER_NPD"), projectId);
+		TestNpd.agreePlan(mvc, ergoNpd, projectId);
+	}
+
 	/** As {@link #convert}, with the plan released to the supplier (one optional supplier step): the project can now move
 	 * through its stages. */
 	private long convertReleased(long rfqId) throws Exception {
-		return TestNpd.release(mvc, npdCustomerA, kamBoth, ergoNpd, ergoQuality, supplier, partOf(rfqId));
+		return TestNpd.agreed(mvc, npdCustomerA, kamBoth, ergoNpd, ergoQuality, users.login(supplier, "SUPPLIER_NPD"), supplier,
+				partOf(rfqId));
 	}
 
 	private long convertFor(Login customerNpd, long rfqId) throws Exception {
@@ -1159,8 +1168,9 @@ class NpdTests {
 	private static String ownedActivityForm(String name, String ownerOrganizationType, Long ownerCompanyId) {
 		return """
 				{"activityName": "%s", "status": "NOT_STARTED", "mandatory": true, "riskFlag": false,
-				 "issueFlag": false, "ownerOrganizationType": "%s", "ownerCompanyId": %s, "approvalRequired": false}"""
-			.formatted(name, ownerOrganizationType, ownerCompanyId == null ? "null" : ownerCompanyId);
+				 "issueFlag": false, "ownerOrganizationType": "%s", "ownerCompanyId": %s, "approvalRequired": false, "plannedDate": "%s"}"""
+			.formatted(name, ownerOrganizationType, ownerCompanyId == null ? "null" : ownerCompanyId,
+					java.time.LocalDate.now().plusDays(14));
 	}
 
 	/** An activity whose mandatory flag also requires an APPROVED approval of the given type before it counts

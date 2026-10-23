@@ -24,6 +24,8 @@ import com.ergo.connect.npd.domain.NpdDtos.NpdListRow;
 import com.ergo.connect.npd.domain.NpdDtos.NpdOwnProjectRow;
 import com.ergo.connect.npd.domain.NpdDtos.NpdProjectForm;
 import com.ergo.connect.npd.domain.NpdDtos.NpdView;
+import com.ergo.connect.npd.domain.NpdDtos.PlanReturnForm;
+import com.ergo.connect.npd.domain.NpdDtos.PlanStepForm;
 import com.ergo.connect.npd.domain.NpdDtos.PromptChecklistForm;
 import com.ergo.connect.npd.domain.NpdDtos.PromptResponseForm;
 import com.ergo.connect.common.audit.AuditLogService.AuditEntry;
@@ -54,6 +56,9 @@ class NpdController {
 
 	/** ERGO's owning roles ("O"): release the plan to the supplier, close a stage. */
 	private static final String OWNERS = "@access.approve('NPD', 'ERGO')";
+
+	/** The supplier roles that work the released plan (the service narrows submitting to Supplier NPD). */
+	private static final String SUPPLIER_EDITORS = "@access.act('NPD', 'SUPPLIER')";
 
 	/** EDITORS plus the owning company's own activity/issue/checklist actions (the service confines each to its own
 	 * company). */
@@ -108,6 +113,34 @@ class NpdController {
 	@PreAuthorize(OWNERS)
 	NpdView assignPlan(@PathVariable long id, @Valid @RequestBody CommentForm body) {
 		return npd.assignPlan(id, body.comment());
+	}
+
+	/** Flow doc step 8: the supplier fills in one of its steps of the released plan. */
+	@PutMapping("/activities/{activityId}/plan")
+	@PreAuthorize(SUPPLIER_EDITORS)
+	NpdView updatePlanStep(@PathVariable long activityId, @Valid @RequestBody PlanStepForm body) {
+		return npd.updatePlanStep(activityId, body);
+	}
+
+	/** Flow doc step 8: Supplier NPD submits the plan to ERGO NPD. */
+	@PostMapping("/{id}/plan/submit")
+	@PreAuthorize(SUPPLIER_EDITORS)
+	NpdView submitPlan(@PathVariable long id, @Valid @RequestBody CommentForm body) {
+		return npd.submitPlan(id, body.comment());
+	}
+
+	/** Flow doc step 8: ERGO NPD agrees the plan; execution starts. */
+	@PostMapping("/{id}/plan/agree")
+	@PreAuthorize(OWNERS)
+	NpdView agreePlan(@PathVariable long id, @Valid @RequestBody CommentForm body) {
+		return npd.agreePlan(id, body.comment());
+	}
+
+	/** Flow doc step 8: ERGO NPD sends the plan back to the supplier; the comment is mandatory. */
+	@PostMapping("/{id}/plan/send-back")
+	@PreAuthorize(OWNERS)
+	NpdView sendBackPlan(@PathVariable long id, @Valid @RequestBody PlanReturnForm body) {
+		return npd.sendBackPlan(id, body.comment());
 	}
 
 	@PostMapping("/{id}/close-stage")

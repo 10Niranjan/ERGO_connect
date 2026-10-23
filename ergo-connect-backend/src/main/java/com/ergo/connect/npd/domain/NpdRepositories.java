@@ -140,3 +140,11 @@ interface NpdApprovalRepository extends Repository<NpdApproval, Long> {
 	List<NpdApproval> findByNpdProjectIdAndApprovalStatusOrderById(Long npdProjectId, ApprovalStatus approvalStatus);
 
 }
+
+interface NpdPlanHistoryRepository extends Repository<NpdPlanHistoryEntry, Long> {
+
+	NpdPlanHistoryEntry save(NpdPlanHistoryEntry entry);
+
+	List<NpdPlanHistoryEntry> findByNpdProjectIdOrderById(Long npdProjectId);
+
+}

@@ -334,3 +334,4 @@ The migration changes a cell only if it still holds the old shipped value (an ER
   project through any path (list, detail, dashboard, notifications, comments, `NpdApi.projectRef`), and stages cannot be
   closed. `POST /api/npd/{id}/plan/assign` (ERGO_NPD / ERGO_MANAGEMENT, the "O" roles) releases it.
 - New record kind `sample-po` for notifications (`RecordScope`, `ModuleSwitch.ownerOf` = NPD).
+- **Plan submission (slice 4, V36)**: the supplier's roles with A on NPD fill in their own steps (`PUT /api/npd/activities/{id}/plan`) while the plan is with them; only **Supplier NPD** submits (`/plan/submit`); only ERGO's "O" roles (ERGO NPD, Management) agree or send back (`/plan/agree`, `/plan/send-back`, comment mandatory on send-back). No cell of the sheet changed. Working a step and closing a stage need `plan_status = AGREED`; while `SUBMITTED` nobody edits the steps.

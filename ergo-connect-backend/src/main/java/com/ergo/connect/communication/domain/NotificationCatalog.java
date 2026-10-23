@@ -75,6 +75,12 @@ final class NotificationCatalog {
 				null);
 		put(NotificationKind.NPD_PLAN_ASSIGNED, ACTION_REQUIRED, EnumSet.of(SUPPLIER), null,
 				"An NPD plan was assigned to you");
+		put(NotificationKind.NPD_PLAN_SUBMITTED, ACTION_REQUIRED, EnumSet.of(ERGO), "NPD plan awaiting your agreement",
+				null);
+		put(NotificationKind.NPD_PLAN_RETURNED, ACTION_REQUIRED, EnumSet.of(SUPPLIER), null,
+				"Your NPD plan was sent back");
+		put(NotificationKind.NPD_PLAN_AGREED, RECORD_UPDATED, EnumSet.of(ERGO, SUPPLIER), "NPD plan agreed",
+				"Your NPD plan was agreed");
 
 		// OFP
 		put(NotificationKind.ORDER_STATUS_CHANGED, RECORD_UPDATED, EnumSet.of(ERGO, CUSTOMER, SUPPLIER),

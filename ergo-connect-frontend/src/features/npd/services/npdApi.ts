@@ -5,6 +5,10 @@ import type { AuditEntry, Named } from '@/features/rfq/rfqApi'
 /** Buttons the backend allows for this user, role and record right now (project-, activity-, issue- or approval-level). */
 export type NpdAction =
   | 'ASSIGN_PLAN'
+  | 'EDIT_PLAN_STEP'
+  | 'SUBMIT_PLAN'
+  | 'AGREE_PLAN'
+  | 'SEND_BACK_PLAN'
   | 'UPDATE_PROJECT'
   | 'CLOSE_STAGE'
   | 'ADD_ACTIVITY'
@@ -48,8 +52,44 @@ export type ApprovalType =
   | 'CUSTOMER_QUALITY_ACCEPTANCE'
 export type ApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
 
-/** Where the plan stands (flow doc step 7): the supplier sees a project only once ERGO NPD has assigned the plan to it. */
-export type PlanStatus = 'AWAITING_PLAN' | 'ASSIGNED_TO_SUPPLIER' | 'AGREED'
+/** Where the plan stands (flow doc steps 7-8): the supplier sees a project only once ERGO NPD has assigned the plan to it,
+ * and the project goes to execution only once the plan is AGREED. SUBMITTED = with ERGO NPD, CHANGES_REQUESTED = sent
+ * back to the supplier. */
+export type PlanStatus = 'AWAITING_PLAN' | 'ASSIGNED_TO_SUPPLIER' | 'SUBMITTED' | 'CHANGES_REQUESTED' | 'AGREED'
+
+export type PlanEvent = 'RELEASED' | 'SUBMITTED' | 'SENT_BACK' | 'AGREED'
+
+/** One entry of the plan's trail (ERGO and the supplier only; the comment on SENT_BACK is ERGO NPD's reason). */
+export interface PlanHistoryView {
+  event: PlanEvent
+  comment: string | null
+  by: string | null
+  at: string
+}
+
+/** What the supplier fills in on one of its steps while the plan is with it. */
+export interface PlanStepForm {
+  plannedDate: string
+  responsibleUserId: number | null
+  remarks: string | null
+}
+
+export type StageState = 'COMPLETED' | 'CURRENT' | 'UPCOMING'
+
+export interface StageProgress {
+  stage: NpdStage
+  done: number
+  total: number
+  state: StageState
+}
+
+/** Share of the activities the caller can see that are DONE, in total and per stage. */
+export interface ProgressView {
+  percent: number
+  done: number
+  total: number
+  stages: StageProgress[]
+}
 
 /** SRS §12.8.1 NPD project list columns. */
 export interface NpdListRow {
@@ -275,6 +315,7 @@ interface NpdViewBase {
   delayDays: number | null
   activities: ActivityView[]
   issuesRisks: IssueRiskView[]
+  progress: ProgressView
   actions: NpdAction[]
   createdAt: string
   updatedAt: string
@@ -294,6 +335,7 @@ export interface ErgoNpdView extends NpdViewBase {
   qualityOwner: string | null
   riskLevel: RiskLevel | null
   planStatus: PlanStatus
+  planHistory: PlanHistoryView[]
   samplePoId: number | null
   samplePoNumber: string | null
   approvals: ApprovalView[]
@@ -317,6 +359,8 @@ export interface CustomerNpdView extends NpdViewBase {
 export interface SupplierNpdView extends NpdViewBase {
   audience: 'SUPPLIER'
   quoteReference: string | null
+  planStatus: PlanStatus
+  planHistory: PlanHistoryView[]
   stageHistory: ExternalStageHistoryView[]
 }
 
@@ -342,6 +386,26 @@ const npdApi = api.enhanceEndpoints({ addTagTypes: ['Npd'] }).injectEndpoints({
     /** Flow doc step 7: ERGO NPD releases the plan to the supplier, which then sees the project and its steps. */
     assignNpdPlan: build.mutation<NpdView, { id: number; comment?: string }>({
       query: ({ id, comment }) => ({ url: `/npd/${id}/plan/assign`, method: 'POST', body: { comment: comment ?? null } }),
+      invalidatesTags: ['Npd'],
+    }),
+    /** Flow doc step 8: the supplier fills in one of its own steps while the plan is with it. */
+    updatePlanStep: build.mutation<NpdView, { activityId: number; form: PlanStepForm }>({
+      query: ({ activityId, form }) => ({ url: `/npd/activities/${activityId}/plan`, method: 'PUT', body: form }),
+      invalidatesTags: ['Npd'],
+    }),
+    /** Flow doc step 8: Supplier NPD submits the plan to ERGO NPD. */
+    submitNpdPlan: build.mutation<NpdView, { id: number; comment?: string }>({
+      query: ({ id, comment }) => ({ url: `/npd/${id}/plan/submit`, method: 'POST', body: { comment: comment ?? null } }),
+      invalidatesTags: ['Npd'],
+    }),
+    /** Flow doc step 8: ERGO NPD agrees the plan, execution starts. */
+    agreeNpdPlan: build.mutation<NpdView, { id: number; comment?: string }>({
+      query: ({ id, comment }) => ({ url: `/npd/${id}/plan/agree`, method: 'POST', body: { comment: comment ?? null } }),
+      invalidatesTags: ['Npd'],
+    }),
+    /** Flow doc step 8: ERGO NPD sends the plan back to the supplier; the comment is mandatory. */
+    sendBackNpdPlan: build.mutation<NpdView, { id: number; comment: string }>({
+      query: ({ id, comment }) => ({ url: `/npd/${id}/plan/send-back`, method: 'POST', body: { comment } }),
       invalidatesTags: ['Npd'],
     }),
     closeNpdStage: build.mutation<NpdView, { id: number; comment?: string }>({
@@ -402,6 +466,10 @@ const npdApi = api.enhanceEndpoints({ addTagTypes: ['Npd'] }).injectEndpoints({
 
 export const {
   useAssignNpdPlanMutation,
+  useUpdatePlanStepMutation,
+  useSubmitNpdPlanMutation,
+  useAgreeNpdPlanMutation,
+  useSendBackNpdPlanMutation,
   useNpdListQuery,
   useMyNpdProjectsQuery,
   useNpdProjectQuery,

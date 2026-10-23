@@ -1,7 +1,7 @@
 # ERGO Connect — flow-document alignment: handoff for the next Claude
 
 **Read this file first.** It is self-contained: after reading it (and `CLAUDE.md`) you can continue without asking
-the user what happened. Last updated 2026-10-23 (slice 3 done), branch `sprint-3`.
+the user what happened. Last updated 2026-10-24 (slice 4 done), branch `sprint-3`.
 
 ## 1. Why this work exists
 
@@ -160,16 +160,20 @@ Decisions in `ARCHITECTURE.md` §8 (2026-10-23, two entries: decisions + securit
 - **Frontend:** `features/npd` has the Sample PO list/detail pages and dialogs, plan status, owners, "Assign plan to supplier", the activity Stage selector; the conversion queue page is gone.
 - **Not built / known gaps:** the optional PO file attachment (needs the Documents module); deleting a plan step; the plan *template* is just activities (no saved reusable template); a browser smoke test of the whole path has not been done.
 
+### Slice 4 — plan submission, ERGO NPD agreement, execution (V36) ✅
+Decisions in `ARCHITECTURE.md` §8 (2026-10-24) and `docs/PERMISSIONS.md` §11. Questions put to the client first: the supplier only fills in steps (no adding), a sent-back plan returns to the supplier with a mandatory comment, steps stay the 9 stages with progress added.
+- **State machine (`PlanStatus`):** `AWAITING_PLAN` -> `ASSIGNED_TO_SUPPLIER` -> `SUBMITTED` -> `AGREED`; `CHANGES_REQUESTED` = sent back (the supplier edits and submits again). `npd_plan_history` (append-only, V36) keeps every release / submit / send-back / agree with the comment.
+- **Backend (`NpdService`):** `updatePlanStep` (`PUT /api/npd/activities/{id}/plan`: planned date, responsible person of the supplier's company, remarks; own steps only, while the plan is with the supplier), `submitPlan` (Supplier NPD only; every supplier step needs a planned date), `agreePlan` / `sendBackPlan` (ERGO NPD / Management; send-back comment mandatory). New actions `EDIT_PLAN_STEP`, `SUBMIT_PLAN`, `AGREE_PLAN`, `SEND_BACK_PLAN`; notifications `NPD_PLAN_SUBMITTED`, `NPD_PLAN_RETURNED`, `NPD_PLAN_AGREED`.
+- **Rules to keep:** while `SUBMITTED` nobody changes the steps (add / edit blocked for ERGO too); progress, block / unblock, checklist answers and **close stage need `AGREED`** (`NpdService.executing`); projects from before the plan flow are `AGREED`. The customer's view has no plan status or history; the supplier's view has them (ERGO's send-back comment is meant for the supplier).
+- **Progress:** every view carries `progress` (done / total / percent and per stage completed-current-upcoming) over the activities the caller can see.
+- **Frontend:** `features/npd/components/PlanPanel.tsx` (plan status, submit / agree / send back with comment dialogs, plan history, `ProgressSummary`, `PlanStepDialog`), wired into the Overview and Activities tabs of `NpdDetailPage`.
+- **Tests:** `PlanAgreementTests` (9) plus `TestNpd.agreed(...)`, the helper that drives a project to execution (`TestNpd.release` stops at "assigned": supplier steps get a planned date there). Tests that work steps or close stages now use it.
+- **Not built / known gaps:** the responsible-person picker on the supplier's step dialog (date and remarks only), a reusable saved plan template, a browser smoke test of the whole path.
+
 ## 4. What is left — the slices to build (in this order)
 
-For each slice: ask `srs-analyst`-style questions only where the doc is ambiguous; write migration `V36+` (next free number is **V36**); backend (entities → service/workflow → `<module>.api` facade → controller → tests); frontend; then
+For each slice: ask `srs-analyst`-style questions only where the doc is ambiguous; write migration `V37+` (next free number is **V37**); backend (entities → service/workflow → `<module>.api` facade → controller → tests); frontend; then
 `security-reviewer`; `./mvnw verify` + `npm run build && npm run lint` green; log in `ARCHITECTURE.md` §8; commit.
-
-### Slice 4 — flow step 8: plan submission, ERGO agreement, execution
-Supplier NPD fills the plan in ERGO NPD's template and submits it; **ERGO NPD agrees** (or sends back with comments);
-only then execution starts. Teams track each step; a step is completed when its activities are finished; project
-progress and step status are maintained. (Existing pieces to reuse: `NpdActivity`, prompt checklists, issues/risks,
-approvals in `npd.domain`.)
 
 ### Slice 5 — flow steps 9–10: dual quality gate and customer final approval
 - After applicable steps complete: **Supplier Quality inspects and approves internally**, then the project goes to
@@ -199,7 +203,7 @@ approvals in `npd.domain`.)
 
 ## 5. Working notes for this repo (learned the hard way)
 
-- **Build/test:** backend `cd ergo-connect-backend && ./mvnw -q verify` (Docker must be running; ~5 min, 477 tests).
+- **Build/test:** backend `cd ergo-connect-backend && ./mvnw -q verify` (Docker Desktop must be running; ~5 min).
   The `JAVA_HOME` path in `CLAUDE.md` (`jdk-21.0.10`) does not exist on the dev machine; the default JDK 21 works —
   don't override it. Frontend: `cd ergo-connect-frontend && npm run build && npm run lint`.
 - **Windows + CRLF:** `core.autocrlf=true`; many files are CRLF on disk. Multi-line regex edits need `\r?\n`. The
@@ -212,7 +216,7 @@ approvals in `npd.domain`.)
   (`approveWhole`). `ModuleSwitchFacadeTests` forces every new `<module>.api` method to be classified (and
   `QuotationSummary` etc. need an argument in its `arguments()`). `ModuleBoundaryTest` forbids cross-module imports
   except via `<module>.api`.
-- **Flyway:** migrations are immutable once committed (V31–V35 are committed now); add V36+. Raw SQL in tests that
+- **Flyway:** migrations are immutable once committed (V31–V36 are committed now); add V37+. Raw SQL in tests that
   inserts `rfqs`/`npd_projects` must also create an `rfq_items` row and set `source_rfq_item_id`.
 - **Module switches / audit / DTO-per-audience** rules in `CLAUDE.md` still apply to everything above.
 - **Git:** work on `sprint-3`. Commit messages end with the `Co-Authored-By` trailer given in the session reminder.

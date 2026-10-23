@@ -17,7 +17,7 @@ import com.jayway.jsonpath.JsonPath;
 /**
  * Shared test plumbing for the flow doc's steps 6-7: Customer NPD raises a Sample PO for an approved part, the ERGO KAM
  * (or Management) creates the sample project and assigns ERGO NPD and ERGO Quality, ERGO NPD builds the plan and
- * releases it to the supplier. {@link #start} stops with the plan still being built (the supplier cannot see the
+ * releases it to the supplier, the supplier submits it and ERGO NPD agrees it (step 8). {@link #start} stops with the plan still being built (the supplier cannot see the
  * project); {@link #release} goes on until the supplier's NPD / RFQ / Quality teams can.
  */
 public final class TestNpd {
@@ -65,8 +65,8 @@ public final class TestNpd {
 			String name, boolean mandatory) throws Exception {
 		String json = send(mvc, post("/api/npd/{id}/activities", projectId), ergoNpd, """
 				{"activityName": "%s", "status": "NOT_STARTED", "mandatory": %s, "riskFlag": false, "issueFlag": false,
-				 "ownerOrganizationType": "SUPPLIER", "ownerCompanyId": %d, "approvalRequired": false}"""
-			.formatted(name, mandatory, supplierCompanyId), 201);
+				 "ownerOrganizationType": "SUPPLIER", "ownerCompanyId": %d, "approvalRequired": false, "plannedDate": "%s"}"""
+			.formatted(name, mandatory, supplierCompanyId, LocalDate.now().plusDays(14)), 201);
 		return JsonPath.<java.util.List<Number>>read(json, "$.activities[?(@.activityName == '" + name + "')].id")
 			.getFirst()
 			.longValue();
@@ -86,6 +86,25 @@ public final class TestNpd {
 		long project = start(mvc, customerNpd, desk, ergoNpd, ergoQuality, rfqItemId);
 		addSupplierStep(mvc, ergoNpd, project, supplierCompanyId, "Supplier plan step", false);
 		assignPlan(mvc, ergoNpd, project);
+		return project;
+	}
+
+	/** Supplier NPD submits the plan (its steps carry a planned date already, see {@link #addSupplierStep}). */
+	public static void submitPlan(MockMvc mvc, Login supplierNpd, long projectId) throws Exception {
+		send(mvc, post("/api/npd/{id}/plan/submit", projectId), supplierNpd, "{}", 200);
+	}
+
+	/** ERGO NPD agrees the submitted plan: execution starts. */
+	public static void agreePlan(MockMvc mvc, Login ergoNpd, long projectId) throws Exception {
+		send(mvc, post("/api/npd/{id}/plan/agree", projectId), ergoNpd, "{}", 200);
+	}
+
+	/** {@link #release} plus the supplier's submission and ERGO NPD's agreement: the project is in execution. */
+	public static long agreed(MockMvc mvc, Login customerNpd, Login desk, Login ergoNpd, Login ergoQuality,
+			Login supplierNpd, long supplierCompanyId, long rfqItemId) throws Exception {
+		long project = release(mvc, customerNpd, desk, ergoNpd, ergoQuality, supplierCompanyId, rfqItemId);
+		submitPlan(mvc, supplierNpd, project);
+		agreePlan(mvc, ergoNpd, project);
 		return project;
 	}
 
