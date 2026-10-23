@@ -1,20 +1,9 @@
-import {
-  Alert,
-  Button,
-  Chip,
-  LinearProgress,
-  Paper,
-  Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Typography,
-} from '@mui/material'
-import { useState } from 'react'
+import { Alert, Button, MenuItem, Paper, Stack, Tab, Tabs, TextField, Typography } from '@mui/material'
+import { useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router'
 import { problemMessage } from '../../../shared/problem'
+import { STATUS_LABELS, useCompaniesQuery } from '../../companies/companiesApi'
+import type { CompanyType } from '../../auth/store/authSlice'
 import {
   useResetUserPasswordMutation,
   useRolesQuery,
@@ -25,19 +14,54 @@ import {
 import { DeleteUserDialog } from '../components/DeleteUserDialog'
 import { TemporaryPasswordDialog } from '../components/TemporaryPasswordDialog'
 import { UserDialog } from '../components/UserDialog'
+import { UserTable } from '../components/UserTable'
+
+const TABS: { type: CompanyType; label: string; param: string }[] = [
+  { type: 'ERGO', label: 'ERGO', param: 'ergo' },
+  { type: 'CUSTOMER', label: 'Customers', param: 'customer' },
+  { type: 'SUPPLIER', label: 'Suppliers', param: 'supplier' },
+]
+
+const byName = (a: User, b: User) =>
+  `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`, undefined, { sensitivity: 'base' })
 
 // SRS 12.13.1 User Administration. ERGO Admin only (route guard here, enforced by the backend).
+// Three tabs by company type; customer and supplier tabs list the companies, each with its own employees.
 export function UsersPage() {
   const { data: users = [], isLoading, error } = useUsersQuery()
+  const { data: companies = [] } = useCompaniesQuery()
   const { data: roles = [] } = useRolesQuery()
   const [setUserActive] = useSetUserActiveMutation()
   const [resetUserPassword] = useResetUserPasswordMutation()
-  const [editing, setEditing] = useState<User | 'new' | null>(null)
+  const [params, setParams] = useSearchParams()
+  const [selectedId, setSelectedId] = useState<number | null>(null)
+  // 'new' creates anywhere; { companyId } creates inside that company; a User edits
+  const [editing, setEditing] = useState<User | 'new' | { companyId: number } | null>(null)
   const [deleting, setDeleting] = useState<User | null>(null)
   const [issued, setIssued] = useState<{ email: string; password: string } | null>(null)
   const [actionError, setActionError] = useState<unknown>(null)
 
+  const tab = TABS.find((t) => t.param === params.get('tab')) ?? TABS[0]
   const roleName = (code: string) => roles.find((role) => role.code === code)?.name ?? code
+
+  const typeUsers = useMemo(() => users.filter((u) => u.companyType === tab.type).sort(byName), [users, tab.type])
+
+  // Companies of this tab, sorted by name, each with its employee count.
+  const tabCompanies = useMemo(() => {
+    return companies
+      .filter((c) => c.type === tab.type)
+      .map((c) => ({ company: c, count: users.filter((u) => u.companyId === c.id).length }))
+      .sort((a, b) => a.company.profile.name.localeCompare(b.company.profile.name, undefined, { sensitivity: 'base' }))
+  }, [companies, users, tab.type])
+
+  const selected =
+    tabCompanies.find((entry) => entry.company.id === selectedId) ?? (tabCompanies.length ? tabCompanies[0] : undefined)
+  const employees = selected ? typeUsers.filter((u) => u.companyId === selected.company.id) : []
+
+  function changeTab(param: string) {
+    setParams({ tab: param })
+    setSelectedId(null)
+  }
 
   // ponytail: native confirm(); switch to an MUI dialog if these need more than a yes/no
   async function toggleActive(user: User) {
@@ -57,81 +81,99 @@ export function UsersPage() {
     }
   }
 
+  const actions = {
+    roleName,
+    onEdit: (user: User) => setEditing(user),
+    onResetPassword: (user: User) => void resetPassword(user),
+    onToggleActive: (user: User) => void toggleActive(user),
+    onDelete: (user: User) => setDeleting(user),
+  }
+
+  const dialogUser = editing && editing !== 'new' && 'id' in editing ? editing : null
+  const fixedCompanyId = editing && typeof editing === 'object' && 'companyId' in editing && !('id' in editing) ? editing.companyId : undefined
+
   return (
     <Stack spacing={2}>
       <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
         <Typography variant="h5" component="h1">
           Users
         </Typography>
-        <Button variant="contained" onClick={() => setEditing('new')}>
+        <Button variant="contained" onClick={() => setEditing(selected && tab.type !== 'ERGO' ? { companyId: selected.company.id } : 'new')}>
           New user
         </Button>
       </Stack>
+
+      <Tabs value={tab.param} onChange={(_e, value: string) => changeTab(value)} aria-label="User type" sx={{ borderBottom: 1, borderColor: 'divider' }}>
+        {TABS.map((t) => (
+          <Tab
+            key={t.param}
+            value={t.param}
+            label={`${t.label} (${users.filter((u) => u.companyType === t.type).length})`}
+          />
+        ))}
+      </Tabs>
+
       {(error ?? actionError) != null && <Alert severity="error">{problemMessage(error ?? actionError)}</Alert>}
-      <TableContainer component={Paper} variant="outlined">
-        {isLoading && <LinearProgress />}
-        <Table size="small">
-          <TableHead>
-            <TableRow>
-              <TableCell>Name</TableCell>
-              <TableCell>Email</TableCell>
-              <TableCell>Company</TableCell>
-              <TableCell>Roles</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell>Last sign-in</TableCell>
-              <TableCell align="right">Actions</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {users.map((user) => (
-              <TableRow key={user.id} hover>
-                <TableCell>
-                  {user.firstName} {user.lastName}
-                </TableCell>
-                <TableCell>{user.email}</TableCell>
-                <TableCell>{user.companyName}</TableCell>
-                <TableCell>
-                  <Stack direction="row" spacing={0.5} useFlexGap sx={{ flexWrap: 'wrap' }}>
-                    {user.roles.map((role) => (
-                      <Chip
-                        key={role}
-                        size="small"
-                        label={roleName(role)}
-                        variant={role === user.defaultRole ? 'filled' : 'outlined'}
-                      />
-                    ))}
+
+      {tab.type === 'ERGO' ? (
+        <Paper variant="outlined" sx={{ minWidth: 0 }}>
+          <UserTable users={typeUsers} loading={isLoading} showCompany={false} emptyText="No ERGO employees yet." {...actions} />
+        </Paper>
+      ) : (
+        <Paper variant="outlined" sx={{ minWidth: 0 }}>
+          <Stack
+            direction={{ xs: 'column', sm: 'row' }}
+            spacing={2}
+            sx={{ p: 2, justifyContent: 'space-between', alignItems: { sm: 'center' } }}
+          >
+            <TextField
+              select
+              size="small"
+              label={`Select ${tab.type === 'CUSTOMER' ? 'customer' : 'supplier'} company`}
+              value={selected?.company.id ?? ''}
+              onChange={(event) => setSelectedId(Number(event.target.value))}
+              disabled={tabCompanies.length === 0}
+              sx={{ minWidth: { sm: 340 } }}
+              helperText={selected ? `${selected.count} ${selected.count === 1 ? 'employee' : 'employees'} · ${selected.company.code}` : undefined}
+            >
+              {tabCompanies.map(({ company, count }) => (
+                <MenuItem key={company.id} value={company.id}>
+                  <Stack direction="row" spacing={1} sx={{ width: '100%', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span>{company.profile.name}</span>
+                    <Typography variant="caption" color="text.secondary">
+                      {company.status === 'ACTIVE' ? count : STATUS_LABELS[company.status]}
+                    </Typography>
                   </Stack>
-                </TableCell>
-                <TableCell>
-                  <Chip size="small" color={user.active ? 'success' : 'default'} label={user.active ? 'Active' : 'Inactive'} />
-                </TableCell>
-                <TableCell>{user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : '—'}</TableCell>
-                <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
-                  <Button size="small" onClick={() => setEditing(user)}>
-                    Edit
-                  </Button>
-                  <Button size="small" onClick={() => void resetPassword(user)}>
-                    Reset password
-                  </Button>
-                  {(user.actions.includes('DEACTIVATE') || user.actions.includes('ACTIVATE')) && (
-                    <Button size="small" color={user.active ? 'error' : 'primary'} onClick={() => void toggleActive(user)}>
-                      {user.active ? 'Deactivate' : 'Activate'}
-                    </Button>
-                  )}
-                  {user.actions.includes('DELETE') && (
-                    <Button size="small" color="error" onClick={() => setDeleting(user)}>
-                      Delete
-                    </Button>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
+                </MenuItem>
+              ))}
+            </TextField>
+            <Button
+              variant="outlined"
+              disabled={!selected || selected.company.status !== 'ACTIVE'}
+              onClick={() => selected && setEditing({ companyId: selected.company.id })}
+            >
+              Add employee
+            </Button>
+          </Stack>
+          {selected && selected.company.status !== 'ACTIVE' && (
+            <Alert severity="info" sx={{ mx: 2, mb: 2 }}>
+              {STATUS_LABELS[selected.company.status]}. Only an approved (active) company can have users.
+            </Alert>
+          )}
+          <UserTable
+            users={employees}
+            loading={isLoading}
+            showCompany={false}
+            emptyText={selected ? 'This company has no employees yet.' : `No ${tab.label.toLowerCase()} yet.`}
+            {...actions}
+          />
+        </Paper>
+      )}
+
       {editing && (
         <UserDialog
-          user={editing === 'new' ? null : editing}
+          user={dialogUser}
+          fixedCompanyId={fixedCompanyId}
           onClose={() => setEditing(null)}
           onCreated={(email, password) => {
             setEditing(null)
