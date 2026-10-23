@@ -2,12 +2,14 @@ package com.ergo.connect.rfq.domain;
 
 import java.util.Set;
 
-/** SRS §14.2 plus CANCELLED (SRS §12.6.3 "Cancel RFQ"). Changed only by RfqService's workflow actions. */
+/** SRS §14.2 as the flow doc reshapes it: no validate step, no side-by-side comparison. The statuses from SENT_TO_SUPPLIERS on
+ * summarise the RFQ's parts (each part has its own status, kept by the quotation module). Changed only by RfqService's
+ * workflow actions and the quotation module's progress report. */
 public enum RfqStatus {
 
-	DRAFT, SUBMITTED, UNDER_REVIEW, CLARIFICATION_REQUIRED, VALIDATED, SENT_TO_SUPPLIERS, QUOTES_PARTIAL,
-	QUOTES_COMPLETE, UNDER_COMPARISON, SENT_TO_CUSTOMER, CUSTOMER_ON_HOLD, CUSTOMER_REVISION_REQUESTED,
-	CUSTOMER_APPROVED, CUSTOMER_DECLINED, CLOSED, CANCELLED;
+	DRAFT, SUBMITTED, UNDER_REVIEW, CLARIFICATION_REQUIRED, SENT_TO_SUPPLIERS, QUOTES_PARTIAL, QUOTES_COMPLETE,
+	SENT_TO_CUSTOMER, CUSTOMER_ON_HOLD, CUSTOMER_REVISION_REQUESTED, CUSTOMER_APPROVED, CUSTOMER_DECLINED, CLOSED,
+	CANCELLED;
 
 	static final Set<RfqStatus> FINAL = Set.of(CUSTOMER_DECLINED, CLOSED, CANCELLED);
 
@@ -18,8 +20,7 @@ public enum RfqStatus {
 			case SUBMITTED -> CustomerStatus.SUBMITTED;
 			case UNDER_REVIEW -> CustomerStatus.UNDER_REVIEW;
 			case CLARIFICATION_REQUIRED -> CustomerStatus.CLARIFICATION_REQUIRED;
-			case VALIDATED, SENT_TO_SUPPLIERS, QUOTES_PARTIAL, QUOTES_COMPLETE, UNDER_COMPARISON ->
-				CustomerStatus.IN_PROGRESS;
+			case SENT_TO_SUPPLIERS, QUOTES_PARTIAL, QUOTES_COMPLETE -> CustomerStatus.IN_PROGRESS;
 			case SENT_TO_CUSTOMER -> CustomerStatus.QUOTE_RECEIVED;
 			case CUSTOMER_ON_HOLD -> CustomerStatus.ON_HOLD;
 			case CUSTOMER_REVISION_REQUESTED -> CustomerStatus.REVISION_REQUESTED;

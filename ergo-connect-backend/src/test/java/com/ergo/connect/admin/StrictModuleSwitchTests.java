@@ -33,6 +33,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import com.ergo.connect.IntegrationTest;
+import com.ergo.connect.TestRfq;
 import com.ergo.connect.TestUsers;
 import com.ergo.connect.TestUsers.Login;
 import com.ergo.connect.common.exception.ApiException;
@@ -118,20 +119,20 @@ class StrictModuleSwitchTests {
 		for (String cap : List.of("V", "NV")) {
 			cap("RFQ", cap);
 			// inviting suppliers creates quotations AND moves the RFQ: refused whole, whatever the caller's own rights
-			call(post("/api/rfqs/{id}/quotes", rfq), ergoRfq, invite(supplier)).andExpect(status().isConflict());
+			call(post("/api/rfqs/{id}/quotes", rfq), ergoRfq, invite(rfq, supplier)).andExpect(status().isConflict());
 			assertThat(count("SELECT count(*) FROM rfq_supplier_assignments WHERE rfq_id = ?", rfq)).isZero();
-			assertThat(rfqStatus(rfq)).isEqualTo("VALIDATED");
+			assertThat(rfqStatus(rfq)).isEqualTo("UNDER_REVIEW");
 		}
 		cap("RFQ", "O");
 		cap("QUOTATION", "V"); // the other module of the pair: refused by its own level (403) and nothing is created
-		call(post("/api/rfqs/{id}/quotes", rfq), ergoRfq, invite(supplier)).andExpect(status().isForbidden());
+		call(post("/api/rfqs/{id}/quotes", rfq), ergoRfq, invite(rfq, supplier)).andExpect(status().isForbidden());
 		cap("QUOTATION", "NV");
-		call(post("/api/rfqs/{id}/quotes", rfq), ergoRfq, invite(supplier)).andExpect(status().isForbidden());
+		call(post("/api/rfqs/{id}/quotes", rfq), ergoRfq, invite(rfq, supplier)).andExpect(status().isForbidden());
 		assertThat(count("SELECT count(*) FROM rfq_supplier_assignments WHERE rfq_id = ?", rfq)).isZero();
 
 		// back to O: exactly the normal operation, and no role was touched
 		cap("QUOTATION", "O");
-		call(post("/api/rfqs/{id}/quotes", rfq), ergoRfq, invite(supplier)).andExpect(status().isOk());
+		call(post("/api/rfqs/{id}/quotes", rfq), ergoRfq, invite(rfq, supplier)).andExpect(status().isOk());
 		assertThat(rfqStatus(rfq)).isEqualTo("SENT_TO_SUPPLIERS");
 		assertThat(SwitchTestSupport.grid(jdbc)).isEqualTo(gridBefore);
 	}
@@ -139,13 +140,13 @@ class StrictModuleSwitchTests {
 	@Test
 	void aSupplierQuoteIsFrozenWhileTheRfqIsReadOnlyAndHiddenWhileItIsHidden() throws Exception {
 		long rfq = validatedRfq();
-		call(post("/api/rfqs/{id}/quotes", rfq), ergoRfq, invite(supplier)).andExpect(status().isOk());
+		call(post("/api/rfqs/{id}/quotes", rfq), ergoRfq, invite(rfq, supplier)).andExpect(status().isOk());
 		long quote = invitationOf(rfq);
 		call(put("/api/quotes/{id}", quote), seller, quote("80")).andExpect(status().isOk());
 
 		cap("RFQ", "V"); // read-only: the supplier can still read it, but nothing it does may move the RFQ
 		call(get("/api/quotes/{id}", quote), seller, null).andExpect(status().isOk())
-			.andExpect(jsonPath("$.rfq.quotingOpen").value(false));
+			.andExpect(jsonPath("$.part.quotingOpen").value(false));
 		call(put("/api/quotes/{id}", quote), seller, quote("70")).andExpect(status().is4xxClientError());
 		call(post("/api/quotes/{id}/submit", quote), seller, null).andExpect(status().is4xxClientError());
 		assertThat(assignmentStatus(quote)).isEqualTo("DRAFT_SAVED");
@@ -169,22 +170,22 @@ class StrictModuleSwitchTests {
 	@Test
 	void theCustomerQuoteCycleCannotMoveAReadOnlyOrHiddenRfq() throws Exception {
 		long rfq = validatedRfq();
-		call(post("/api/rfqs/{id}/quotes", rfq), ergoRfq, invite(supplier)).andExpect(status().isOk());
+		call(post("/api/rfqs/{id}/quotes", rfq), ergoRfq, invite(rfq, supplier)).andExpect(status().isOk());
 		long quote = invitationOf(rfq);
 		call(put("/api/quotes/{id}", quote), seller, quote("80")).andExpect(status().isOk());
 		call(post("/api/quotes/{id}/submit", quote), seller, null).andExpect(status().isOk());
 
 		// ERGO's selection moves the RFQ to "under comparison"
 		cap("RFQ", "V");
-		call(post("/api/quotes/{id}/decision", quote), ergoRfq, "{\"decision\": \"SELECT_FOR_CUSTOMER\"}")
+		call(post("/api/quotes/{id}/accept", quote), ergoRfq, null)
 			.andExpect(status().is4xxClientError());
 		assertThat(assignmentStatus(quote)).isEqualTo("SUBMITTED");
 		cap("RFQ", "O");
-		call(post("/api/quotes/{id}/decision", quote), ergoRfq, "{\"decision\": \"SELECT_FOR_CUSTOMER\"}")
+		call(post("/api/quotes/{id}/accept", quote), ergoRfq, null)
 			.andExpect(status().isOk());
 
 		// sending the quote to the customer
-		String send = "{\"quoteId\": %d, \"type\": \"ERGO_QUOTE\", \"remarks\": \"ok\", \"ergoQuote\": {\"currencyId\": %d, \"productionPiecePrice\": 120, \"validityDate\": \"%s\"}}".formatted(quote, inr, java.time.LocalDate.now().plusDays(30));
+		String send = "{\"remarks\": \"ok\", \"lines\": [{\"quoteId\": %d, \"ergoQuote\": {\"currencyId\": %d, \"productionPiecePrice\": 120, \"validityDate\": \"%s\"}}]}".formatted(quote, inr, java.time.LocalDate.now().plusDays(30));
 		for (String cap : List.of("V", "NV")) {
 			cap("RFQ", cap);
 			call(post("/api/rfqs/{id}/customer-quotes", rfq), ergoRfq, send).andExpect(status().is4xxClientError());
@@ -196,7 +197,7 @@ class StrictModuleSwitchTests {
 
 		// the customer's answer (the approval that moves the RFQ on) waits for the RFQ module
 		long sent = JsonPath.<Number>read(call(get("/api/rfqs/{id}/customer-quotes", rfq), buyer, null).andReturn()
-			.getResponse().getContentAsString(), "$.quotes[0].id").longValue();
+			.getResponse().getContentAsString(), "$.quotations[0].id").longValue();
 		for (String cap : List.of("V", "NV")) {
 			cap("RFQ", cap);
 			call(post("/api/customer-quotes/{id}/respond", sent), buyer, "{\"response\": \"APPROVED\", \"comment\": \"Go ahead\"}")
@@ -386,24 +387,23 @@ class StrictModuleSwitchTests {
 		long id = idOf(call(post("/api/rfqs"), buyer, rfqForm()).andExpect(status().isCreated()));
 		call(post("/api/rfqs/{id}/submit", id), buyer, "{}").andExpect(status().isOk());
 		call(post("/api/rfqs/{id}/start-review", id), ergoRfq, null).andExpect(status().isOk());
-		call(post("/api/rfqs/{id}/validate", id), ergoRfq, "{}").andExpect(status().isOk());
 		return id;
 	}
 
 	/** RFQ -&gt; invitation -&gt; submitted quote -&gt; selected -&gt; sent -&gt; approved by the customer (SRS §14.2-14.4). */
 	private long approvedRfq() throws Exception {
 		long id = validatedRfq();
-		call(post("/api/rfqs/{id}/quotes", id), ergoRfq, invite(supplier)).andExpect(status().isOk());
+		call(post("/api/rfqs/{id}/quotes", id), ergoRfq, invite(id, supplier)).andExpect(status().isOk());
 		long quote = invitationOf(id);
 		call(put("/api/quotes/{id}", quote), seller, quote("80")).andExpect(status().isOk());
 		call(post("/api/quotes/{id}/submit", quote), seller, null).andExpect(status().isOk());
-		call(post("/api/quotes/{id}/decision", quote), ergoRfq, "{\"decision\": \"SELECT_FOR_CUSTOMER\"}")
+		call(post("/api/quotes/{id}/accept", quote), ergoRfq, null)
 			.andExpect(status().isOk());
 		call(post("/api/rfqs/{id}/customer-quotes", id), ergoRfq,
-				"{\"quoteId\": %d, \"type\": \"ERGO_QUOTE\", \"remarks\": \"ok\", \"ergoQuote\": {\"currencyId\": %d, \"productionPiecePrice\": 120, \"validityDate\": \"%s\"}}".formatted(quote, inr, java.time.LocalDate.now().plusDays(30)))
+				"{\"remarks\": \"ok\", \"lines\": [{\"quoteId\": %d, \"ergoQuote\": {\"currencyId\": %d, \"productionPiecePrice\": 120, \"validityDate\": \"%s\"}}]}".formatted(quote, inr, java.time.LocalDate.now().plusDays(30)))
 			.andExpect(status().isOk());
 		long sent = JsonPath.<Number>read(call(get("/api/rfqs/{id}/customer-quotes", id), buyer, null).andReturn()
-			.getResponse().getContentAsString(), "$.quotes[0].id").longValue();
+			.getResponse().getContentAsString(), "$.quotations[0].id").longValue();
 		call(post("/api/customer-quotes/{id}/respond", sent), buyer, "{\"response\": \"APPROVED\", \"comment\": \"Go ahead\"}")
 			.andExpect(status().isOk());
 		return id;
@@ -420,14 +420,17 @@ class StrictModuleSwitchTests {
 	private long npdProject(String stage) {
 		long rfq = jdbc.queryForObject("""
 				INSERT INTO rfqs (rfq_number, source_type, customer_company_id, created_by_user_id, status, priority,
-				                  part_number, currency_id)
-				VALUES (?, 'CUSTOMER', ?, ?, 'CUSTOMER_APPROVED', 'NORMAL', 'PN-RFQ', ?) RETURNING rfq_id""", Long.class,
+				                  currency_id)
+				VALUES (?, 'CUSTOMER', ?, ?, 'CUSTOMER_APPROVED', 'NORMAL', ?) RETURNING rfq_id""", Long.class,
 				"SR" + SEQ.incrementAndGet(), customer, ergoManagement.userId(), inr);
+		long rfqItemId = jdbc.queryForObject(
+				"INSERT INTO rfq_items (rfq_id, line_no, part_number) VALUES (?, 1, 'PN-RFQ') RETURNING rfq_item_id",
+				Long.class, rfq);
 		return jdbc.queryForObject("""
-				INSERT INTO npd_projects (npd_number, source_rfq_id, customer_company_id, supplier_company_id,
+				INSERT INTO npd_projects (npd_number, source_rfq_id, source_rfq_item_id, customer_company_id, supplier_company_id,
 				                          part_number, stage, created_by_user_id)
-				VALUES (?, ?, ?, ?, 'PN-NPD', ?, ?) RETURNING npd_project_id""", Long.class, "SN" + SEQ.incrementAndGet(),
-				rfq, customer, supplier, stage, ergoManagement.userId());
+				VALUES (?, ?, ?, ?, ?, 'PN-NPD', ?, ?) RETURNING npd_project_id""", Long.class, "SN" + SEQ.incrementAndGet(),
+				rfq, rfqItemId, customer, supplier, stage, ergoManagement.userId());
 	}
 
 	private static String inspection(String linkedModule, long linkedRecordId) {
@@ -446,10 +449,10 @@ class StrictModuleSwitchTests {
 
 	private String rfqForm() {
 		return """
-				{"partNumber": "PN-SW1", "description": "Flange", "materialSpec": "EN8", "targetQuoteDate": "%s",
-				 "currencyId": %d, "targetProductionPiecePrice": 99.5,
+				{"targetQuoteDate": "%s", "currencyId": %d, "items": [{"partNumber": "PN-SW1", "description": "Flange", "materialSpec": "EN8",
+				 "targetProductionPiecePrice": 99.5,
 				 "processSteps": [{"stepName": "Forging", "cycleTimeSeconds": 55, "sourcingType": "INHOUSE"},
-				                  {"stepName": "Machining"}]}"""
+				                  {"stepName": "Machining"}]}]}"""
 			.formatted(LocalDate.now().plusDays(10), inr);
 	}
 
@@ -466,9 +469,16 @@ class StrictModuleSwitchTests {
 			.formatted(LocalDate.now().plusDays(60), inr, price);
 	}
 
-	private String invite(long... suppliers) {
-		return "{\"supplierIds\": %s, \"responseDueDate\": \"%s\"}".formatted(java.util.Arrays.toString(suppliers),
-				LocalDate.now().plusDays(7));
+	private final java.util.Map<Long, String> inviteBodies = new java.util.HashMap<>();
+
+	/** The whole RFQ to the supplier. Built while the RFQ is still readable and reused: the tests hide the module. */
+	private String invite(long rfqId, long supplierId) throws Exception {
+		String cached = inviteBodies.get(rfqId);
+		if (cached == null) {
+			cached = TestRfq.wholeTo(mvc, ergoRfq, rfqId, supplierId);
+			inviteBodies.put(rfqId, cached);
+		}
+		return cached;
 	}
 
 	private long invitationOf(long rfq) throws Exception {

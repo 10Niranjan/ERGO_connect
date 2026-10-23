@@ -2,10 +2,13 @@ package com.ergo.connect.rfq.domain;
 
 import static com.ergo.connect.common.security.Role.CUSTOMER_KAM;
 import static com.ergo.connect.common.security.Role.CUSTOMER_MANAGEMENT;
+import static com.ergo.connect.common.security.Role.CUSTOMER_NPD;
+import static com.ergo.connect.common.security.Role.CUSTOMER_QUALITY;
 import static com.ergo.connect.common.security.Role.CUSTOMER_RFQ;
 import static com.ergo.connect.common.security.Role.ERGO_ADMIN;
 import static com.ergo.connect.common.security.Role.ERGO_KAM;
 import static com.ergo.connect.common.security.Role.ERGO_MANAGEMENT;
+import static com.ergo.connect.common.security.Role.ERGO_NPD;
 import static com.ergo.connect.common.security.Role.ERGO_RFQ;
 import static com.ergo.connect.rfq.domain.RfqStatus.CANCELLED;
 import static com.ergo.connect.rfq.domain.RfqStatus.CLOSED;
@@ -17,8 +20,7 @@ import static com.ergo.connect.rfq.domain.RfqStatus.QUOTES_COMPLETE;
 import static com.ergo.connect.rfq.domain.RfqStatus.QUOTES_PARTIAL;
 import static com.ergo.connect.rfq.domain.RfqStatus.SENT_TO_CUSTOMER;
 import static com.ergo.connect.rfq.domain.RfqStatus.SENT_TO_SUPPLIERS;
-import static com.ergo.connect.rfq.domain.RfqStatus.UNDER_COMPARISON;
-import static com.ergo.connect.rfq.domain.RfqStatus.VALIDATED;
+import static com.ergo.connect.rfq.domain.RfqStatus.UNDER_REVIEW;
 
 import java.time.LocalDate;
 import java.util.Collection;
@@ -26,6 +28,7 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -37,7 +40,6 @@ import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.common.record.Awaiting;
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.CurrentUser;
-import com.ergo.connect.common.security.ModuleAccess;
 import com.ergo.connect.common.security.ModuleAccess.Module;
 import com.ergo.connect.common.security.ModuleSwitch;
 import com.ergo.connect.documents.api.DocumentStore;
@@ -54,25 +56,21 @@ import com.ergo.connect.rfq.api.RfqApi;
 @Transactional
 class RfqApiService implements RfqApi {
 
-	/** Suppliers can be invited once validated, and more added while quotes come in. */
-	static final Set<RfqStatus> INVITING = EnumSet.of(VALIDATED, SENT_TO_SUPPLIERS, QUOTES_PARTIAL, QUOTES_COMPLETE);
-
-	/** Suppliers may work on their quotes (a customer revision request can re-open them). */
-	static final Set<RfqStatus> QUOTING = EnumSet.of(SENT_TO_SUPPLIERS, QUOTES_PARTIAL, QUOTES_COMPLETE,
-			UNDER_COMPARISON, CUSTOMER_REVISION_REQUESTED);
-
-	/** Statuses driven by the quotes; from comparison on, ERGO's actions drive the status. */
-	private static final Set<RfqStatus> PROGRESS = EnumSet.of(SENT_TO_SUPPLIERS, QUOTES_PARTIAL, QUOTES_COMPLETE);
-
-	/** ERGO evaluates quotes once some are in, until the customer has decided. */
-	static final Set<RfqStatus> EVALUATING = EnumSet.of(QUOTES_PARTIAL, QUOTES_COMPLETE, UNDER_COMPARISON,
+	/** Parts can be sent to suppliers while ERGO reviews the RFQ and while it is out, until it is finished. */
+	static final Set<RfqStatus> INVITING = EnumSet.of(UNDER_REVIEW, SENT_TO_SUPPLIERS, QUOTES_PARTIAL, QUOTES_COMPLETE,
 			SENT_TO_CUSTOMER, CUSTOMER_ON_HOLD, CUSTOMER_REVISION_REQUESTED);
 
-	/** ERGO may send the customer a quote: quotes are in and no earlier one awaits the customer's answer. */
-	static final Set<RfqStatus> OFFERING = EnumSet.of(QUOTES_PARTIAL, QUOTES_COMPLETE, UNDER_COMPARISON,
-			CUSTOMER_REVISION_REQUESTED);
+	/** What suppliers are told is "open": not closed or cancelled. The customer's decision on the RFQ never shows. */
+	static final Set<RfqStatus> SUPPLIER_OPEN = EnumSet.of(SENT_TO_SUPPLIERS, QUOTES_PARTIAL, QUOTES_COMPLETE,
+			SENT_TO_CUSTOMER, CUSTOMER_ON_HOLD, CUSTOMER_REVISION_REQUESTED, CUSTOMER_APPROVED, CUSTOMER_DECLINED);
+
+	/** The RFQ is out: quote work on its parts is possible (each part's own status decides what). */
+	static final Set<RfqStatus> QUOTING = EnumSet.of(SENT_TO_SUPPLIERS, QUOTES_PARTIAL, QUOTES_COMPLETE,
+			SENT_TO_CUSTOMER, CUSTOMER_ON_HOLD, CUSTOMER_REVISION_REQUESTED);
 
 	private final RfqRepository rfqs;
+
+	private final RfqItemRepository items;
 
 	private final RfqService rfqService;
 
@@ -82,9 +80,13 @@ class RfqApiService implements RfqApi {
 
 	private final Directory directory;
 
-	RfqApiService(RfqRepository rfqs, RfqService rfqService, MasterDataApi masterData, DocumentStore documents,
-			Directory directory) {
+	private final org.springframework.jdbc.core.JdbcTemplate jdbc;
+
+	RfqApiService(RfqRepository rfqs, RfqItemRepository items, RfqService rfqService, MasterDataApi masterData,
+			DocumentStore documents, Directory directory, org.springframework.jdbc.core.JdbcTemplate jdbc) {
+		this.jdbc = jdbc;
 		this.rfqs = rfqs;
+		this.items = items;
 		this.rfqService = rfqService;
 		this.masterData = masterData;
 		this.documents = documents;
@@ -102,12 +104,16 @@ class RfqApiService implements RfqApi {
 		Rfq r = rfqService.visible(me, rfqId);
 		// A read-only RFQ module offers no quoting work: every flag below is what lets the quotation module act.
 		boolean open = ModuleSwitch.writable(Module.RFQ);
-		return new RfqRef(r.id, r.number, r.customerCompanyId, r.partNumber, r.revision, r.description, r.currencyId,
+		return new RfqRef(r.id, r.number, r.customerCompanyId, r.currencyId, r.paymentTermId,
 				open && INVITING.contains(r.status), open && QUOTING.contains(r.status),
-				open && EVALUATING.contains(r.status), open && OFFERING.contains(r.status),
-				new Targets(r.targetToolingCost, r.targetPpapPiecePrice,
-						r.targetProductionPiecePrice, r.paymentTermId, r.moq, r.materialLeadTimeWeeks,
-						r.toolingLeadTimeDays, r.sampleLeadTimeDays, r.productionLeadTimeDays));
+				items.findByRfqIdOrderByLineNo(r.id).stream().map(RfqApiService::itemRef).toList());
+	}
+
+	private static ItemRef itemRef(RfqItem i) {
+		return new ItemRef(i.id, i.lineNo, i.partNumber, i.revision, i.description,
+				new Targets(i.targetToolingCost, i.targetPpapPiecePrice, i.targetProductionPiecePrice, i.moq,
+						i.materialLeadTimeWeeks, i.toolingLeadTimeDays, i.sampleLeadTimeDays,
+						i.productionLeadTimeDays));
 	}
 
 	@Override
@@ -145,14 +151,17 @@ class RfqApiService implements RfqApi {
 		ModuleSwitch.requireReadable(Module.RFQ);
 		Rfq r = rfqService.visible(me, rfqId);
 		return new CustomerRfqRef(r.id, r.number, r.customerCompanyId,
-				ModuleSwitch.writable(Module.RFQ) && (r.status == SENT_TO_CUSTOMER || r.status == CUSTOMER_ON_HOLD));
+				ModuleSwitch.writable(Module.RFQ) && (r.status == SENT_TO_CUSTOMER || r.status == CUSTOMER_ON_HOLD),
+				items.findByRfqIdOrderByLineNo(r.id).stream()
+					.map(i -> new CustomerItemRef(i.id, i.lineNo, i.partNumber, i.revision, i.description))
+					.toList());
 	}
 
 	@Override
 	@Transactional(readOnly = true)
 	public String numberOf(long rfqId) {
 		if (CurrentUser.get().companyType() != CompanyType.ERGO) {
-			throw ApiException.notFound("RFQ"); // an external role reads its RFQ number only through forCustomer/forSupplier
+			throw ApiException.notFound("RFQ"); // an external role reads its RFQ number only through forCustomer/forSupplierItem
 		}
 		ModuleSwitch.requireReadable(Module.RFQ);
 		return rfqs.findById(rfqId).map(r -> r.number).orElseThrow(() -> ApiException.notFound("RFQ"));
@@ -160,129 +169,142 @@ class RfqApiService implements RfqApi {
 
 	@Override
 	@Transactional(readOnly = true)
-	public SupplierRfq forSupplier(long rfqId) {
-		SupplierRfq rfq = forSupplier(List.of(rfqId)).get(rfqId);
-		if (rfq == null) {
+	public SupplierRfqItem forSupplierItem(long itemId) {
+		SupplierRfqItem item = forSupplierItems(List.of(itemId)).get(itemId);
+		if (item == null) {
 			throw ApiException.notFound("RFQ");
 		}
-		return rfq;
+		return item;
 	}
 
 	@Override
 	@Transactional(readOnly = true)
-	public Map<Long, SupplierRfq> forSupplier(Collection<Long> rfqIds) {
-		if (rfqIds.isEmpty() || !ModuleSwitch.readable(Module.RFQ)) {
+	public Map<Long, SupplierRfqItem> forSupplierItems(Collection<Long> itemIds) {
+		if (itemIds.isEmpty() || !ModuleSwitch.readable(Module.RFQ)) {
 			return Map.of();
 		}
 		boolean open = ModuleSwitch.writable(Module.RFQ);
-		List<Rfq> found = rfqs.findByIdIn(rfqIds);
-		Map<Long, Named> materials = masterData.describe(Ref.MATERIAL, ids(found, r -> r.materialId));
-		Map<Long, Named> coatings = masterData.describe(Ref.COATING, ids(found, r -> r.coatingId));
+		List<RfqItem> found = items.findByIdIn(itemIds);
+		Map<Long, Rfq> owners = rfqs.findByIdIn(found.stream().map(i -> i.rfqId).collect(Collectors.toSet())).stream()
+			.collect(Collectors.toMap(r -> r.id, Function.identity()));
+		Map<Long, Named> materials = masterData.describe(Ref.MATERIAL,
+				found.stream().map(i -> i.materialId).filter(Objects::nonNull).collect(Collectors.toSet()));
+		Map<Long, Named> coatings = masterData.describe(Ref.COATING,
+				found.stream().map(i -> i.coatingId).filter(Objects::nonNull).collect(Collectors.toSet()));
 		Map<Long, Named> processes = masterData.describe(Ref.PROCESS, found.stream()
-			.flatMap(r -> r.processSteps.stream().map(ProcessStep::processId)).filter(Objects::nonNull)
+			.flatMap(i -> i.processSteps.stream().map(ProcessStep::processId)).filter(Objects::nonNull)
 			.collect(Collectors.toSet()));
-		return found.stream().collect(Collectors.toMap(r -> r.id, r -> new SupplierRfq(r.id, r.number, r.partNumber,
-				r.revision, r.description, r.eau, r.netWeightKg, r.grossWeightKg, name(materials, r.materialId),
-				r.materialSpec, name(coatings, r.coatingId), r.coatingSpec,
-				r.processSteps.stream()
-					.map(s -> new PlannedStep(s.processId(), name(processes, s.processId()), s.stepName()))
-					.toList(),
-				open && QUOTING.contains(r.status))));
+		return found.stream().collect(Collectors.toMap(i -> i.id, i -> {
+			Rfq r = owners.get(i.rfqId);
+			return new SupplierRfqItem(r.id, r.number, i.id, i.partNumber, i.revision, i.description, i.eau,
+					i.netWeightKg, i.grossWeightKg, name(materials, i.materialId), i.materialSpec,
+					name(coatings, i.coatingId), i.coatingSpec,
+					i.processSteps.stream()
+						.map(s -> new PlannedStep(s.processId(), name(processes, s.processId()), s.stepName()))
+						.toList(),
+					open && SUPPLIER_OPEN.contains(r.status));
+		}));
 	}
 
 	@Override
 	@Transactional(readOnly = true)
-	public List<DocumentInfo> supplierDocuments(long rfqId) {
-		if (!ModuleSwitch.readable(Module.RFQ)) {
+	public List<DocumentInfo> supplierDocuments(long rfqId, Collection<Long> itemIds) {
+		if (itemIds.isEmpty() || !ModuleSwitch.readable(Module.RFQ)) {
 			return List.of();
 		}
+		Set<Long> shared = new java.util.HashSet<>(jdbc.queryForList(
+				"SELECT DISTINCT document_id FROM rfq_document_parts WHERE rfq_item_id = ANY (?)", Long.class,
+				(Object) itemIds.toArray(Long[]::new)));
 		return documents.list(RfqService.MODULE, rfqId).stream()
 			.filter(d -> d.visibility() == Visibility.SUPPLIER || d.visibility() == Visibility.ALL)
+			.filter(d -> shared.contains(d.id()))
 			.toList();
 	}
 
 	@Override
-	public void sentToSuppliers(long rfqId) {
+	public void distributing(long rfqId) {
 		ModuleSwitch.requireWritable(Module.RFQ); // a read-only or hidden RFQ module is not changed by another module either
 		Rfq rfq = rfqs.findById(rfqId).orElseThrow();
-		if (rfq.status == VALIDATED) {
+		if (!INVITING.contains(rfq.status)) {
+			throw ApiException.conflict("Parts can be sent to suppliers once ERGO is reviewing the RFQ");
+		}
+		RfqService.requireComplete(rfq, items.findByRfqIdOrderByLineNo(rfqId));
+		if (rfq.status == UNDER_REVIEW) {
 			rfq.status = SENT_TO_SUPPLIERS;
 		}
-		else if (!INVITING.contains(rfq.status)) {
-			throw ApiException.conflict("Suppliers can only be invited to a validated RFQ");
-		}
 	}
 
+	/**
+	 * Flow doc: each part has its own status; the RFQ's status summarises them. Decided parts (approved or rejected)
+	 * count as done; while a quotation waits for the customer the RFQ is "sent to customer", then on hold, then
+	 * correction required; otherwise it is "quotes in" once no part is unassigned or with a supplier.
+	 */
 	@Override
-	public void quoteProgress(long rfqId, int received, int awaited) {
+	public void quotationProgress(long rfqId, QuotationSummary s) {
 		ModuleSwitch.requireWritable(Module.RFQ); // a read-only or hidden RFQ module is not changed by another module either
+		jdbc.queryForList("SELECT rfq_id FROM rfqs WHERE rfq_id = ? FOR UPDATE", Long.class, rfqId); // one summary at a time
 		Rfq rfq = rfqs.findById(rfqId).orElseThrow();
-		if (PROGRESS.contains(rfq.status)) {
-			rfq.status = received == 0 ? SENT_TO_SUPPLIERS : awaited == 0 ? QUOTES_COMPLETE : QUOTES_PARTIAL;
+		if (!QUOTING.contains(rfq.status)) {
+			return;
 		}
+		rfq.status = derive(items.findByRfqIdOrderByLineNo(rfqId).size(), s);
 	}
 
-	@Override
-	public void comparing(long rfqId) {
-		ModuleSwitch.requireWritable(Module.RFQ); // a read-only or hidden RFQ module is not changed by another module either
-		Rfq rfq = rfqs.findById(rfqId).orElseThrow();
-		if (rfq.status == QUOTES_PARTIAL || rfq.status == QUOTES_COMPLETE) {
-			rfq.status = UNDER_COMPARISON;
+	static RfqStatus derive(int parts, QuotationSummary s) {
+		int decided = s.approved() + s.rejected();
+		int assigned = s.withSupplier() + s.underErgoReview() + s.accepted() + s.withCustomer() + s.onHold()
+				+ s.correction() + decided;
+		int unassigned = Math.max(0, parts - assigned);
+		if (parts > 0 && decided == parts) {
+			return s.approved() > 0 ? CUSTOMER_APPROVED : CUSTOMER_DECLINED;
 		}
-	}
-
-	@Override
-	public void sentToCustomer(long rfqId) {
-		ModuleSwitch.requireWritable(Module.RFQ); // a read-only or hidden RFQ module is not changed by another module either
-		Rfq rfq = rfqs.findById(rfqId).orElseThrow();
-		if (!OFFERING.contains(rfq.status)) {
-			throw ApiException.conflict("A quote can go to the customer once quotes are in, and not while the customer "
-					+ "is deciding on an earlier one");
+		if (s.withCustomer() > 0) {
+			return SENT_TO_CUSTOMER;
 		}
-		rfq.status = SENT_TO_CUSTOMER;
-	}
-
-	@Override
-	public void customerResponded(long rfqId, CustomerResponse response) {
-		ModuleSwitch.requireWritable(Module.RFQ); // a read-only or hidden RFQ module is not changed by another module either
-		Rfq rfq = rfqs.findById(rfqId).orElseThrow();
-		if (rfq.status != SENT_TO_CUSTOMER && rfq.status != CUSTOMER_ON_HOLD) {
-			throw ApiException.conflict("This RFQ is no longer waiting for your answer");
+		if (s.onHold() > 0) {
+			return CUSTOMER_ON_HOLD;
 		}
-		rfq.status = switch (response) {
-			case APPROVED -> CUSTOMER_APPROVED; // appears in the ready-for-NPD queue; never converted automatically
-			case ON_HOLD -> CUSTOMER_ON_HOLD; // not final: the customer answers again later
-			case REVISION_REQUESTED -> CUSTOMER_REVISION_REQUESTED;
-			case DECLINED -> CUSTOMER_DECLINED;
-		};
+		if (s.correction() > 0) {
+			return CUSTOMER_REVISION_REQUESTED;
+		}
+		if (s.underErgoReview() + s.accepted() + decided == 0) {
+			return SENT_TO_SUPPLIERS;
+		}
+		return s.withSupplier() + unassigned == 0 ? QUOTES_COMPLETE : QUOTES_PARTIAL;
 	}
 
 	@Override
 	@Transactional(readOnly = true)
-	public List<ApprovedRfq> customerApproved() {
+	public Optional<ItemRef> itemForErgo(long itemId) {
 		CurrentUser me = CurrentUser.get();
-		if (!ModuleSwitch.readable(Module.RFQ) || !ModuleAccess.canView(me.role(), Module.RFQ)) {
-			return List.of(); // a hidden RFQ module (switch or sheet) is closed here too
+		if (me.companyType() != CompanyType.ERGO || !ModuleSwitch.readable(Module.RFQ)) {
+			return Optional.empty();
 		}
-		List<Rfq> approved = switch (me.role()) {
-			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_RFQ, ERGO_NPD ->
-				rfqs.findByStatusInOrderByIdDesc(Set.of(CUSTOMER_APPROVED));
-			case ERGO_KAM -> {
-				Set<Long> accounts = directory.accountsOf(me.userId());
-				yield accounts.isEmpty() ? List.of()
-						: rfqs.findByStatusInOrderByIdDesc(Set.of(CUSTOMER_APPROVED)).stream()
-							.filter(r -> accounts.contains(r.customerCompanyId))
-							.toList();
-			}
-			default -> List.of(); // no RFQ visibility for this role, so nothing to convert either
-		};
-		return approved.stream()
-			.map(r -> new ApprovedRfq(r.id, r.number, r.customerCompanyId, r.partNumber, r.revision, r.description,
-					r.updatedAt))
+		return items.findById(itemId)
+			.filter(i -> me.role() == ERGO_NPD || rfqService.inScope(me, i.rfqId))
+			.map(RfqApiService::itemRef);
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public List<CustomerPart> customerParts() {
+		CurrentUser me = CurrentUser.get();
+		if (me.companyType() != CompanyType.CUSTOMER || !ModuleSwitch.readable(Module.RFQ)) {
+			return List.of();
+		}
+		List<Rfq> own = rfqs.findByCustomerCompanyIdOrderByIdDesc(me.companyId()).stream()
+			.filter(r -> r.status != CANCELLED && r.status != CLOSED)
+			.toList();
+		if (own.isEmpty()) {
+			return List.of();
+		}
+		Map<Long, Rfq> byId = own.stream().collect(Collectors.toMap(r -> r.id, Function.identity()));
+		return items.findByRfqIdInOrderByRfqIdAscLineNoAsc(byId.keySet()).stream()
+			.map(i -> new CustomerPart(i.rfqId, byId.get(i.rfqId).number, i.id, i.partNumber))
 			.toList();
 	}
 
-	/** CUSTOMER_APPROVED is excluded: {@link #customerApproved} already counts it separately. */
+	/** CUSTOMER_APPROVED is excluded: an approved RFQ has nothing left to do in RFQ. */
 	private static final Set<RfqStatus> DASHBOARD_EXCLUDED = EnumSet.of(CLOSED, CANCELLED, CUSTOMER_DECLINED,
 			CUSTOMER_APPROVED);
 
@@ -307,12 +329,16 @@ class RfqApiService implements RfqApi {
 		boolean ergo = me.companyType() == CompanyType.ERGO;
 		List<Rfq> open = visible.stream().filter(r -> !DASHBOARD_EXCLUDED.contains(r.status)).toList();
 		Map<Long, CompanyRef> customers = ergo ? directory.companies(ids(open, r -> r.customerCompanyId)) : Map.of();
+		Map<Long, List<String>> parts = open.isEmpty() ? Map.of()
+				: items.findByRfqIdInOrderByRfqIdAscLineNoAsc(open.stream().map(r -> r.id).toList()).stream()
+					.collect(Collectors.groupingBy(i -> i.rfqId,
+							Collectors.mapping(i -> i.partNumber, Collectors.toList())));
 		LocalDate today = LocalDate.now();
 		return open.stream()
 			.map(r -> new RfqDashboardItem(r.id, r.number, ergo ? companyName(customers, r.customerCompanyId) : null,
 					ergo ? r.status.name() : r.status.forCustomer().name(), ergo ? awaiting(r.status) : null,
 					r.targetQuoteDate, r.targetQuoteDate != null && r.targetQuoteDate.isBefore(today),
-					r.priority.name()))
+					r.priority.name(), parts.getOrDefault(r.id, List.of())))
 			.toList();
 	}
 
@@ -320,8 +346,7 @@ class RfqApiService implements RfqApi {
 	 * SRS does not define it. Statuses in {@link #DASHBOARD_EXCLUDED} never reach here. */
 	private static Awaiting awaiting(RfqStatus status) {
 		return switch (status) {
-			case DRAFT, SUBMITTED, UNDER_REVIEW, CLARIFICATION_REQUIRED, VALIDATED, QUOTES_COMPLETE, UNDER_COMPARISON,
-					CUSTOMER_REVISION_REQUESTED ->
+			case DRAFT, SUBMITTED, UNDER_REVIEW, CLARIFICATION_REQUIRED, QUOTES_COMPLETE, CUSTOMER_REVISION_REQUESTED ->
 				Awaiting.ERGO;
 			case SENT_TO_SUPPLIERS, QUOTES_PARTIAL -> Awaiting.SUPPLIER;
 			case SENT_TO_CUSTOMER, CUSTOMER_ON_HOLD -> Awaiting.CUSTOMER;

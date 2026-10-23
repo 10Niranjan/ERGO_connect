@@ -70,7 +70,7 @@ import com.ergo.connect.rfq.api.RfqApi;
  * <ul>
  * <li><b>{@code "rfq"}-linked documents shared with suppliers:</b> {@code RfqApi} has no supplier-invitation data of
  * its own (that lives in {@code quotation.domain}'s {@code Invitation}), so a supplier's scope for a {@code "rfq"}-
- * linked document is resolved by also asking {@code QuotationApi#supplierInvitedToRfq} - not one of the four facades
+ * linked document is resolved by also asking {@code QuotationApi#supplierMayReadRfqDocument} - not one of the four facades
  * literally named in the build brief, but the only module that actually holds this fact; {@code QuotationApi} was
  * already going to be a dependency here regardless, since {@code linked_module = "quotation"} documents (supplier
  * quote attachments) are themselves keyed by invitation id, not RFQ id, and belong to the quotation module, not RFQ.
@@ -426,7 +426,7 @@ public class DocumentService {
 			return false;
 		}
 		return switch (d.linkedModule) {
-			case "rfq" -> rfqApi.visibleToCaller(linkedRecordId) || quotationApi.supplierInvitedToRfq(linkedRecordId);
+			case "rfq" -> rfqApi.visibleToCaller(linkedRecordId) || quotationApi.supplierMayReadRfqDocument(linkedRecordId, d.id);
 			// M2: per file, not per invitation - a supplier's unsubmitted draft files stay private from ERGO.
 			case "quotation" -> quotationApi.fileVisibleToCaller(linkedRecordId, d.id);
 			case "OFP_SHIPMENT" -> ofpApi.shipmentVisibleToCaller(linkedRecordId);

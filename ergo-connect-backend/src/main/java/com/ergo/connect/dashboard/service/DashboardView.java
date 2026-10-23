@@ -6,6 +6,7 @@ import com.ergo.connect.npd.api.NpdApi.NpdDashboardItem;
 import com.ergo.connect.ofp.api.OfpApi.OrderDashboardItem;
 import com.ergo.connect.quality.api.QualityApi.DeviationDashboardItem;
 import com.ergo.connect.quality.api.QualityApi.NcrDashboardItem;
+import com.ergo.connect.quotation.api.QuotationApi.PartStatusItem;
 import com.ergo.connect.quotation.api.QuotationApi.SupplierQuoteItem;
 import com.ergo.connect.rfq.api.RfqApi.RfqDashboardItem;
 
@@ -36,16 +37,18 @@ public sealed interface DashboardView {
 			int quotesAwaitingCustomerApprovalCount, int approvedForConversionCount, int activeNpdCount,
 			List<NpdDashboardItem> delayedNpdProjects, List<NpdDashboardItem> highRiskNpdProjects,
 			List<OrderDashboardItem> ordersAtRisk, int openNcrCount, int openDeviationCount,
-			List<SupplierPerformanceRow> supplierPerformance, int pendingApprovalsCount) implements DashboardView {
+			List<SupplierPerformanceRow> supplierPerformance, int pendingApprovalsCount,
+			List<PartStatusItem> partItems) implements DashboardView {
 
 		public ManagementDashboard(int openRfqCount, int quotesPendingSubmissionCount,
 				int quotesAwaitingCustomerApprovalCount, int approvedForConversionCount, int activeNpdCount,
 				List<NpdDashboardItem> delayedNpdProjects, List<NpdDashboardItem> highRiskNpdProjects,
 				List<OrderDashboardItem> ordersAtRisk, int openNcrCount, int openDeviationCount,
-				List<SupplierPerformanceRow> supplierPerformance, int pendingApprovalsCount) {
+				List<SupplierPerformanceRow> supplierPerformance, int pendingApprovalsCount,
+				List<PartStatusItem> partItems) {
 			this(Audience.MANAGEMENT, openRfqCount, quotesPendingSubmissionCount, quotesAwaitingCustomerApprovalCount,
 					approvedForConversionCount, activeNpdCount, delayedNpdProjects, highRiskNpdProjects, ordersAtRisk,
-					openNcrCount, openDeviationCount, supplierPerformance, pendingApprovalsCount);
+					openNcrCount, openDeviationCount, supplierPerformance, pendingApprovalsCount, partItems);
 		}
 	}
 
@@ -60,14 +63,14 @@ public sealed interface DashboardView {
 	record FunctionalDashboard(Audience audience, List<RfqDashboardItem> rfqItems, List<NpdDashboardItem> npdItems,
 			List<OrderDashboardItem> orderItems, List<NcrDashboardItem> ncrItems,
 			List<DeviationDashboardItem> deviationItems, int overdueCount, int awaitingMeCount,
-			int awaitingExternalCount) implements DashboardView {
+			int awaitingExternalCount, List<PartStatusItem> partItems) implements DashboardView {
 
 		public FunctionalDashboard(List<RfqDashboardItem> rfqItems, List<NpdDashboardItem> npdItems,
 				List<OrderDashboardItem> orderItems, List<NcrDashboardItem> ncrItems,
 				List<DeviationDashboardItem> deviationItems, int overdueCount, int awaitingMeCount,
-				int awaitingExternalCount) {
+				int awaitingExternalCount, List<PartStatusItem> partItems) {
 			this(Audience.FUNCTIONAL, rfqItems, npdItems, orderItems, ncrItems, deviationItems, overdueCount,
-					awaitingMeCount, awaitingExternalCount);
+					awaitingMeCount, awaitingExternalCount, partItems);
 		}
 	}
 
@@ -77,11 +80,12 @@ public sealed interface DashboardView {
 	 * separate per-shipment widget (ARCHITECTURE.md §8, 2026-10-05: both are this module's own simplification, not
 	 * an SRS-given field). */
 	record CustomerDashboard(Audience audience, List<RfqDashboardItem> rfqItems, List<NpdDashboardItem> npdItems,
-			List<OrderDashboardItem> orderItems, List<NcrDashboardItem> ncrItems) implements DashboardView {
+			List<OrderDashboardItem> orderItems, List<NcrDashboardItem> ncrItems, List<PartStatusItem> partItems)
+			implements DashboardView {
 
 		public CustomerDashboard(List<RfqDashboardItem> rfqItems, List<NpdDashboardItem> npdItems,
-				List<OrderDashboardItem> orderItems, List<NcrDashboardItem> ncrItems) {
-			this(Audience.CUSTOMER, rfqItems, npdItems, orderItems, ncrItems);
+				List<OrderDashboardItem> orderItems, List<NcrDashboardItem> ncrItems, List<PartStatusItem> partItems) {
+			this(Audience.CUSTOMER, rfqItems, npdItems, orderItems, ncrItems, partItems);
 		}
 	}
 

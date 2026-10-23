@@ -10,13 +10,29 @@ import java.util.Optional;
  */
 public interface QuotationApi {
 
-	/** The supplier and reference behind an RFQ's approved customer quote. Never exposed to the customer (client
-	 * decision: NPD keeps the same supplier/customer anonymity as RFQ). */
-	record SelectedQuote(long supplierCompanyId, String supplierName, String quoteReference) {
+	/**
+	 * A part whose quotation the customer approved (flow doc §5: it proceeds to Customer NPD): the supplier and reference
+	 * behind it, never exposed to the customer (client decision: NPD keeps the same supplier/customer anonymity as RFQ).
+	 */
+	record ApprovedPart(long quoteId, long rfqId, long rfqItemId, long customerCompanyId, long supplierCompanyId,
+			String supplierName, String quoteReference, java.time.Instant approvedAt) {
 	}
 
-	/** Empty until the RFQ has an approved customer quote (SRS §14.4 CUSTOMER_APPROVED). */
-	Optional<SelectedQuote> selectedQuoteFor(long rfqId);
+	/** The approved parts within the current ERGO caller's scope (RFQ scope per role; empty for anyone else). */
+	List<ApprovedPart> approvedParts();
+
+	/** One approved part, if it is within the current ERGO caller's scope. */
+	Optional<ApprovedPart> approvedPart(long rfqItemId);
+
+	/**
+	 * Flow doc §4 dashboards: where each part stands, per caller - ERGO the full status and the supplier, the RFQ's
+	 * customer where its quotation stands (no supplier), a supplier its own parts (never what the customer decided).
+	 */
+	record PartStatusItem(long rfqId, String rfqNumber, long rfqItemId, String partNumber, String status,
+			String supplierName) {
+	}
+
+	List<PartStatusItem> partStatusItems();
 
 	/**
 	 * True if the current caller may see this supplier invitation (quotation.domain's own record scope, SRS §10.5) -
@@ -50,16 +66,16 @@ public interface QuotationApi {
 	boolean fileVisibleToCaller(long invitationId, long documentId);
 
 	/**
-	 * True if the current caller's company holds a supplier invitation for this RFQ, in any status - the
-	 * record-scope fact the documents module needs for {@code linked_module = "rfq"} documents shared with suppliers
-	 * (visibility SUPPLIER/ALL), since {@code RfqApi} itself has no invitation data. False for non-supplier callers.
+	 * True if this RFQ file is shared with suppliers for a part the current caller's company holds (flow doc: a supplier
+	 * sees only the parts sent to it) - the record-scope fact the documents module needs for {@code linked_module =
+	 * "rfq"} documents, since {@code RfqApi} itself has no invitation data. False for non-supplier callers.
 	 */
-	boolean supplierInvitedToRfq(long rfqId);
+	boolean supplierMayReadRfqDocument(long rfqId, long documentId);
 
 	/**
-	 * SRS §12.5.4 Supplier Dashboard ("Assigned RFQs", "Quote due items"): the caller's own invitations, status
-	 * already collapsed through {@link com.ergo.connect.quotation.domain.QuoteStatus#forSupplier} (never ERGO's
-	 * internal shortlist/selection ranking, SRS §11.1). Non-empty only for a supplier caller who actually quotes
+	 * SRS §12.5.4 Supplier Dashboard ("Assigned RFQs", "Quote due items"): the caller's own parts, status
+	 * already collapsed through {@link com.ergo.connect.quotation.domain.QuoteStatus#forSupplier} (never what
+	 * the customer decided about ERGO's quotation). Non-empty only for a supplier caller who actually quotes
 	 * (same role set as {@code QuoteService.SUPPLIER_QUOTERS}) - empty for every ERGO/customer role.
 	 */
 	record SupplierQuoteItem(long invitationId, String rfqNumber, String partNumber, String status,

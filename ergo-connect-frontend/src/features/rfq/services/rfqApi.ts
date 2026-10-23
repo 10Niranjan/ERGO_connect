@@ -5,11 +5,9 @@ export type RfqStatus =
   | 'SUBMITTED'
   | 'UNDER_REVIEW'
   | 'CLARIFICATION_REQUIRED'
-  | 'VALIDATED'
   | 'SENT_TO_SUPPLIERS'
   | 'QUOTES_PARTIAL'
   | 'QUOTES_COMPLETE'
-  | 'UNDER_COMPARISON'
   | 'SENT_TO_CUSTOMER'
   | 'CUSTOMER_ON_HOLD'
   | 'CUSTOMER_REVISION_REQUESTED'
@@ -38,18 +36,7 @@ export type Visibility = 'INTERNAL' | 'CUSTOMER' | 'SUPPLIER' | 'ALL'
 export type SourcingType = 'INHOUSE' | 'OUTSOURCED'
 
 /** Buttons the backend allows for this user, role and status right now. */
-export type RfqAction =
-  | 'EDIT'
-  | 'EDIT_NOTES'
-  | 'SUBMIT'
-  | 'START_REVIEW'
-  | 'REQUEST_CLARIFICATION'
-  | 'VALIDATE'
-  | 'REOPEN'
-  | 'CANCEL'
-  | 'CLOSE'
-  | 'CLONE'
-  | 'UPLOAD'
+export type RfqAction = 'EDIT' | 'EDIT_NOTES' | 'SUBMIT' | 'START_REVIEW' | 'REQUEST_CLARIFICATION' | 'CANCEL' | 'CLOSE' | 'CLONE' | 'UPLOAD'
 
 export interface Named {
   id: number
@@ -70,7 +57,22 @@ export interface StepView extends Omit<ProcessStep, 'processId'> {
   process: Named | null
 }
 
-export interface PartView {
+/** The customer's targets for a part: ERGO and that customer only. */
+export interface TargetsView {
+  targetToolingCost: number | null
+  targetPpapPiecePrice: number | null
+  targetProductionPiecePrice: number | null
+  materialLeadTimeWeeks: number | null
+  toolingLeadTimeDays: number | null
+  sampleLeadTimeDays: number | null
+  productionLeadTimeDays: number | null
+  moq: number | null
+}
+
+/** One part (item) of an RFQ with its technical data, targets and process flow. */
+export interface ItemView {
+  id: number
+  lineNo: number
   partNumber: string
   revision: string | null
   description: string | null
@@ -81,30 +83,18 @@ export interface PartView {
   materialSpec: string | null
   coating: Named | null
   coatingSpec: string | null
-  targetQuoteDate: string | null
-  priority: Priority
+  targets: TargetsView
   processSteps: StepView[]
-}
-
-/** The customer's targets: ERGO and that customer only. */
-export interface TargetsView {
-  currency: Named
-  targetToolingCost: number | null
-  targetPpapPiecePrice: number | null
-  targetProductionPiecePrice: number | null
-  paymentTerm: Named | null
-  materialLeadTimeWeeks: number | null
-  toolingLeadTimeDays: number | null
-  sampleLeadTimeDays: number | null
-  productionLeadTimeDays: number | null
-  moq: number | null
 }
 
 interface RfqViewBase {
   id: number
   number: string
-  part: PartView
-  targets: TargetsView
+  targetQuoteDate: string | null
+  priority: Priority
+  currency: Named
+  paymentTerm: Named | null
+  items: ItemView[]
   customerRemarks: string | null
   clarificationQuestion: string | null
   clarificationAnswer: string | null
@@ -138,16 +128,16 @@ export interface RfqRow {
   customer?: string
   /** ERGO only */
   owner?: string | null
-  partNumber: string
-  revision: string | null
-  description: string | null
+  /** The part numbers of the RFQ's items, in order. */
+  parts: string[]
   targetQuoteDate: string | null
   priority: Priority
   createdAt: string
 }
 
-export interface RfqForm {
-  customerCompanyId: number | null
+/** One part in the form. `id` is set for a part that already exists, so its quotes and history stay with it. */
+export interface ItemForm {
+  id: number | null
   partNumber: string
   revision: string | null
   description: string | null
@@ -158,21 +148,26 @@ export interface RfqForm {
   materialSpec: string | null
   coatingId: number | null
   coatingSpec: string | null
-  targetQuoteDate: string | null
-  priority: Priority
-  currencyId: number | null
   targetToolingCost: number | null
   targetPpapPiecePrice: number | null
   targetProductionPiecePrice: number | null
-  paymentTermId: number | null
   materialLeadTimeWeeks: number | null
   toolingLeadTimeDays: number | null
   sampleLeadTimeDays: number | null
   productionLeadTimeDays: number | null
   moq: number | null
   processSteps: ProcessStep[]
+}
+
+export interface RfqForm {
+  customerCompanyId: number | null
+  targetQuoteDate: string | null
+  priority: Priority
+  currencyId: number | null
+  paymentTermId: number | null
   customerRemarks: string | null
   internalNotes: string | null
+  items: ItemForm[]
 }
 
 export interface DocumentView {
@@ -183,6 +178,8 @@ export interface DocumentView {
   ownCompany: boolean
   canDelete: boolean
   createdAt: string
+  /** ERGO only: the parts a file shared with suppliers is shared for. */
+  itemIds: number[]
 }
 
 export interface AuditEntry {
@@ -198,7 +195,7 @@ export interface AuditEntry {
 }
 
 /** Workflow endpoints that take an optional/required comment. */
-export type RfqCommand = 'submit' | 'start-review' | 'request-clarification' | 'validate' | 'reopen' | 'cancel' | 'close'
+export type RfqCommand = 'submit' | 'start-review' | 'request-clarification' | 'cancel' | 'close'
 
 export const rfqApi = api.enhanceEndpoints({ addTagTypes: ['Rfq', 'RfqDocuments'] }).injectEndpoints({
   endpoints: (build) => ({
@@ -235,20 +232,21 @@ export const rfqApi = api.enhanceEndpoints({ addTagTypes: ['Rfq', 'RfqDocuments'
       query: (id) => `/rfqs/${id}/documents`,
       providesTags: (_r, _e, id) => [{ type: 'RfqDocuments', id }],
     }),
-    uploadRfqDocument: build.mutation<DocumentView, { id: number; file: File; visibility?: Visibility }>({
-      query: ({ id, file, visibility }) => {
+    uploadRfqDocument: build.mutation<DocumentView, { id: number; file: File; visibility?: Visibility; itemIds?: number[] }>({
+      query: ({ id, file, visibility, itemIds }) => {
         const body = new FormData()
         body.append('file', file)
         if (visibility) body.append('visibility', visibility)
+        itemIds?.forEach((itemId) => body.append('itemIds', String(itemId)))
         return { url: `/rfqs/${id}/documents`, method: 'POST', body }
       },
       invalidatesTags: (_r, _e, { id }) => [{ type: 'RfqDocuments', id }],
     }),
-    setRfqDocumentVisibility: build.mutation<DocumentView, { id: number; documentId: number; visibility: Visibility }>({
-      query: ({ id, documentId, visibility }) => ({
+    setRfqDocumentVisibility: build.mutation<DocumentView, { id: number; documentId: number; visibility: Visibility; itemIds?: number[] }>({
+      query: ({ id, documentId, visibility, itemIds }) => ({
         url: `/rfqs/${id}/documents/${documentId}/visibility`,
         method: 'PUT',
-        body: { visibility },
+        body: { visibility, itemIds: itemIds ?? [] },
       }),
       invalidatesTags: (_r, _e, { id }) => [{ type: 'RfqDocuments', id }],
     }),

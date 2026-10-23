@@ -1,10 +1,9 @@
 package com.ergo.connect.quotation.domain;
 
 import java.time.Instant;
+import java.time.LocalDate;
 
 import org.hibernate.annotations.CreationTimestamp;
-
-import com.ergo.connect.common.audit.AuditExclude;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -13,29 +12,33 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
-/** ERGO's written assessment of one RFQ's quotes (SRS §13.3.7). ERGO-internal; audited field by field. */
+/**
+ * The parts of an RFQ ERGO sent to one supplier in one go (flow doc §2: the whole RFQ, or a sub-RFQ of some of its
+ * parts). The supplier's quotes are per part ({@link Invitation}); this only groups them.
+ */
 @Entity
-@Table(name = "quote_comparisons")
-class Comparison {
+@Table(name = "sub_rfqs")
+class SubRfq {
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
-	@Column(name = "quote_comparison_id")
+	@Column(name = "sub_rfq_id")
 	Long id;
 
 	@Column(updatable = false)
 	Long rfqId;
 
-	String internalSummary;
+	@Column(updatable = false)
+	int subNo;
 
-	String recommendationSummary;
+	@Column(updatable = false)
+	Long supplierCompanyId;
 
-	/** Last saved by and at: every audit row records these anyway. */
-	@AuditExclude
-	Long preparedByUserId;
+	@Column(updatable = false)
+	LocalDate responseDueDate;
 
-	@AuditExclude
-	Instant preparedAt;
+	@Column(updatable = false)
+	Long sentByUserId;
 
 	@CreationTimestamp
 	@Column(updatable = false)

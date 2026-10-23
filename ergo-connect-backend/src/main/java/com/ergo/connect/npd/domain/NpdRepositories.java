@@ -23,7 +23,7 @@ interface NpdProjectRepository extends Repository<NpdProject, Long> {
 	List<NpdProject> findBySupplierCompanyIdOrderByIdDesc(Long supplierCompanyId);
 
 	/** Defense in depth: the DB's UNIQUE constraint is the real guarantee. */
-	boolean existsBySourceRfqId(Long sourceRfqId);
+	boolean existsBySourceRfqItemId(Long sourceRfqItemId);
 
 }
 

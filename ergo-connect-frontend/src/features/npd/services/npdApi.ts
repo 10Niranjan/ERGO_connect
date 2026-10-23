@@ -48,9 +48,11 @@ export type ApprovalType =
   | 'CUSTOMER_QUALITY_ACCEPTANCE'
 export type ApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
 
-/** SRS §12.8.2: a customer-approved RFQ waiting for manual conversion, not yet converted. */
+/** SRS §12.8.2: a customer-approved RFQ part waiting for manual conversion, not yet converted. */
 export interface ConversionQueueRow {
   rfqId: number
+  /** The approved part: each approved part of an RFQ converts on its own (flow doc §5). */
+  rfqItemId: number
   rfqNumber: string
   customerName: string
   partNumber: string
@@ -328,8 +330,8 @@ const npdApi = api.enhanceEndpoints({ addTagTypes: ['Npd', 'Rfq'] }).injectEndpo
       query: () => '/npd/conversion-queue',
       providesTags: ['Npd'],
     }),
-    convertRfq: build.mutation<NpdView, { rfqId: number; comment?: string }>({
-      query: ({ rfqId, comment }) => ({ url: `/npd/convert/${rfqId}`, method: 'POST', body: { comment: comment ?? null } }),
+    convertRfq: build.mutation<NpdView, { rfqItemId: number; comment?: string }>({
+      query: ({ rfqItemId, comment }) => ({ url: `/npd/convert/${rfqItemId}`, method: 'POST', body: { comment: comment ?? null } }),
       invalidatesTags: ['Npd', 'Rfq'],
     }),
     npdList: build.query<NpdListRow[], void>({ query: () => '/npd', providesTags: ['Npd'] }),

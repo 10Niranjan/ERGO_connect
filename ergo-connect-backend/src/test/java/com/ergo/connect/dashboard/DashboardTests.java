@@ -95,11 +95,7 @@ class DashboardTests {
 	private long createRfq(Login buyer, String partNumber) throws Exception {
 		return JsonPath
 			.<Number>read(mvc
-				.perform(json(post("/api/rfqs"), """
-						{"partNumber": "%s", "description": "Bracket", "materialSpec": "EN8",
-						 "targetQuoteDate": "%s", "currencyId": %d, "targetProductionPiecePrice": 99.5,
-						 "processSteps": [{"stepName": "Casting"}]}"""
-					.formatted(partNumber, LocalDate.now().plusDays(10), inr), buyer))
+				.perform(json(post("/api/rfqs"), com.ergo.connect.TestRfq.form(inr, partNumber), buyer))
 				.andExpect(status().isCreated())
 				.andReturn()
 				.getResponse()
@@ -204,19 +200,23 @@ class DashboardTests {
 		long rfqId = createRfq(buyerA, "PN-FOLD");
 		submit(rfqId, buyerA);
 		mvc.perform(json(post("/api/rfqs/{id}/start-review", rfqId), "{}", ergoRfq)).andExpect(status().isOk());
-		mvc.perform(json(post("/api/rfqs/{id}/validate", rfqId), "{}", ergoRfq)).andExpect(status().isOk());
+		com.ergo.connect.TestRfq.invite(mvc, ergoRfq, rfqId, supplier); // out with a supplier (flow doc §2)
 
 		// ERGO sees the real status and who the system thinks should act next (ergoRfq, not ergoAdmin: the
 		// ManagementDashboard shape has no rfqItems field at all, only counts).
 		mvc.perform(get("/api/dashboard").header(HttpHeaders.AUTHORIZATION, ergoRfq.bearer()))
-			.andExpect(jsonPath("$.rfqItems[?(@.id == %d)].status".formatted(rfqId)).value(hasItem("VALIDATED")));
+			.andExpect(jsonPath("$.rfqItems[?(@.id == %d)].status".formatted(rfqId)).value(hasItem("SENT_TO_SUPPLIERS")))
+			.andExpect(jsonPath("$.partItems[?(@.rfqId == %d)].status".formatted(rfqId)).value(hasItem("NOT_STARTED")));
 
 		// The customer sees only the collapsed, customer-facing status (SRS §8 2026-09-24), and no awaiting field.
 		mvc.perform(get("/api/dashboard").header(HttpHeaders.AUTHORIZATION, buyerA.bearer()))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.rfqItems[0].status").value("IN_PROGRESS"))
 			.andExpect(jsonPath("$.rfqItems[0].awaiting").value(nullValue()))
-			.andExpect(jsonPath("$.rfqItems[0].customerName").value(nullValue()));
+			.andExpect(jsonPath("$.rfqItems[0].customerName").value(nullValue()))
+			// flow doc §4: the dashboard shows each part's status; a customer reads it collapsed and never sees a supplier
+			.andExpect(jsonPath("$.partItems[0].status").value("IN_PROGRESS"))
+			.andExpect(jsonPath("$.partItems[0].supplierName").value(nullValue()));
 	}
 
 	/** Security review M2 (ARCHITECTURE.md §8, 2026-10-05 Phase 7c): the NCR/order isolation the RFQ tests above
@@ -246,41 +246,11 @@ class DashboardTests {
 		long rfqId = createRfq(buyerA, "PN-NPD-RISK");
 		submit(rfqId, buyerA);
 		mvc.perform(json(post("/api/rfqs/{id}/start-review", rfqId), "{}", ergoRfq)).andExpect(status().isOk());
-		mvc.perform(json(post("/api/rfqs/{id}/validate", rfqId), "{}", ergoRfq)).andExpect(status().isOk());
-		mvc.perform(json(post("/api/rfqs/{id}/quotes", rfqId),
-				"{\"supplierIds\": [%d], \"responseDueDate\": \"%s\"}".formatted(supplier, LocalDate.now().plusDays(7)),
-				ergoRfq)).andExpect(status().isOk());
-		long invitationId = JsonPath
-			.<Number>read(mvc.perform(get("/api/quotes").header(HttpHeaders.AUTHORIZATION, seller.bearer()))
-				.andReturn()
-				.getResponse()
-				.getContentAsString(), "$[0].id")
-			.longValue();
-		mvc.perform(json(put("/api/quotes/{id}",
-				invitationId), """
-				{"validityDate": "%s", "currencyId": %d, "productionPiecePrice": 90,
-				 "toolingCostTotal": 50000, "rawMaterialCost": 40, "processingCost": 20, "overheadCost": 8,
-				 "packagingCost": 2, "profit": 6, "moq": 500, "productionLeadTimeDays": 45}"""
-				.formatted(LocalDate.now().plusDays(60), inr), seller))
-			.andExpect(status().isOk());
-		mvc.perform(json(post("/api/quotes/{id}/submit", invitationId), "{}", seller)).andExpect(status().isOk());
-		mvc.perform(json(post("/api/quotes/{id}/decision", invitationId), "{\"decision\": \"SELECT_FOR_CUSTOMER\"}",
-				ergoRfq)).andExpect(status().isOk());
-		mvc.perform(json(post("/api/rfqs/{id}/customer-quotes", rfqId),
-				"{\"quoteId\": %d, \"type\": \"ERGO_QUOTE\", \"remarks\": \"ok\", \"ergoQuote\": {\"currencyId\": %d, \"productionPiecePrice\": 120, \"validityDate\": \"%s\"}}".formatted(invitationId, inr, java.time.LocalDate.now().plusDays(30)),
-				ergoRfq)).andExpect(status().isOk());
-		long sentQuoteId = JsonPath
-			.<Number>read(mvc
-				.perform(get("/api/rfqs/{id}/customer-quotes", rfqId).header(HttpHeaders.AUTHORIZATION, buyerA.bearer()))
-				.andReturn()
-				.getResponse()
-				.getContentAsString(), "$.quotes[0].id")
-			.longValue();
-		mvc.perform(json(post("/api/customer-quotes/{id}/respond", sentQuoteId), "{\"response\": \"APPROVED\", \"comment\": \"Go ahead\"}",
-				buyerA)).andExpect(status().isOk());
+		com.ergo.connect.TestRfq.approveWhole(mvc, buyerA, ergoRfq, seller, supplier, inr, rfqId, "90");
 
 		long npdId = JsonPath
-			.<Number>read(mvc.perform(json(post("/api/npd/convert/{id}", rfqId), "{}", ergoNpd))
+			.<Number>read(mvc.perform(json(post("/api/npd/convert/{id}",
+					com.ergo.connect.TestRfq.itemIds(mvc, ergoRfq, rfqId).getFirst()), "{}", ergoNpd))
 				.andExpect(status().isCreated())
 				.andReturn()
 				.getResponse()

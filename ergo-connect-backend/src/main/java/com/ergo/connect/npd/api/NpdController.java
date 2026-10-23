@@ -79,11 +79,11 @@ class NpdController {
 		return npd.conversionQueue();
 	}
 
-	@PostMapping("/convert/{rfqId}")
+	@PostMapping("/convert/{rfqItemId}")
 	@PreAuthorize(OWNERS)
 	@ResponseStatus(HttpStatus.CREATED)
-	NpdView convert(@PathVariable long rfqId, @Valid @RequestBody CommentForm body) {
-		return npd.convert(rfqId, body.comment());
+	NpdView convert(@PathVariable long rfqItemId, @Valid @RequestBody CommentForm body) {
+		return npd.convert(rfqItemId, body.comment());
 	}
 
 	@GetMapping

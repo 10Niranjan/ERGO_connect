@@ -24,3 +24,19 @@ interface RfqRepository extends Repository<Rfq, Long> {
 	List<Rfq> findByStatusInOrderByIdDesc(Collection<RfqStatus> statuses);
 
 }
+
+interface RfqItemRepository extends Repository<RfqItem, Long> {
+
+	RfqItem save(RfqItem item);
+
+	void delete(RfqItem item);
+
+	Optional<RfqItem> findById(Long id);
+
+	List<RfqItem> findByIdIn(Collection<Long> ids);
+
+	List<RfqItem> findByRfqIdOrderByLineNo(Long rfqId);
+
+	List<RfqItem> findByRfqIdInOrderByRfqIdAscLineNoAsc(Collection<Long> rfqIds);
+
+}

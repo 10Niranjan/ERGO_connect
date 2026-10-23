@@ -108,9 +108,9 @@ class AccessIsolationTests {
 		String rfq = mvc.perform(post("/api/rfqs").header(HttpHeaders.AUTHORIZATION, buyerA.bearer())
 			.contentType(MediaType.APPLICATION_JSON)
 			.content("""
-					{"partNumber": "PN-ISO", "revision": "A", "description": "Flange", "eau": 5000, "materialId": %d,
-					 "targetQuoteDate": "%s", "currencyId": %d, "targetProductionPiecePrice": 42.50,
-					 "processSteps": [{"processId": %d, "stepName": "Step 1"}], "customerRemarks": "x"}"""
+					{"targetQuoteDate": "%2$s", "currencyId": %3$d, "customerRemarks": "x",
+					 "items": [{"partNumber": "PN-ISO", "revision": "A", "description": "Flange", "eau": 5000, "materialId": %1$d,
+					  "targetProductionPiecePrice": 42.50, "processSteps": [{"processId": %4$d, "stepName": "Step 1"}]}]}"""
 				.formatted(users.masterEntry("materials", "material"), LocalDate.now().plusDays(14), users.currency("INR"),
 						users.masterEntry("processes", "process"))))
 			.andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
@@ -154,7 +154,7 @@ class AccessIsolationTests {
 				// writing and every ERGO workflow action is refused
 				for (String path : List.of("/api/ofp/orders/" + orderId + "/advance", "/api/ofp/orders/" + orderId + "/hold",
 						"/api/ofp/orders/" + orderId + "/close", "/api/rfqs/" + rfqId + "/submit",
-						"/api/rfqs/" + rfqId + "/start-review", "/api/rfqs/" + rfqId + "/validate",
+						"/api/rfqs/" + rfqId + "/start-review", "/api/rfqs/" + rfqId + "/request-clarification",
 						"/api/rfqs/" + rfqId + "/close", "/api/rfqs/" + rfqId + "/cancel")) {
 					int s = statusOf(post(path).header(HttpHeaders.AUTHORIZATION, bearer)
 						.contentType(MediaType.APPLICATION_JSON)

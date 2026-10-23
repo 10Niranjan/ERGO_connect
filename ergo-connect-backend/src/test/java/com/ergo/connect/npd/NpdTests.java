@@ -27,6 +27,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import com.ergo.connect.IntegrationTest;
+import com.ergo.connect.TestRfq;
 import com.ergo.connect.TestUsers;
 import com.ergo.connect.TestUsers.Login;
 import com.jayway.jsonpath.JsonPath;
@@ -115,10 +116,10 @@ class NpdTests {
 		assertThat(actionsForNpd).hasSize(1);
 		assertThat(actionsForNpd.getFirst()).containsExactly("CONVERT");
 
-		call(post("/api/npd/convert/{id}", rfqId), ergoRfq, "{}").andExpect(status().isForbidden());
+		call(post("/api/npd/convert/{id}", partOf(rfqId)), ergoRfq, "{}").andExpect(status().isForbidden());
 		long projectId = JsonPath
 			.<Number>read(
-					call(post("/api/npd/convert/{id}", rfqId), ergoNpd, "{\"comment\": \"Kickoff\"}")
+					call(post("/api/npd/convert/{id}", partOf(rfqId)), ergoNpd, "{\"comment\": \"Kickoff\"}")
 						.andExpect(status().isCreated())
 						.andExpect(jsonPath("$.npdNumber", containsString("NPD-")))
 						.andExpect(jsonPath("$.stage").value("PLANNING"))
@@ -129,7 +130,7 @@ class NpdTests {
 		// the queue no longer offers an already-converted RFQ, and converting it again is a conflict
 		call(get("/api/npd/conversion-queue"), ergoNpd, null)
 			.andExpect(jsonPath("$[*].rfqId", not(hasItem((int) rfqId))));
-		call(post("/api/npd/convert/{id}", rfqId), ergoManagement, "{}").andExpect(status().isConflict());
+		call(post("/api/npd/convert/{id}", partOf(rfqId)), ergoManagement, "{}").andExpect(status().isConflict());
 
 		// the very first stage_history row: PLANNING with no previous stage
 		List<String> stages = jdbc.queryForList("""
@@ -149,18 +150,16 @@ class NpdTests {
 	void convertingAnRfqWithNoApprovedQuoteFails() throws Exception {
 		long id = JsonPath
 			.<Number>read(call(post("/api/rfqs"), buyerA, """
-					{"partNumber": "PN-NOQ", "description": "Bracket", "materialSpec": "EN8",
-					 "targetQuoteDate": "%s", "currencyId": %d, "targetProductionPiecePrice": 99.5,
-					 "processSteps": [{"stepName": "Casting"}]}""".formatted(LocalDate.now().plusDays(10), inr))
+					{"targetQuoteDate": "%s", "currencyId": %d, "items": [{"partNumber": "PN-NOQ", "description": "Bracket", "materialSpec": "EN8", "targetProductionPiecePrice": 99.5,
+					 "processSteps": [{"stepName": "Casting"}]}]}""".formatted(LocalDate.now().plusDays(10), inr))
 				.andReturn().getResponse().getContentAsString(), "$.id")
 			.longValue();
 		call(post("/api/rfqs/{id}/submit", id), buyerA, "{}").andExpect(status().isOk());
 		call(post("/api/rfqs/{id}/start-review", id), ergoRfq, null).andExpect(status().isOk());
-		call(post("/api/rfqs/{id}/validate", id), ergoRfq, "{}").andExpect(status().isOk());
 
 		// ERGO_ADMIN (unrestricted RFQ scope), not ERGO_NPD: RfqApi.forErgo only lets ERGO_NPD see RFQs that are
 		// already CUSTOMER_APPROVED, so ERGO_NPD would get 404 here rather than reach the "no approved quote" check.
-		call(post("/api/npd/convert/{id}", id), ergoManagement, "{}").andExpect(status().isUnprocessableContent())
+		call(post("/api/npd/convert/{id}", partOf(id)), ergoManagement, "{}").andExpect(status().isUnprocessableContent())
 			.andExpect(jsonPath("$.detail", containsString("approved customer quote")));
 	}
 
@@ -810,7 +809,7 @@ class NpdTests {
 				String.class, supplier);
 		long projectId = JsonPath
 			.<Number>read(
-					call(post("/api/npd/convert/{id}", rfqId), ergoNpd,
+					call(post("/api/npd/convert/{id}", partOf(rfqId)), ergoNpd,
 							"{\"comment\": \"Kickoff with %s\"}".formatted(supplierName)).andExpect(status().isCreated())
 						.andReturn()
 						.getResponse()
@@ -1084,45 +1083,21 @@ class NpdTests {
 
 	/** Full RFQ->quotation flow up to CUSTOMER_APPROVED with one supplier's quote approved (SRS §14.2-14.4). */
 	private long approvedRfq(Login buyer, String price) throws Exception {
-		long id = JsonPath
-			.<Number>read(call(post("/api/rfqs"), buyer, """
-					{"partNumber": "PN-NPD", "description": "Bracket", "materialSpec": "EN8",
-					 "targetQuoteDate": "%s", "currencyId": %d, "targetProductionPiecePrice": 99.5,
-					 "processSteps": [{"stepName": "Casting"}]}""".formatted(LocalDate.now().plusDays(10), inr))
-				.andReturn().getResponse().getContentAsString(), "$.id")
-			.longValue();
+		long id = TestRfq.create(mvc, buyer, TestRfq.form(inr, "PN-NPD"));
 		call(post("/api/rfqs/{id}/submit", id), buyer, "{}").andExpect(status().isOk());
 		call(post("/api/rfqs/{id}/start-review", id), ergoRfq, null).andExpect(status().isOk());
-		call(post("/api/rfqs/{id}/validate", id), ergoRfq, "{}").andExpect(status().isOk());
-		call(post("/api/rfqs/{id}/quotes", id), ergoRfq,
-				"{\"supplierIds\": [%d], \"responseDueDate\": \"%s\"}".formatted(supplier, LocalDate.now().plusDays(7)))
-			.andExpect(status().isOk());
-		long invitationId = invitationOf(id, seller);
-		call(put("/api/quotes/{id}", invitationId), seller, """
-				{"validityDate": "%s", "currencyId": %d, "productionPiecePrice": %s, "toolingCostTotal": 50000,
-				 "rawMaterialCost": 40, "processingCost": 20, "overheadCost": 8, "packagingCost": 2, "profit": 6,
-				 "moq": 500, "productionLeadTimeDays": 45}""".formatted(LocalDate.now().plusDays(60), inr, price))
-			.andExpect(status().isOk());
-		call(post("/api/quotes/{id}/submit", invitationId), seller, null).andExpect(status().isOk());
-		call(post("/api/quotes/{id}/decision", invitationId), ergoRfq, "{\"decision\": \"SELECT_FOR_CUSTOMER\"}")
-			.andExpect(status().isOk());
-		call(post("/api/rfqs/{id}/customer-quotes", id), ergoRfq,
-				"{\"quoteId\": %d, \"type\": \"ERGO_QUOTE\", \"remarks\": \"ok\", \"ergoQuote\": {\"currencyId\": %d, \"productionPiecePrice\": 120, \"validityDate\": \"%s\"}}".formatted(invitationId, inr, java.time.LocalDate.now().plusDays(30)))
-			.andExpect(status().isOk());
-		long sent = JsonPath
-			.<Number>read(
-					call(get("/api/rfqs/{id}/customer-quotes", id), buyer, null).andReturn().getResponse()
-						.getContentAsString(),
-					"$.quotes[0].id")
-			.longValue();
-		call(post("/api/customer-quotes/{id}/respond", sent), buyer, "{\"response\": \"APPROVED\", \"comment\": \"Go ahead\"}")
-			.andExpect(status().isOk());
+		TestRfq.approveWhole(mvc, buyer, ergoRfq, seller, supplier, inr, id, price);
 		return id;
+	}
+
+	/** The id of the RFQ's first part: NPD projects start from approved parts (flow doc §5). */
+	private long partOf(long rfqId) throws Exception {
+		return TestRfq.itemIds(mvc, ergoRfq, rfqId).getFirst();
 	}
 
 	private long convert(long rfqId) throws Exception {
 		return JsonPath
-			.<Number>read(call(post("/api/npd/convert/{id}", rfqId), ergoNpd, "{}").andExpect(status().isCreated())
+			.<Number>read(call(post("/api/npd/convert/{id}", partOf(rfqId)), ergoNpd, "{}").andExpect(status().isCreated())
 				.andReturn().getResponse().getContentAsString(), "$.id")
 			.longValue();
 	}

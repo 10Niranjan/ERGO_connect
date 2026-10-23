@@ -19,8 +19,9 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 
 /**
- * A supplier invited to quote for an RFQ (SRS §13.3.3 rfq_supplier_assignments). Its status is the supplier quote
- * status; every change is audited automatically, reasons included.
+ * One RFQ part sent to one supplier (SRS §13.3.3 rfq_supplier_assignments; flow doc §2-3): the supplier quotes this
+ * part on its own, and its status is the part's quote status. Parts sent to the same supplier together form a
+ * {@link SubRfq}. Every change is audited automatically, reasons included.
  */
 @Entity
 @Table(name = "rfq_supplier_assignments")
@@ -35,6 +36,12 @@ class Invitation {
 	Long rfqId;
 
 	@Column(updatable = false)
+	Long rfqItemId;
+
+	@Column(updatable = false)
+	Long subRfqId;
+
+	@Column(updatable = false)
 	Long supplierCompanyId;
 
 	@Column(updatable = false)
@@ -45,17 +52,10 @@ class Invitation {
 	@Enumerated(EnumType.STRING)
 	QuoteStatus status;
 
-	@Enumerated(EnumType.STRING)
-	QuoteStatus statusBeforeClarification;
-
-	/** SRS quote_edit_open_flag: open until the first submission, then only when ERGO re-opens the quote. */
+	/** SRS quote_edit_open_flag: open until the first submission, then only when ERGO sends the quote back. */
 	boolean quoteEditOpen = true;
 
-	String regretReason;
-
-	String clarificationQuestion;
-
-	String clarificationAnswer;
+	String recallReason;
 
 	@CreationTimestamp
 	@Column(updatable = false)

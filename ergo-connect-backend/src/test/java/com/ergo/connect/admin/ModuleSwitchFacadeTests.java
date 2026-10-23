@@ -62,16 +62,17 @@ class ModuleSwitchFacadeTests {
 
 	static {
 		// RFQ
-		rules(RfqApi.class, Rule.NOT_FOUND, "forErgo(long)", "forCustomer(long)", "numberOf(long)", "forSupplier(long)");
+		rules(RfqApi.class, Rule.NOT_FOUND, "forErgo(long)", "forCustomer(long)", "numberOf(long)",
+				"forSupplierItem(long)");
 		rules(RfqApi.class, Rule.HIDDEN_EMPTY, "visibleToCaller(long)", "partiesVisibleToCaller(long)",
-				"forSupplier(Collection)", "supplierDocuments(long)", "customerApproved()", "dashboardItems()");
-		rules(RfqApi.class, Rule.WRITE, "sentToSuppliers(long)", "quoteProgress(long,int,int)", "comparing(long)",
-				"sentToCustomer(long)", "customerResponded(long,CustomerResponse)");
+				"forSupplierItems(Collection)", "supplierDocuments(long,Collection)", "itemForErgo(long)", "customerParts()",
+				"dashboardItems()");
+		rules(RfqApi.class, Rule.WRITE, "distributing(long)", "quotationProgress(long,QuotationSummary)");
 		rules(RfqApi.class, Rule.FROZEN_EMPTY, "replaceOpenForCaller(long)");
 		// Quotation
-		rules(QuotationApi.class, Rule.HIDDEN_EMPTY, "selectedQuoteFor(long)", "visibleToCaller(long)",
-				"partiesVisibleToCaller(long)", "fileVisibleToCaller(long,long)", "supplierInvitedToRfq(long)",
-				"dashboardItems()", "pendingSubmissionCount()");
+		rules(QuotationApi.class, Rule.HIDDEN_EMPTY, "approvedParts()", "approvedPart(long)", "partStatusItems()",
+				"visibleToCaller(long)", "partiesVisibleToCaller(long)", "fileVisibleToCaller(long,long)",
+				"supplierMayReadRfqDocument(long,long)", "dashboardItems()", "pendingSubmissionCount()");
 		rules(QuotationApi.class, Rule.FROZEN_EMPTY, "overdueItems(LocalDate)", "replaceOpenForCaller(long)");
 		// NPD
 		rules(NpdApi.class, Rule.WRITE, "handover(long)");
@@ -209,6 +210,9 @@ class ModuleSwitchFacadeTests {
 			}
 			if (type.isEnum()) {
 				return type.getEnumConstants()[0];
+			}
+			if (type == RfqApi.QuotationSummary.class) {
+				return new RfqApi.QuotationSummary(0, 0, 0, 0, 0, 0, 0, 0);
 			}
 			throw new IllegalStateException("No test argument for " + type);
 		}).toArray();

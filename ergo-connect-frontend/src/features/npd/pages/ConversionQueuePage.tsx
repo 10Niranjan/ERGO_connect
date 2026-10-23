@@ -16,7 +16,7 @@ export function ConversionQueuePage() {
   async function doConvert(comment: string) {
     if (!converting) return
     try {
-      const project = await convert({ rfqId: converting.rfqId, comment: comment || undefined }).unwrap()
+      const project = await convert({ rfqItemId: converting.rfqItemId, comment: comment || undefined }).unwrap()
       setConverting(null)
       navigate(`/npd/${project.id}`)
     } catch {
@@ -33,7 +33,7 @@ export function ConversionQueuePage() {
         <Button onClick={() => navigate('/npd')}>NPD projects</Button>
       </Stack>
       <Typography variant="body2" color="text.secondary">
-        Customer-approved RFQs waiting to become NPD projects. Conversion is manual and one-way.
+        Customer-approved parts waiting to become NPD projects. Conversion is manual and one-way.
       </Typography>
       {error && <Alert severity="error">{problemMessage(error)}</Alert>}
       <TableContainer component={Paper} variant="outlined">
@@ -51,7 +51,7 @@ export function ConversionQueuePage() {
           </TableHead>
           <TableBody>
             {rows.map((r) => (
-              <TableRow key={r.rfqId} hover>
+              <TableRow key={r.rfqItemId} hover>
                 <TableCell>{r.rfqNumber}</TableCell>
                 <TableCell>{r.customerName}</TableCell>
                 <TableCell>
@@ -72,7 +72,7 @@ export function ConversionQueuePage() {
             {!isLoading && rows.length === 0 && (
               <TableRow>
                 <TableCell colSpan={6} sx={{ color: 'text.secondary' }}>
-                  No approved RFQs are waiting for conversion.
+                  No approved parts are waiting for conversion.
                 </TableCell>
               </TableRow>
             )}
@@ -81,7 +81,7 @@ export function ConversionQueuePage() {
       </TableContainer>
       {converting && (
         <CommentDialog
-          title={`Convert ${converting.rfqNumber} to an NPD project`}
+          title={`Convert  () to an NPD project`}
           label="Comment (optional)"
           required={false}
           confirmLabel="Convert"

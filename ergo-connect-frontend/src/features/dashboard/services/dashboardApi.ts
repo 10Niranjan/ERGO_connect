@@ -12,6 +12,8 @@ export interface RfqDashboardItem {
   targetQuoteDate: string
   overdue: boolean
   priority: string
+  /** The RFQ's part numbers. */
+  parts: string[]
 }
 
 export interface NpdDashboardItem {
@@ -67,6 +69,16 @@ export interface SupplierQuoteItem {
   overdue: boolean
 }
 
+/** Where one part of an RFQ stands (flow doc §4): ERGO the full quote status and the supplier, a customer the collapsed status. */
+export interface PartStatusItem {
+  rfqId: number
+  rfqNumber: string
+  rfqItemId: number
+  partNumber: string
+  status: string
+  supplierName: string | null
+}
+
 export interface SupplierPerformanceRow {
   supplierCompanyId: number
   supplierName: string
@@ -90,6 +102,7 @@ export interface ManagementDashboard {
   openDeviationCount: number
   supplierPerformance: SupplierPerformanceRow[]
   pendingApprovalsCount: number
+  partItems: PartStatusItem[]
 }
 
 export interface FunctionalDashboard {
@@ -102,6 +115,7 @@ export interface FunctionalDashboard {
   overdueCount: number
   awaitingMeCount: number
   awaitingExternalCount: number
+  partItems: PartStatusItem[]
 }
 
 export interface CustomerDashboard {
@@ -110,6 +124,7 @@ export interface CustomerDashboard {
   npdItems: NpdDashboardItem[]
   orderItems: OrderDashboardItem[]
   ncrItems: NcrDashboardItem[]
+  partItems: PartStatusItem[]
 }
 
 export interface SupplierDashboard {

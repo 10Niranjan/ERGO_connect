@@ -28,6 +28,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import com.ergo.connect.IntegrationTest;
+import com.ergo.connect.TestRfq;
 import com.ergo.connect.TestUsers;
 import com.ergo.connect.TestUsers.Login;
 import com.ergo.connect.common.event.NotificationKind;
@@ -310,54 +311,40 @@ class NotificationsTests {
 		assertLatest(buyerA, "Your RFQ status changed", "RECORD_UPDATED", number + " - Under review", "/rfqs/" + rfqId);
 		assertCount(ergoRfq, 1); // the actor is not told about their own action
 
-		call(post("/api/rfqs/{id}/validate", rfqId), ergoRfq, "{}").andExpect(status().isOk());
-		assertCount(buyerA, 2);
+		assertCount(buyerA, 1);
 		assertCount(buyerB, 0);
 
-		call(post("/api/rfqs/{id}/quotes", rfqId), ergoRfq,
-				"{\"supplierIds\": [%d, %d], \"responseDueDate\": \"%s\"}".formatted(supplierX, supplierY,
-						LocalDate.now().plusDays(7)))
-			.andExpect(status().isOk());
+		// flow doc §2: part 1 goes to supplier X, part 2 to supplier Y (a sub-RFQ each)
+		TestRfq.invite(mvc, ergoRfq, rfqId, supplierX, supplierY);
 		long ix = invitationOf(sellerX, rfqId);
 		long iy = invitationOf(sellerY, rfqId);
 		assertLatest(sellerX, "New quote request", "ACTION_REQUIRED", number + " - Respond by " + LocalDate.now().plusDays(7),
 				"/quotes/" + ix);
 		assertLatest(sellerY, "New quote request", "ACTION_REQUIRED", number + " - Respond by " + LocalDate.now().plusDays(7),
 				"/quotes/" + iy);
-		assertCount(buyerA, 2); // the customer is told nothing about suppliers being invited
+		assertCount(buyerA, 1); // the customer is told nothing about suppliers being invited
 
-		// supplier X quotes: ERGO is told, the other supplier and the customer are not
+		// supplier X quotes part 1: ERGO is told, the other supplier and the customer are not
 		call(put("/api/quotes/{id}", ix), sellerX, quoteForm()).andExpect(status().isOk());
 		call(post("/api/quotes/{id}/submit", ix), sellerX, null).andExpect(status().isOk());
-		assertLatest(ergoRfq, "Supplier quote submitted", "RESPONSE_RECEIVED", number, "/quotes/" + ix);
+		assertLatest(ergoRfq, "Supplier quote submitted", "RESPONSE_RECEIVED", number + " - PN-1", "/quotes/" + ix);
 		assertCount(sellerY, 1);
-		assertCount(buyerA, 2);
+		assertCount(buyerA, 1);
 
-		// ERGO reopens it: only that supplier hears
-		call(post("/api/quotes/{id}/reopen", ix), ergoRfq, "{\"comment\": \"price check\"}").andExpect(status().isOk());
-		assertLatest(sellerX, "Your quote was reopened for revision", "ACTION_REQUIRED", number, "/quotes/" + ix);
+		// ERGO sends the part's quote back for revision: only that supplier hears
+		call(post("/api/quotes/{id}/revision", ix), ergoRfq, "{\"comment\": \"price check\"}").andExpect(status().isOk());
+		assertLatest(sellerX, "Revision required on your quote", "ACTION_REQUIRED", number + " - Revision required: PN-1",
+				"/quotes/" + ix);
 		assertCount(sellerY, 1);
 
-		// clarification both ways
-		call(post("/api/quotes/{id}/request-clarification", ix), sellerX, "{\"comment\": \"which incoterm?\"}")
-			.andExpect(status().isOk());
-		assertLatest(ergoRfq, "Supplier asked for clarification", "ACTION_REQUIRED", number, "/quotes/" + ix);
-		call(post("/api/quotes/{id}/answer-clarification", ix), ergoRfq, "{\"comment\": \"FCA\"}")
-			.andExpect(status().isOk());
-		assertLatest(sellerX, "Your clarification request was answered", "RESPONSE_RECEIVED", number, "/quotes/" + ix);
-
-		// supplier Y declines
-		call(post("/api/quotes/{id}/regret", iy), sellerY, "{\"comment\": \"no capacity\"}").andExpect(status().isOk());
-		assertLatest(ergoRfq, "Supplier declined to quote", "RESPONSE_RECEIVED", number, "/quotes/" + iy);
-
-		// X resubmits, ERGO sends it to the customer, the customer approves
+		// X resubmits, ERGO accepts it and generates the quotation for the customer, the customer approves
 		call(post("/api/quotes/{id}/submit", ix), sellerX, null).andExpect(status().isOk());
-		call(post("/api/quotes/{id}/decision", ix), ergoRfq, "{\"decision\": \"SELECT_FOR_CUSTOMER\"}")
+		call(post("/api/quotes/{id}/accept", ix), ergoRfq, null)
 			.andExpect(status().isOk());
 		int customerBefore = totalOf(buyerA);
 		int supplierBefore = totalOf(sellerX);
 		call(post("/api/rfqs/{id}/customer-quotes", rfqId), ergoRfq,
-				"{\"quoteId\": %d, \"type\": \"ERGO_QUOTE\", \"remarks\": \"ok\", \"ergoQuote\": {\"currencyId\": %d, \"productionPiecePrice\": 120, \"validityDate\": \"%s\"}}".formatted(ix, inr, java.time.LocalDate.now().plusDays(30)))
+				"{\"remarks\": \"ok\", \"lines\": [{\"quoteId\": %d, \"ergoQuote\": {\"currencyId\": %d, \"productionPiecePrice\": 120, \"validityDate\": \"%s\"}}]}".formatted(ix, inr, java.time.LocalDate.now().plusDays(30)))
 			.andExpect(status().isOk());
 		assertLatest(buyerA, "A quote is ready for your decision", "ACTION_REQUIRED", number, "/rfqs/" + rfqId);
 		assertCount(buyerA, customerBefore + 1);
@@ -365,7 +352,7 @@ class NotificationsTests {
 		assertCount(sellerX, supplierBefore); // suppliers are never told what happens with the customer
 
 		long sent = ((Number) JsonPath.read(call(get("/api/rfqs/{id}/customer-quotes", rfqId), buyerA, null).andReturn()
-			.getResponse().getContentAsString(), "$.quotes[0].id")).longValue();
+			.getResponse().getContentAsString(), "$.quotations[0].id")).longValue();
 		call(post("/api/customer-quotes/{id}/respond", sent), buyerA, "{\"response\": \"APPROVED\", \"comment\": \"Go ahead\"}")
 			.andExpect(status().isOk());
 		assertLatest(ergoRfq, "Customer responded to a quote", "RESPONSE_RECEIVED", number + " - Approved",
@@ -501,9 +488,7 @@ class NotificationsTests {
 		long rfqId = draftRfq(buyerA);
 		call(post("/api/rfqs/{id}/submit", rfqId), buyerA, "{}").andExpect(status().isOk());
 		call(post("/api/rfqs/{id}/start-review", rfqId), ergoRfq, null).andExpect(status().isOk());
-		call(post("/api/rfqs/{id}/validate", rfqId), ergoRfq, "{}").andExpect(status().isOk());
-		call(post("/api/rfqs/{id}/quotes", rfqId), ergoRfq, "{\"supplierIds\": [%d, %d], \"responseDueDate\": \"%s\"}"
-			.formatted(supplierX, supplierY, LocalDate.now().plusDays(7))).andExpect(status().isOk());
+		TestRfq.invite(mvc, ergoRfq, rfqId, supplierX, supplierY);
 		long ix = invitationOf(sellerX, rfqId);
 		jdbc.update("UPDATE rfq_supplier_assignments SET response_due_date = ? WHERE rfq_id = ?", LocalDate.now().minusDays(1), rfqId);
 		int xBefore = totalOf(sellerX);
@@ -534,9 +519,7 @@ class NotificationsTests {
 		long rfqId = draftRfq(buyerA);
 		call(post("/api/rfqs/{id}/submit", rfqId), buyerA, "{}").andExpect(status().isOk());
 		call(post("/api/rfqs/{id}/start-review", rfqId), ergoRfq, null).andExpect(status().isOk());
-		call(post("/api/rfqs/{id}/validate", rfqId), ergoRfq, "{}").andExpect(status().isOk());
-		call(post("/api/rfqs/{id}/quotes", rfqId), ergoRfq, "{\"supplierIds\": [%d], \"responseDueDate\": \"%s\"}"
-			.formatted(supplierX, LocalDate.now().plusDays(7))).andExpect(status().isOk());
+		TestRfq.invite(mvc, ergoRfq, rfqId, supplierX);
 		long ix = invitationOf(sellerX, rfqId);
 		int ergoBefore = totalOf(ergoRfq);
 
@@ -670,12 +653,7 @@ class NotificationsTests {
 	}
 
 	private String rfqForm() {
-		return """
-				{"partNumber": "PN-NOT1", "description": "Flange", "materialSpec": "EN8", "targetQuoteDate": "%s",
-				 "currencyId": %d, "targetProductionPiecePrice": 99.5,
-				 "processSteps": [{"stepName": "Forging", "cycleTimeSeconds": 55, "sourcingType": "INHOUSE"},
-				                  {"stepName": "Machining"}]}"""
-			.formatted(LocalDate.now().plusDays(10), inr);
+		return TestRfq.form(inr, "PN-1", "PN-2");
 	}
 
 	private long draftRfq(Login buyer) throws Exception {

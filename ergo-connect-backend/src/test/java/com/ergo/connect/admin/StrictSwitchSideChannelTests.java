@@ -31,6 +31,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import com.ergo.connect.IntegrationTest;
+import com.ergo.connect.TestRfq;
 import com.ergo.connect.TestUsers;
 import com.ergo.connect.TestUsers.Login;
 import com.ergo.connect.common.event.NotificationKind;
@@ -260,7 +261,7 @@ class StrictSwitchSideChannelTests {
 	@Test
 	void quoteRemindersPauseWhileQuotationOrRfqIsReadOnlyOrHiddenAndResumeWhenBackOn() throws Exception {
 		long rfq = validatedRfq();
-		call(post("/api/rfqs/{id}/quotes", rfq), ergoRfq, invite(supplier)).andExpect(status().isOk());
+		call(post("/api/rfqs/{id}/quotes", rfq), ergoRfq, invite(rfq, supplier)).andExpect(status().isOk());
 		long quote = invitationOf(rfq);
 		jdbc.update("UPDATE rfq_supplier_assignments SET response_due_date = ? WHERE rfq_id = ?", LocalDate.now().minusDays(1), rfq);
 
@@ -298,7 +299,7 @@ class StrictSwitchSideChannelTests {
 	@Test
 	void switchingAModuleBackOnRunsThePausedRemindersAndExpiryAtOnce() throws Exception {
 		long rfq = validatedRfq();
-		call(post("/api/rfqs/{id}/quotes", rfq), ergoRfq, invite(supplier)).andExpect(status().isOk());
+		call(post("/api/rfqs/{id}/quotes", rfq), ergoRfq, invite(rfq, supplier)).andExpect(status().isOk());
 		long quote = invitationOf(rfq);
 		jdbc.update("UPDATE rfq_supplier_assignments SET response_due_date = ? WHERE rfq_id = ?", LocalDate.now().minusDays(1), rfq);
 		long deviation = approvedDeviationPastItsValidity();
@@ -418,10 +419,10 @@ class StrictSwitchSideChannelTests {
 
 	private String rfqForm() {
 		return """
-				{"partNumber": "PN-SC1", "description": "Flange", "materialSpec": "EN8", "targetQuoteDate": "%s",
-				 "currencyId": %d, "targetProductionPiecePrice": 99.5,
+				{"targetQuoteDate": "%s", "currencyId": %d, "items": [{"partNumber": "PN-SC1", "description": "Flange", "materialSpec": "EN8",
+				 "targetProductionPiecePrice": 99.5,
 				 "processSteps": [{"stepName": "Forging", "cycleTimeSeconds": 55, "sourcingType": "INHOUSE"},
-				                  {"stepName": "Machining"}]}"""
+				                  {"stepName": "Machining"}]}]}"""
 			.formatted(LocalDate.now().plusDays(10), inr);
 	}
 
@@ -433,13 +434,11 @@ class StrictSwitchSideChannelTests {
 		long id = draftRfq();
 		call(post("/api/rfqs/{id}/submit", id), buyer, "{}").andExpect(status().isOk());
 		call(post("/api/rfqs/{id}/start-review", id), ergoRfq, null).andExpect(status().isOk());
-		call(post("/api/rfqs/{id}/validate", id), ergoRfq, "{}").andExpect(status().isOk());
 		return id;
 	}
 
-	private String invite(long... suppliers) {
-		return "{\"supplierIds\": %s, \"responseDueDate\": \"%s\"}".formatted(java.util.Arrays.toString(suppliers),
-				LocalDate.now().plusDays(7));
+	private String invite(long rfqId, long supplierId) throws Exception {
+		return TestRfq.wholeTo(mvc, ergoRfq, rfqId, supplierId);
 	}
 
 	private long invitationOf(long rfq) throws Exception {

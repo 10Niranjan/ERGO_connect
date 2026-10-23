@@ -39,8 +39,8 @@ public final class NpdDtos {
 	public record CommentForm(@Size(max = 2000) String comment) {
 	}
 
-	/** SRS §12.8.2: a customer-approved RFQ waiting for manual conversion, not yet converted. */
-	public record ConversionQueueRow(long rfqId, String rfqNumber, String customerName, String partNumber,
+	/** SRS §12.8.2: a customer-approved RFQ part waiting for manual conversion, not yet converted. */
+	public record ConversionQueueRow(long rfqId, long rfqItemId, String rfqNumber, String customerName, String partNumber,
 			String revision, String description, Instant approvedAt, Set<NpdAction> actions) {
 	}
 

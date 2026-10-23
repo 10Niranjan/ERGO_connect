@@ -36,6 +36,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import com.ergo.connect.IntegrationTest;
+import com.ergo.connect.TestRfq;
 import com.ergo.connect.TestUsers;
 import com.ergo.connect.TestUsers.Login;
 import com.ergo.connect.documents.domain.EicarOnlyVirusScanner;
@@ -170,7 +171,7 @@ class DocumentsTests {
 	void onlyAnInvitedSupplierSeesAnRfqDocumentSharedWithSuppliers() throws Exception {
 		long rfqId = validatedRfq(buyerA);
 		long docId = idOf(upload("/api/rfqs/{id}/documents", rfqId, ergoRfq, "drawing.pdf"));
-		call(put("/api/rfqs/{id}/documents/{doc}/visibility", rfqId, docId), ergoRfq, "{\"visibility\": \"ALL\"}")
+		call(put("/api/rfqs/{id}/documents/{doc}/visibility", rfqId, docId), ergoRfq, "{\"visibility\": \"ALL\", \"itemIds\": %s}".formatted(com.ergo.connect.TestRfq.itemIds(mvc, ergoRfq, rfqId)))
 			.andExpect(status().isOk());
 		invite(rfqId, supplierX);
 
@@ -186,7 +187,10 @@ class DocumentsTests {
 		long rfqId = draftRfq(buyerA);
 		long docId = idOf(upload("/api/rfqs/{id}/documents", rfqId, buyerA, "spec.pdf")); // forced CUSTOMER visibility
 		validate(rfqId, buyerA);
-		call(patch("/api/documents/{id}", docId), ergoRfq, "{\"visibility\": \"ALL\"}").andExpect(status().isOk());
+		// shared with suppliers for the RFQ's parts (a file shared without parts reaches no supplier)
+		call(put("/api/rfqs/{id}/documents/{doc}/visibility", rfqId, docId), ergoRfq,
+				"{\"visibility\": \"ALL\", \"itemIds\": %s}".formatted(com.ergo.connect.TestRfq.itemIds(mvc, ergoRfq, rfqId)))
+			.andExpect(status().isOk());
 		invite(rfqId, supplierX);
 
 		call(get("/api/documents/{id}", docId), sellerX, null).andExpect(status().isOk())
@@ -555,7 +559,9 @@ class DocumentsTests {
 		long rfqId = validatedRfq(buyerA);
 		invite(rfqId, supplierX);
 		long docId = idOf(upload("/api/rfqs/{id}/documents", rfqId, ergoRfq, "shared.pdf"));
-		call(patch("/api/documents/{id}", docId), ergoRfq, "{\"visibility\": \"SUPPLIER\"}").andExpect(status().isOk());
+		call(put("/api/rfqs/{id}/documents/{doc}/visibility", rfqId, docId), ergoRfq,
+				"{\"visibility\": \"SUPPLIER\", \"itemIds\": %s}".formatted(com.ergo.connect.TestRfq.itemIds(mvc, ergoRfq, rfqId)))
+			.andExpect(status().isOk());
 		call(get("/api/documents/{id}", docId), sellerX, null).andExpect(status().isOk());
 		call(get("/api/documents/{id}", docId), supplierXOfp, null).andExpect(status().isNotFound());
 	}
@@ -618,18 +624,10 @@ class DocumentsTests {
 	private void validate(long id, Login buyer) throws Exception {
 		call(post("/api/rfqs/{id}/submit", id), buyer, "{}").andExpect(status().isOk());
 		call(post("/api/rfqs/{id}/start-review", id), ergoRfq, null).andExpect(status().isOk());
-		call(post("/api/rfqs/{id}/validate", id), ergoRfq, "{}").andExpect(status().isOk());
 	}
 
 	private void invite(long rfqId, long... supplierIds) throws Exception {
-		StringBuilder ids = new StringBuilder("[");
-		for (int i = 0; i < supplierIds.length; i++) {
-			ids.append(i == 0 ? "" : ", ").append(supplierIds[i]);
-		}
-		ids.append("]");
-		call(post("/api/rfqs/{id}/quotes", rfqId), ergoRfq,
-				"{\"supplierIds\": %s, \"responseDueDate\": \"%s\"}".formatted(ids, LocalDate.now().plusDays(7)))
-			.andExpect(status().isOk());
+		TestRfq.invite(mvc, ergoRfq, rfqId, supplierIds);
 	}
 
 	private long invitationOf(Login supplier, long rfqId) throws Exception {
@@ -692,12 +690,7 @@ class DocumentsTests {
 	}
 
 	private String rfqForm() {
-		return """
-				{"partNumber": "PN-DOC1", "description": "Flange", "materialSpec": "EN8", "targetQuoteDate": "%s",
-				 "currencyId": %d, "targetProductionPiecePrice": 99.5,
-				 "processSteps": [{"stepName": "Forging", "cycleTimeSeconds": 55, "sourcingType": "INHOUSE"},
-				                  {"stepName": "Machining"}]}"""
-			.formatted(LocalDate.now().plusDays(10), inr);
+		return TestRfq.form(inr, "PN-1", "PN-2");
 	}
 
 	// ---------------------------------------------------------------- generic helpers

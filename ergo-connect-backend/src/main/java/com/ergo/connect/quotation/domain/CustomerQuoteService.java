@@ -1,14 +1,14 @@
 package com.ergo.connect.quotation.domain;
 
-import static com.ergo.connect.common.security.Role.CUSTOMER_KAM;
-import static com.ergo.connect.common.security.Role.CUSTOMER_MANAGEMENT;
 import static com.ergo.connect.common.security.Role.CUSTOMER_RFQ;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -36,49 +36,56 @@ import com.ergo.connect.masterdata.api.Directory.CompanyRef;
 import com.ergo.connect.masterdata.api.Directory.UserRef;
 import com.ergo.connect.masterdata.api.MasterDataApi;
 import com.ergo.connect.masterdata.api.MasterDataApi.Ref;
-import com.ergo.connect.quotation.domain.ComparisonDtos.CustomerQuoteAction;
-import com.ergo.connect.quotation.domain.ComparisonDtos.CustomerQuoteContent;
-import com.ergo.connect.quotation.domain.ComparisonDtos.CustomerQuoteView;
-import com.ergo.connect.quotation.domain.ComparisonDtos.CustomerQuotes;
-import com.ergo.connect.quotation.domain.ComparisonDtos.CustomerQuotesView;
-import com.ergo.connect.quotation.domain.ComparisonDtos.ErgoCustomerQuoteView;
-import com.ergo.connect.quotation.domain.ComparisonDtos.ErgoCustomerQuotes;
-import com.ergo.connect.quotation.domain.ComparisonDtos.ErgoQuoteForm;
-import com.ergo.connect.quotation.domain.ComparisonDtos.ErgoQuoteTerms;
-import com.ergo.connect.quotation.domain.ComparisonDtos.QuoteType;
-import com.ergo.connect.quotation.domain.ComparisonDtos.ResponseForm;
-import com.ergo.connect.quotation.domain.ComparisonDtos.ResponseStatus;
-import com.ergo.connect.quotation.domain.ComparisonDtos.SendForm;
+import com.ergo.connect.quotation.domain.CustomerQuoteDtos.CustomerLine;
+import com.ergo.connect.quotation.domain.CustomerQuoteDtos.CustomerQuoteAction;
+import com.ergo.connect.quotation.domain.CustomerQuoteDtos.CustomerQuoteContent;
+import com.ergo.connect.quotation.domain.CustomerQuoteDtos.CustomerQuoteView;
+import com.ergo.connect.quotation.domain.CustomerQuoteDtos.CustomerQuotes;
+import com.ergo.connect.quotation.domain.CustomerQuoteDtos.CustomerQuotesView;
+import com.ergo.connect.quotation.domain.CustomerQuoteDtos.ErgoCustomerQuoteView;
+import com.ergo.connect.quotation.domain.CustomerQuoteDtos.ErgoCustomerQuotes;
+import com.ergo.connect.quotation.domain.CustomerQuoteDtos.ErgoLineBasis;
+import com.ergo.connect.quotation.domain.CustomerQuoteDtos.ErgoQuoteForm;
+import com.ergo.connect.quotation.domain.CustomerQuoteDtos.ErgoQuoteTerms;
+import com.ergo.connect.quotation.domain.CustomerQuoteDtos.GenerateForm;
+import com.ergo.connect.quotation.domain.CustomerQuoteDtos.GenerateLine;
+import com.ergo.connect.quotation.domain.CustomerQuoteDtos.ResponseForm;
+import com.ergo.connect.quotation.domain.CustomerQuoteDtos.ResponseStatus;
 import com.ergo.connect.quotation.domain.QuoteDtos.Named;
-import com.ergo.connect.quotation.domain.QuoteDtos.QuoteAction;
 import com.ergo.connect.quotation.domain.QuoteDtos.QuoteData;
-import com.ergo.connect.quotation.domain.QuoteService.RfqState;
 import com.ergo.connect.rfq.api.RfqApi;
 import com.ergo.connect.rfq.api.RfqApi.CustomerResponse;
 import com.ergo.connect.rfq.api.RfqApi.CustomerRfqRef;
+import com.ergo.connect.rfq.api.RfqApi.ItemRef;
 import com.ergo.connect.rfq.api.RfqApi.RfqRef;
 
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Quotes ERGO generates for the customer and the customer's answer (SRS §5.3, §12.7.2, §13.3.9-13.3.10, §14.4; flow
- * doc §4-5). A supplier's quotation is never forwarded: the customer gets ERGO's own quote (no supplier, margin hidden).
- * The customer answers approve / correction required / reject / on hold, each with a comment; on hold is answered again.
+ * The quotation ERGO generates for the customer and the customer's answer (SRS §5.3, §12.7.2, §13.3.9-13.3.10, §14.4;
+ * flow doc §4-5). "Generate quotation for customer" turns the accepted supplier quotes of the chosen parts into ERGO's
+ * own quotation, a line per part in the customer's format: a supplier's quotation is never forwarded, the customer
+ * sees no supplier and no margin, and both the supplier quotes and the generated quotation are kept. The customer
+ * answers approve / correction required / reject / on hold, each with a comment; on hold is answered again.
  */
 @Service
 @Transactional
 public class CustomerQuoteService {
 
-	/** The role sheet (ModuleAccess), Quotation column: these customer roles see ERGO's quotes and answer them. */
+	/** The role sheet (ModuleAccess), Quotation column: these customer roles see ERGO's quotations and answer them. */
 	private static final Set<Role> CUSTOMER_RESPONDERS = ModuleAccess.actors(Module.QUOTATION, CompanyType.CUSTOMER);
 
 	private final CustomerQuoteRepository customerQuotes;
+
+	private final CustomerQuoteLineRepository lines;
 
 	private final InvitationRepository invitations;
 
 	private final SupplierQuoteRepository quotes;
 
 	private final QuoteReader reader;
+
+	private final QuoteService quoteService;
 
 	private final RfqApi rfqs;
 
@@ -92,14 +99,17 @@ public class CustomerQuoteService {
 
 	private final Notifier notifier;
 
-	CustomerQuoteService(CustomerQuoteRepository customerQuotes, InvitationRepository invitations,
-			SupplierQuoteRepository quotes, QuoteReader reader, RfqApi rfqs, Directory directory,
-			MasterDataApi masterData, AuditLogService audit, JsonMapper json, Notifier notifier) {
+	CustomerQuoteService(CustomerQuoteRepository customerQuotes, CustomerQuoteLineRepository lines,
+			InvitationRepository invitations, SupplierQuoteRepository quotes, QuoteReader reader,
+			QuoteService quoteService, RfqApi rfqs, Directory directory, MasterDataApi masterData,
+			AuditLogService audit, JsonMapper json, Notifier notifier) {
 		this.notifier = notifier;
 		this.customerQuotes = customerQuotes;
+		this.lines = lines;
 		this.invitations = invitations;
 		this.quotes = quotes;
 		this.reader = reader;
+		this.quoteService = quoteService;
 		this.rfqs = rfqs;
 		this.directory = directory;
 		this.masterData = masterData;
@@ -107,7 +117,7 @@ public class CustomerQuoteService {
 		this.json = json;
 	}
 
-	/** ERGO: every quote sent on the RFQ with its basis and margin. A customer: what was sent to its company. */
+	/** ERGO: every quotation generated on the RFQ with its basis and margin. A customer: what was generated for it. */
 	@Transactional(readOnly = true)
 	public CustomerQuotesView list(long rfqId) {
 		CurrentUser me = CurrentUser.get();
@@ -115,67 +125,115 @@ public class CustomerQuoteService {
 			CustomerRfqRef rfq = rfqs.forCustomer(rfqId); // 404 unless it is this customer's RFQ
 			List<CustomerQuote> sent = customerQuotes.findByRfqIdAndCustomerCompanyIdOrderByIdDesc(rfqId, me.companyId());
 			Map<Long, UserRef> users = directory.users(ids(sent.stream().map(q -> q.responseByUserId)));
-			return new CustomerQuotes("CUSTOMER", sent.stream().map(q -> new CustomerQuoteView(q.id, q.submittedAt,
-					content(q), q.responseStatus, QuoteService.userName(users, q.responseByUserId), q.responseAt,
-					q.responseComment, actions(me, q, rfq))).toList());
+			return new CustomerQuotes("CUSTOMER", sent.stream().map(q -> new CustomerQuoteView(q.id, q.versionNo,
+					q.submittedAt, content(q), q.responseStatus, QuoteService.userName(users, q.responseByUserId),
+					q.responseAt, q.responseComment, actions(me, q, rfq))).toList());
 		}
 		rfqs.forErgo(rfqId); // 404 outside the ERGO user's RFQ scope
 		List<CustomerQuote> sent = customerQuotes.findByRfqIdOrderByIdDesc(rfqId);
+		Map<Long, List<CustomerQuoteLine>> linesBySubmission = sent.isEmpty() ? Map.of()
+				: lines.findBySubmissionIdIn(sent.stream().map(q -> q.id).toList()).stream()
+					.collect(Collectors.groupingBy(l -> l.submissionId));
 		Map<Long, Invitation> basis = invitations.findByRfqIdOrderById(rfqId).stream()
 			.collect(Collectors.toMap(i -> i.id, Function.identity()));
-		Map<Long, CompanyRef> suppliers = directory.companies(sent.stream()
-			.map(q -> basis.get(q.assignmentId).supplierCompanyId).toList());
+		Map<Long, CompanyRef> suppliers = directory
+			.companies(basis.values().stream().map(i -> i.supplierCompanyId).collect(Collectors.toSet()));
 		Map<Long, UserRef> users = directory.users(ids(sent.stream()
 			.flatMap(q -> Stream.of(q.submittedByUserId, q.responseByUserId))));
 		return new ErgoCustomerQuotes("ERGO", sent.stream().map(q -> {
-			CompanyRef s = suppliers.get(basis.get(q.assignmentId).supplierCompanyId);
-			return new ErgoCustomerQuoteView(q.id, q.quoteType, q.assignmentId, new Named(s.id(), s.code(), s.name()),
-					q.supplierQuoteVersion, content(q), q.marginAmountHidden, q.marginPercentageHidden,
+			CustomerQuoteContent content = content(q);
+			Map<Long, String> partNumbers = content.lines().stream()
+				.collect(Collectors.toMap(CustomerLine::rfqItemId, CustomerLine::partNumber));
+			List<ErgoLineBasis> lineBasis = linesBySubmission.getOrDefault(q.id, List.of()).stream().map(l -> {
+				CompanyRef s = suppliers.get(basis.get(l.assignmentId).supplierCompanyId);
+				return new ErgoLineBasis(l.assignmentId, l.rfqItemId, partNumbers.get(l.rfqItemId),
+						new Named(s.id(), s.code(), s.name()), l.supplierQuoteVersion, l.marginAmountHidden,
+						l.marginPercentageHidden);
+			}).toList();
+			return new ErgoCustomerQuoteView(q.id, q.versionNo, content, lineBasis,
 					QuoteService.userName(users, q.submittedByUserId), q.submittedAt, q.responseStatus,
 					QuoteService.userName(users, q.responseByUserId), q.responseAt, q.responseComment);
 		}).toList());
 	}
 
 	/**
-	 * Sends the customer a quote based on the supplier quote ERGO selected for it: the supplier's last submitted version
-	 * as-is, or ERGO's own terms. What the customer sees is frozen now; the RFQ moves to Sent to Customer.
+	 * Flow doc §4 "Generate Quotation for Customer": for the chosen parts, whose supplier quotes ERGO has accepted (or
+	 * the customer sent back for correction), the system generates the customer-facing quotation from ERGO's own
+	 * terms and sends it to the customer. What the customer sees is frozen now; the parts move to "with customer".
 	 */
-	public CustomerQuotesView send(long rfqId, SendForm form) {
+	public CustomerQuotesView generate(long rfqId, GenerateForm form) {
 		CurrentUser me = CurrentUser.get();
 		RfqRef rfq = rfqs.forErgo(rfqId);
-		Invitation invitation = invitations.findById(form.quoteId()).filter(i -> i.rfqId == rfqId)
-			.orElseThrow(() -> ApiException.notFound("Quote"));
-		if (!QuoteService.allowed(QuoteAction.SEND_TO_CUSTOMER, me, invitation, RfqState.of(rfq))) {
-			throw ApiException.conflict("Only a quote selected for the customer can be sent, once quotes are in and no "
-					+ "earlier quote is waiting for the customer's answer");
+		if (!QuoteService.EVALUATORS.contains(me.role())) {
+			throw ApiException.forbidden("Only ERGO's approving RFQ roles generate the customer quotation");
 		}
-		SupplierQuote quote = quotes.findByAssignmentId(invitation.id).orElseThrow();
-		QuoteData submitted = reader.lastSubmitted(List.of(quote)).get(quote.id);
+		if (!rfq.quotingOpen()) {
+			throw ApiException.conflict("A quotation can be generated once the RFQ is out with suppliers");
+		}
+		if (customerQuotes.existsByRfqIdAndResponseStatusIn(rfqId, ResponseStatus.OPEN)) {
+			throw ApiException.conflict("An earlier quotation is still waiting for the customer's answer");
+		}
+		Map<Long, ItemRef> parts = rfq.items().stream().collect(Collectors.toMap(ItemRef::id, Function.identity()));
+		Set<Long> seen = new HashSet<>();
+		List<Invitation> chosen = new ArrayList<>();
+		for (GenerateLine line : form.lines()) {
+			Invitation invitation = invitations.findById(line.quoteId()).filter(i -> i.rfqId == rfqId)
+				.orElseThrow(() -> ApiException.notFound("Quote"));
+			if (!seen.add(invitation.id)) {
+				throw ApiException.unprocessable("A part is listed twice");
+			}
+			if (!QuoteStatus.READY_FOR_CUSTOMER.contains(invitation.status)) {
+				throw ApiException.conflict("Only parts whose quote ERGO has accepted can be quoted to the customer");
+			}
+			chosen.add(invitation);
+		}
+		Map<Long, SupplierQuote> quoteByInvitation = reader.byInvitation(chosen);
+		Map<Long, QuoteData> submitted = reader.lastSubmitted(quoteByInvitation.values());
 		LocalDate today = LocalDate.now();
-		if (form.type() == QuoteType.SUPPLIER_QUOTE) {
-			throw ApiException.unprocessable("A supplier's quotation is never forwarded to the customer; "
-					+ "generate ERGO's quotation instead");
-		}
 
 		CustomerQuote sent = new CustomerQuote();
 		sent.rfqId = rfqId;
 		sent.customerCompanyId = rfq.customerCompanyId();
-		sent.quoteType = QuoteType.ERGO_QUOTE;
-		sent.assignmentId = invitation.id;
-		sent.supplierQuoteVersion = quote.currentVersion;
+		sent.versionNo = (int) customerQuotes.countByRfqId(rfqId) + 1;
 		sent.submittedByUserId = me.userId();
-		CustomerQuoteContent content = new CustomerQuoteContent(QuoteType.ERGO_QUOTE,
-				ergoQuote(sent, form.ergoQuote(), submitted, today), QuoteService.text(form.remarks()));
-		sent.customerView = json.writeValueAsString(content);
+		List<CustomerLine> customerLines = new ArrayList<>();
+		List<CustomerQuoteLine> toSave = new ArrayList<>();
+		for (GenerateLine form1 : form.lines()) {
+			Invitation invitation = chosen.stream().filter(i -> i.id.equals(form1.quoteId())).findFirst().orElseThrow();
+			SupplierQuote supplierQuote = quoteByInvitation.get(invitation.id);
+			QuoteData supplierData = supplierQuote == null ? null : submitted.get(supplierQuote.id);
+			if (supplierData == null) {
+				throw ApiException.conflict("The part has no submitted supplier quote to base the quotation on");
+			}
+			ItemRef part = parts.get(invitation.rfqItemId);
+			CustomerQuoteLine line = new CustomerQuoteLine();
+			line.assignmentId = invitation.id;
+			line.rfqItemId = invitation.rfqItemId;
+			line.supplierQuoteVersion = supplierQuote.currentVersion;
+			ErgoQuoteTerms terms = ergoQuote(line, form1.ergoQuote(), supplierData, today);
+			customerLines.add(new CustomerLine(part.id(), part.lineNo(), part.partNumber(), part.revision(),
+					part.description(), terms));
+			toSave.add(line);
+		}
+		customerLines.sort((a, b) -> Integer.compare(a.lineNo(), b.lineNo()));
+		sent.customerView = json.writeValueAsString(
+				new CustomerQuoteContent(QuoteService.text(form.remarks()), customerLines));
 		ModuleSwitch.requireWritable(Module.QUOTATION, Module.RFQ); // both locked until commit: no switch change mid-operation
-		rfqs.sentToCustomer(rfqId); // 409 unless the RFQ is ready for a quote to the customer
 		customerQuotes.save(sent);
+		for (CustomerQuoteLine line : toSave) {
+			line.submissionId = sent.id;
+			lines.save(line);
+		}
+		for (Invitation invitation : chosen) {
+			invitation.status = QuoteStatus.WITH_CUSTOMER;
+		}
+		quoteService.progress(rfqId);
 		notifier.send(NotificationKind.CUSTOMER_QUOTE_SENT, "rfq", rfqId, rfq.number(), null,
 				Recipients.company(rfq.customerCompanyId(), CUSTOMER_RESPONDERS.toArray(Role[]::new)));
 		return list(rfqId);
 	}
 
-	/** SRS §14.4: approve, or request a revision / decline with a comment. Once only. */
+	/** SRS §14.4 / flow doc §5: approve, correction required, reject or on hold - each with a comment. */
 	public CustomerQuotesView respond(long id, ResponseForm form) {
 		CurrentUser me = CurrentUser.get();
 		CustomerQuote quote = customerQuotes.findById(id)
@@ -184,14 +242,17 @@ public class CustomerQuoteService {
 			.orElseThrow(() -> ApiException.notFound("Quote"));
 		CustomerRfqRef rfqRef = rfqs.forCustomer(quote.rfqId); // the RFQ's own customer scope applies too
 		if (!ResponseStatus.OPEN.contains(quote.responseStatus)) {
-			throw ApiException.conflict("This quote has already been answered");
+			throw ApiException.conflict("This quotation has already been answered");
+		}
+		if (!rfqRef.awaitingAnswer()) {
+			throw ApiException.conflict("This RFQ is no longer waiting for your answer");
 		}
 		if (quote.responseStatus == ResponseStatus.ON_HOLD && form.response() == CustomerResponse.ON_HOLD) {
-			throw ApiException.conflict("This quote is already on hold");
+			throw ApiException.conflict("This quotation is already on hold");
 		}
 		if (form.response() != CustomerResponse.REVISION_REQUESTED
 				&& !ModuleAccess.canApprove(me.role(), Module.QUOTATION)) {
-			throw ApiException.forbidden("Only the customer's approving role can approve, reject or hold a quote; "
+			throw ApiException.forbidden("Only the customer's approving role can approve, reject or hold a quotation; "
 					+ "you can request a correction");
 		}
 		String comment = QuoteService.text(form.comment());
@@ -204,12 +265,18 @@ public class CustomerQuoteService {
 			});
 		}
 		audit.reason(comment);
-		quote.responseStatus = ResponseStatus.valueOf(form.response().name());
+		ModuleSwitch.requireWritable(Module.QUOTATION, Module.RFQ); // both locked until commit: no switch change mid-operation
+		ResponseStatus answer = ResponseStatus.valueOf(form.response().name());
+		quote.responseStatus = answer;
 		quote.responseByUserId = me.userId();
 		quote.responseAt = Instant.now();
 		quote.responseComment = comment;
-		ModuleSwitch.requireWritable(Module.QUOTATION, Module.RFQ); // both locked until commit: no switch change mid-operation
-		rfqs.customerResponded(quote.rfqId, form.response()); // 409 when the RFQ no longer waits (e.g. closed)
+		Set<Long> assignmentIds = lines.findBySubmissionIdIn(List.of(quote.id)).stream().map(l -> l.assignmentId)
+			.collect(Collectors.toSet());
+		for (Invitation invitation : invitations.findByIdIn(assignmentIds)) {
+			invitation.status = answer.partStatus();
+		}
+		quoteService.progress(quote.rfqId);
 		notifier.send(NotificationKind.CUSTOMER_QUOTE_RESPONDED, "rfq", quote.rfqId, rfqRef.number(),
 				switch (form.response()) {
 					case APPROVED -> "Approved";
@@ -221,25 +288,25 @@ public class CustomerQuoteService {
 	}
 
 	/**
-	 * ERGO's terms for the customer. The margin on the supplier's production piece price is worked out here with the
-	 * rate of the day and frozen with the quote; it stays empty when ERGO has no rate for the pair.
+	 * ERGO's terms for one part of the quotation. The margin on the supplier's production piece price is worked out
+	 * here with the rate of the day and frozen with the line; it stays empty when ERGO has no rate for the pair.
 	 */
-	private ErgoQuoteTerms ergoQuote(CustomerQuote sent, ErgoQuoteForm terms, QuoteData supplier, LocalDate today) {
+	private ErgoQuoteTerms ergoQuote(CustomerQuoteLine line, ErgoQuoteForm terms, QuoteData supplier, LocalDate today) {
 		masterData.requireActive(Ref.CURRENCY, terms.currencyId(), "Currency");
 		masterData.requireActive(Ref.PAYMENT_TERM, terms.paymentTermId(), "Payment term");
 		masterData.requireActive(Ref.INCOTERM, terms.incotermId(), "Incoterm");
 		if (terms.validityDate().isBefore(today)) {
 			throw ApiException.unprocessable("The validity date is in the past");
 		}
-		sent.currencyId = terms.currencyId();
-		sent.quotedProductionPiecePrice = terms.productionPiecePrice();
-		sent.quotedPpapPiecePrice = terms.ppapPiecePrice();
-		sent.quotedToolingCost = terms.toolingCost();
+		line.currencyId = terms.currencyId();
+		line.quotedProductionPiecePrice = terms.productionPiecePrice();
+		line.quotedPpapPiecePrice = terms.ppapPiecePrice();
+		line.quotedToolingCost = terms.toolingCost();
 		masterData.rate(supplier.currency().id(), terms.currencyId(), today).ifPresent(rate -> {
 			BigDecimal cost = supplier.productionPiecePrice().multiply(rate);
-			sent.marginAmountHidden = terms.productionPiecePrice().subtract(cost).setScale(4, RoundingMode.HALF_UP);
+			line.marginAmountHidden = terms.productionPiecePrice().subtract(cost).setScale(4, RoundingMode.HALF_UP);
 			if (terms.productionPiecePrice().signum() > 0) {
-				sent.marginPercentageHidden = sent.marginAmountHidden.multiply(BigDecimal.valueOf(100))
+				line.marginPercentageHidden = line.marginAmountHidden.multiply(BigDecimal.valueOf(100))
 					.divide(terms.productionPiecePrice(), 2, RoundingMode.HALF_UP);
 			}
 		});

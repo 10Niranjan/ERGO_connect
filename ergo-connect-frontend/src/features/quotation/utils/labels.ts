@@ -1,20 +1,39 @@
 import { formatDate, formatMoney, formatNumber } from '@/features/rfq/utils/labels'
 import type { ChipColor } from '@/types'
 import type { SourcingType } from '@/features/rfq/rfqApi'
-import type { ErgoQuoteTerms, ResponseStatus } from '../services/comparisonApi'
-import type { QuoteData, QuoteStatus } from '../services/quoteApi'
+import type { ErgoQuoteTerms, ResponseStatus } from '../services/customerQuoteApi'
+import type { CustomerPartStatus, PartStatusRow, QuoteData, QuoteStatus } from '../services/quoteApi'
 
+/** The status of one part's quote (flow doc §3-5). */
 export const QUOTE_STATUS: Record<QuoteStatus, { label: string; color: ChipColor }> = {
   NOT_STARTED: { label: 'Not started', color: 'default' },
   DRAFT_SAVED: { label: 'Draft saved', color: 'info' },
-  CLARIFICATION_REQUESTED: { label: 'Clarification requested', color: 'warning' },
-  SUBMITTED: { label: 'Submitted', color: 'success' },
-  REOPENED: { label: 'Re-opened for revision', color: 'warning' },
+  SUBMITTED: { label: 'Submitted to ERGO', color: 'success' },
+  REVISION_REQUIRED: { label: 'Revision required', color: 'warning' },
   RESUBMITTED: { label: 'Resubmitted', color: 'success' },
-  SHORTLISTED: { label: 'Shortlisted', color: 'primary' },
-  SELECTED_FOR_CUSTOMER: { label: 'Selected for customer', color: 'success' },
-  NOT_SELECTED: { label: 'Not selected', color: 'default' },
-  REGRETTED: { label: 'Regretted', color: 'error' },
+  ACCEPTED: { label: 'Accepted by ERGO', color: 'primary' },
+  WITH_CUSTOMER: { label: 'Quotation with customer', color: 'secondary' },
+  CUSTOMER_ON_HOLD: { label: 'On hold by customer', color: 'warning' },
+  CUSTOMER_CORRECTION: { label: 'Correction required by customer', color: 'warning' },
+  CUSTOMER_APPROVED: { label: 'Approved by customer', color: 'success' },
+  CUSTOMER_REJECTED: { label: 'Rejected by customer', color: 'error' },
+  RECALLED: { label: 'Taken back', color: 'default' },
+}
+
+/** What a customer reads for a part (no supplier, nothing before ERGO's quotation). */
+export const CUSTOMER_PART_STATUS: Record<CustomerPartStatus, { label: string; color: ChipColor }> = {
+  IN_PROGRESS: { label: 'Quotation in progress', color: 'primary' },
+  QUOTATION_RECEIVED: { label: 'Quotation received', color: 'secondary' },
+  ON_HOLD: { label: 'On hold', color: 'warning' },
+  CORRECTION_REQUIRED: { label: 'Correction required', color: 'warning' },
+  APPROVED: { label: 'Approved', color: 'success' },
+  REJECTED: { label: 'Rejected', color: 'error' },
+}
+
+/** A part's status chip for either audience: ERGO's quote statuses, or the customer's collapsed ones. */
+export function partStatusLabel(status: PartStatusRow['status']): { label: string; color: ChipColor } {
+  if (status === 'UNASSIGNED') return { label: 'Not sent to a supplier', color: 'default' }
+  return status in QUOTE_STATUS ? QUOTE_STATUS[status as QuoteStatus] : CUSTOMER_PART_STATUS[status as CustomerPartStatus]
 }
 
 export const SOURCING: Record<SourcingType, string> = { INHOUSE: 'In-house', OUTSOURCED: 'Outsourced' }

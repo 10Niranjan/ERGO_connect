@@ -8,7 +8,7 @@ import java.util.Set;
 
 import com.ergo.connect.documents.api.DocumentStore.Visibility;
 import com.ergo.connect.quotation.domain.QuoteStep.SourcingType;
-import com.ergo.connect.rfq.api.RfqApi.SupplierRfq;
+import com.ergo.connect.rfq.api.RfqApi.SupplierRfqItem;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Digits;
@@ -19,7 +19,7 @@ import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 
-/** Supplier quote shapes. Suppliers and ERGO each get their own response type. */
+/** Supplier quote shapes. Suppliers and ERGO each get their own response type. A quote is per RFQ part. */
 public final class QuoteDtos {
 
 	private QuoteDtos() {
@@ -42,7 +42,12 @@ public final class QuoteDtos {
 			@Size(max = 4000) String remarks) {
 	}
 
-	public record InviteForm(@NotEmpty Set<@NotNull Long> supplierIds,
+	/** One supplier and the parts of the RFQ that go to it (the whole RFQ, or a sub-RFQ of some parts). */
+	public record SubRfqForm(@NotNull Long supplierId, @NotEmpty Set<@NotNull Long> itemIds) {
+	}
+
+	/** Distribution (flow doc §2): one sub-RFQ per supplier, no part in two of them. */
+	public record DistributeForm(@NotEmpty @Size(max = 50) List<@Valid @NotNull SubRfqForm> subRfqs,
 			@NotNull @FutureOrPresent LocalDate responseDueDate) {
 	}
 
@@ -51,17 +56,7 @@ public final class QuoteDtos {
 
 	/** Buttons the caller may use now, computed by the same rules that enforce them. */
 	public enum QuoteAction {
-		EDIT, SUBMIT, REGRET, REQUEST_CLARIFICATION, ANSWER_CLARIFICATION, REOPEN, UPLOAD, EVALUATE, SHORTLIST,
-		SELECT_FOR_CUSTOMER, MARK_NOT_SELECTED, CLEAR_DECISION, SEND_TO_CUSTOMER
-	}
-
-	/** ERGO's comparison decisions on a submitted quote (the same names as their actions). */
-	public enum Decision {
-		SHORTLIST, SELECT_FOR_CUSTOMER, MARK_NOT_SELECTED, CLEAR_DECISION
-	}
-
-	/** {@code comment} is required for MARK_NOT_SELECTED (SRS §14.1: a rejection needs a reason) and audited only. */
-	public record DecisionForm(@NotNull Decision decision, @Size(max = 2000) String comment) {
+		EDIT, SUBMIT, REQUEST_REVISION, ACCEPT, RECALL, UPLOAD
 	}
 
 	public record Named(long id, String code, String name) {
@@ -83,50 +78,62 @@ public final class QuoteDtos {
 			List<StepView> processSteps, String assumptionsDeviations, String remarks) {
 	}
 
+	/** The RFQ part a quote is about, as ERGO sees it. */
+	public record PartRef(long itemId, int lineNo, String partNumber, String revision, String description) {
+	}
+
 	public sealed interface QuoteView permits ErgoQuoteView, SupplierQuoteView, SupplierAssignedRfqView {
 	}
 
-	/** The supplier's page: its invitation, the supplier-safe RFQ and its own quote (null until first saved). */
+	/** The supplier's page: its part, the supplier-safe RFQ data and its own quote (null until first saved). */
 	public record SupplierQuoteView(String audience, long id, QuoteStatus status, LocalDate responseDueDate,
-			SupplierRfq rfq, QuoteData quote, int version, Instant submittedAt, String reopenReason,
-			String clarificationQuestion, String clarificationAnswer, String regretReason, Set<QuoteAction> actions)
-			implements QuoteView {
+			int subRfqNo, SupplierRfqItem part, QuoteData quote, int version, Instant submittedAt,
+			String revisionReason, Set<QuoteAction> actions) implements QuoteView {
 	}
 
 	/**
-	 * What a supplier role with RFQ access but none on Quotation (the role sheet) sees of an assignment: the RFQ and its
-	 * due date, never the quote's status, versions or correspondence.
+	 * What a supplier role with RFQ access but none on Quotation (the role sheet) sees of an assignment: the part and
+	 * its due date, never the quote's status, versions or correspondence.
 	 */
-	public record SupplierAssignedRfqView(String audience, long id, LocalDate responseDueDate, SupplierRfq rfq,
-			Set<QuoteAction> actions) implements QuoteView {
+	public record SupplierAssignedRfqView(String audience, long id, LocalDate responseDueDate, int subRfqNo,
+			SupplierRfqItem part, Set<QuoteAction> actions) implements QuoteView {
 	}
 
 	public record ErgoQuoteView(String audience, long id, QuoteStatus status, LocalDate responseDueDate, long rfqId,
-			String rfqNumber, Named supplier, String invitedBy, Instant invitedAt, QuoteData quote, int version,
-			Instant submittedAt, String reopenReason, String clarificationQuestion, String clarificationAnswer,
-			String regretReason, Set<QuoteAction> actions) implements QuoteView {
+			String rfqNumber, int subRfqNo, Named supplier, PartRef part, String invitedBy, Instant invitedAt,
+			QuoteData quote, int version, Instant submittedAt, String revisionReason, String recallReason,
+			Set<QuoteAction> actions) implements QuoteView {
 	}
 
-	/** Supplier's "Assigned RFQs" list. */
-	public record SupplierQuoteRow(long id, String rfqNumber, String partNumber, String revision, String description,
-			LocalDate responseDueDate, QuoteStatus status, int version, Instant submittedAt, boolean quotingOpen) {
+	/** Supplier's "Assigned RFQs" list: one row per part sent to it. */
+	public record SupplierQuoteRow(long id, String rfqNumber, int subRfqNo, String partNumber, String revision,
+			String description, LocalDate responseDueDate, QuoteStatus status, int version, Instant submittedAt,
+			boolean quotingOpen) {
 	}
 
 	/** The "Assigned RFQs" row for a supplier role without Quotation access: no quote status, version or submit time. */
-	public record SupplierAssignedRfqRow(long id, String rfqNumber, String partNumber, String revision,
+	public record SupplierAssignedRfqRow(long id, String rfqNumber, int subRfqNo, String partNumber, String revision,
 			String description, LocalDate responseDueDate, boolean quotingOpen) {
 	}
 
-	/** One supplier on an RFQ's suppliers tab (ERGO). */
-	public record ErgoQuoteRow(long id, Named supplier, QuoteStatus status, LocalDate responseDueDate, int version,
-			Instant submittedAt, String currency, BigDecimal productionPiecePrice, BigDecimal toolingCostTotal,
-			Integer moq, Integer productionLeadTimeDays) {
+	/**
+	 * One part of an RFQ on ERGO's quotes tab: the part, and - once it is with a supplier - that supplier's quote and
+	 * status. The part's status is what the dashboard shows per part. {@code quoteId} is null while unassigned.
+	 */
+	public record PartRow(PartRef part, Long quoteId, Integer subRfqNo, Named supplier, QuoteStatus status,
+			LocalDate responseDueDate, Integer version, Instant submittedAt, String currency,
+			BigDecimal productionPiecePrice, BigDecimal toolingCostTotal, Integer moq, Integer productionLeadTimeDays,
+			Set<QuoteAction> actions) {
 	}
 
-	public record RfqSuppliers(boolean canInvite, List<ErgoQuoteRow> quotes) {
+	public record RfqQuotes(boolean canDistribute, List<PartRow> parts) {
 	}
 
-	/** SRS §12.7.3: each submitted version as it was sent (with its files), who sent it and why it was re-opened. */
+	/** A part's status, per audience (ERGO: the full status; customers: where their quotation stands). */
+	public record PartStatusRow(long itemId, int lineNo, String partNumber, String revision, String status) {
+	}
+
+	/** SRS §12.7.3: each submitted version as it was sent (with its files), who sent it and why it was sent back. */
 	public record VersionView(int version, Instant submittedAt, String submittedBy, String reopenReason,
 			String reopenedBy, Instant reopenedAt, QuoteData quote, List<String> files) {
 	}

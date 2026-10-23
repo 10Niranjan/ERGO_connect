@@ -91,8 +91,8 @@ class ModuleSwitchTests {
 	@Test
 	void aReadOnlySwitchStopsEveryoneCreatingAndApprovingButNobodyLosesView() throws Exception {
 		mvc.perform(get("/api/rfqs").header(HttpHeaders.AUTHORIZATION, ergoRfq.bearer())).andExpect(status().isOk());
-		// before the switch: ERGO RFQ (O) passes layer 1 on validate (the id does not exist, so not 403)
-		assertThat(statusOf(post("/api/rfqs/999999/validate").header(HttpHeaders.AUTHORIZATION, ergoRfq.bearer())
+		// before the switch: ERGO RFQ (O) passes layer 1 on start-review (the id does not exist, so not 403)
+		assertThat(statusOf(post("/api/rfqs/999999/start-review").header(HttpHeaders.AUTHORIZATION, ergoRfq.bearer())
 			.contentType(MediaType.APPLICATION_JSON)
 			.content("{\"comment\": \"x\"}"))).isNotEqualTo(403);
 
@@ -107,9 +107,9 @@ class ModuleSwitchTests {
 		// ... nobody can create or approve
 		mvc.perform(post("/api/rfqs").header(HttpHeaders.AUTHORIZATION, customerRfq.bearer())
 			.contentType(MediaType.APPLICATION_JSON)
-			.content("{\"partNumber\": \"PN-1\", \"currencyId\": %d}".formatted(users.currency("INR"))))
+			.content("{\"currencyId\": %d, \"items\": [{\"partNumber\": \"PN-1\"}]}".formatted(users.currency("INR"))))
 			.andExpect(status().isForbidden());
-		mvc.perform(post("/api/rfqs/999999/validate").header(HttpHeaders.AUTHORIZATION, ergoRfq.bearer())
+		mvc.perform(post("/api/rfqs/999999/start-review").header(HttpHeaders.AUTHORIZATION, ergoRfq.bearer())
 			.contentType(MediaType.APPLICATION_JSON)
 			.content("{\"comment\": \"x\"}")).andExpect(status().isForbidden());
 		// the sidebar and permissions the SPA gets follow the switch
@@ -123,13 +123,13 @@ class ModuleSwitchTests {
 		moduleSwitch("RFQ", "A", "approvals paused").andExpect(status().isOk());
 		mvc.perform(get("/api/auth/access").header(HttpHeaders.AUTHORIZATION, ergoRfq.bearer()))
 			.andExpect(jsonPath("$.permissions.RFQ").value("A"));
-		mvc.perform(post("/api/rfqs/999999/validate").header(HttpHeaders.AUTHORIZATION, ergoRfq.bearer())
+		mvc.perform(post("/api/rfqs/999999/start-review").header(HttpHeaders.AUTHORIZATION, ergoRfq.bearer())
 			.contentType(MediaType.APPLICATION_JSON)
 			.content("{\"comment\": \"x\"}")).andExpect(status().isForbidden());
 		// acting is still allowed (create passes layer 1; it then needs a valid customer, so not 403)
 		assertThat(statusOf(post("/api/rfqs").header(HttpHeaders.AUTHORIZATION, customerRfq.bearer())
 			.contentType(MediaType.APPLICATION_JSON)
-			.content("{\"partNumber\": \"PN-1\", \"currencyId\": %d}".formatted(users.currency("INR"))))).isEqualTo(201);
+			.content("{\"currencyId\": %d, \"items\": [{\"partNumber\": \"PN-1\"}]}".formatted(users.currency("INR"))))).isEqualTo(201);
 	}
 
 	@Test
@@ -137,7 +137,7 @@ class ModuleSwitchTests {
 		// a real RFQ of this customer: on its dashboard now, gone once the module is hidden
 		mvc.perform(post("/api/rfqs").header(HttpHeaders.AUTHORIZATION, customerRfq.bearer())
 			.contentType(MediaType.APPLICATION_JSON)
-			.content("{\"partNumber\": \"PN-D\", \"currencyId\": %d}".formatted(users.currency("INR"))))
+			.content("{\"currencyId\": %d, \"items\": [{\"partNumber\": \"PN-D\"}]}".formatted(users.currency("INR"))))
 			.andExpect(status().isCreated());
 		mvc.perform(get("/api/dashboard").header(HttpHeaders.AUTHORIZATION, customerRfq.bearer()))
 			.andExpect(jsonPath("$.rfqItems.length()").value(1));
@@ -224,11 +224,11 @@ class ModuleSwitchTests {
 
 	@Test
 	void revokingAnApprovalTakesItAwayImmediatelyFromAnAlreadySignedInUser() throws Exception {
-		assertThat(statusOf(post("/api/rfqs/999999/validate").header(HttpHeaders.AUTHORIZATION, ergoRfq.bearer())
+		assertThat(statusOf(post("/api/rfqs/999999/start-review").header(HttpHeaders.AUTHORIZATION, ergoRfq.bearer())
 			.contentType(MediaType.APPLICATION_JSON)
 			.content("{\"comment\": \"x\"}"))).isNotEqualTo(403);
 		save("ERGO", version(), "ERGO RFQ loses final approval", change("ERGO_RFQ", "RFQ", "A")).andExpect(status().isOk());
-		mvc.perform(post("/api/rfqs/999999/validate").header(HttpHeaders.AUTHORIZATION, ergoRfq.bearer())
+		mvc.perform(post("/api/rfqs/999999/start-review").header(HttpHeaders.AUTHORIZATION, ergoRfq.bearer())
 			.contentType(MediaType.APPLICATION_JSON)
 			.content("{\"comment\": \"x\"}")).andExpect(status().isForbidden());
 		// the role can still read and act, only the final approval went
@@ -274,7 +274,7 @@ class ModuleSwitchTests {
 		// the admin cannot create business records ...
 		mvc.perform(post("/api/rfqs").header(HttpHeaders.AUTHORIZATION, admin.bearer())
 			.contentType(MediaType.APPLICATION_JSON)
-			.content("{\"partNumber\": \"PN\", \"currencyId\": %d}".formatted(users.currency("INR"))))
+			.content("{\"currencyId\": %d, \"items\": [{\"partNumber\": \"PN\"}]}".formatted(users.currency("INR"))))
 			.andExpect(status().isForbidden());
 		// ... but still manages accounts
 		mvc.perform(get("/api/users").header(HttpHeaders.AUTHORIZATION, admin.bearer())).andExpect(status().isOk());

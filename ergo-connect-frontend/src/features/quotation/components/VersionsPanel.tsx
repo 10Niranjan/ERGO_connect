@@ -48,7 +48,7 @@ export function VersionsPanel({ quoteId }: { quoteId: number }) {
             <AccordionDetails sx={{ display: 'grid', gap: 2 }}>
               {v.reopenReason && (
                 <Alert severity="info">
-                  Re-opened by {v.reopenedBy ?? 'ERGO'} on {when(v.reopenedAt)}: {v.reopenReason}
+                  Revision required by {v.reopenedBy ?? 'ERGO'} on {when(v.reopenedAt)}: {v.reopenReason}
                 </Alert>
               )}
               {previous && changes.length > 0 && (

@@ -1,7 +1,6 @@
 package com.ergo.connect.rfq.api;
 
 import java.math.BigDecimal;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
@@ -11,43 +10,58 @@ import com.ergo.connect.common.record.Awaiting;
 import com.ergo.connect.documents.api.DocumentStore.DocumentInfo;
 
 /**
- * What other modules may ask of the RFQ module (the quotation module: supplier work, comparison, quotes to the
- * customer). Implemented inside rfq.domain, which applies its own record scope and status rules behind these calls.
+ * What other modules may ask of the RFQ module (the quotation module: distribution to suppliers, per-part quotes,
+ * quotations to the customer). Implemented inside rfq.domain, which applies its own record scope and status rules
+ * behind these calls. An RFQ holds several items (part numbers, flow doc §1); suppliers see only the items sent to them.
  */
 public interface RfqApi {
 
+	/** The customer's targets for one part, in the RFQ currency. ERGO-internal: never shown to suppliers. */
+	record Targets(BigDecimal toolingCost, BigDecimal ppapPiecePrice, BigDecimal productionPiecePrice, Integer moq,
+			Integer materialLeadTimeWeeks, Integer toolingLeadTimeDays, Integer sampleLeadTimeDays,
+			Integer productionLeadTimeDays) {
+	}
+
+	/** One part of an RFQ as ERGO sees it. */
+	record ItemRef(long id, int lineNo, String partNumber, String revision, String description, Targets targets) {
+	}
+
 	/**
-	 * An RFQ as an ERGO user in whose scope it is sees it for quotation work. {@code evaluating}: ERGO may score and
-	 * shortlist quotes; {@code offering}: ERGO may send the customer a quote (not while one awaits an answer).
+	 * An RFQ as an ERGO user in whose scope it is sees it for quotation work. {@code acceptsInvitations}: parts may be
+	 * sent to suppliers (the RFQ is under review or already out, and not finished); {@code quotingOpen}: the RFQ is
+	 * out with suppliers and not finished, so quote work on its parts is possible (each part's own status decides
+	 * what exactly).
 	 */
-	record RfqRef(long id, String number, long customerCompanyId, String partNumber, String revision,
-			String description, long currencyId, boolean acceptsInvitations, boolean quotingOpen, boolean evaluating,
-			boolean offering, Targets targets) {
+	record RfqRef(long id, String number, long customerCompanyId, long currencyId, Long paymentTermId,
+			boolean acceptsInvitations, boolean quotingOpen, List<ItemRef> items) {
 	}
 
-	/** The customer's targets, in the RFQ currency. ERGO-internal: never shown to suppliers. */
-	record Targets(BigDecimal toolingCost, BigDecimal ppapPiecePrice, BigDecimal productionPiecePrice,
-			Long paymentTermId, Integer moq, Integer materialLeadTimeWeeks, Integer toolingLeadTimeDays,
-			Integer sampleLeadTimeDays, Integer productionLeadTimeDays) {
+	/** An RFQ part as its own customer sees it (no targets, nothing about suppliers). */
+	record CustomerItemRef(long id, int lineNo, String partNumber, String revision, String description) {
 	}
 
-	/** An RFQ as its own customer sees it for ERGO's quotes. {@code awaitingAnswer}: a sent quote may be answered. */
-	record CustomerRfqRef(long id, String number, long customerCompanyId, boolean awaitingAnswer) {
+	/** An RFQ as its own customer sees it for ERGO's quotations. {@code awaitingAnswer}: a sent quotation may be answered. */
+	record CustomerRfqRef(long id, String number, long customerCompanyId, boolean awaitingAnswer,
+			List<CustomerItemRef> items) {
 	}
 
-	/** SRS §14.4 customer responses. */
+	/** SRS §14.4 customer responses (flow doc §5: approve, correction required, reject, on hold). */
 	enum CustomerResponse {
 		APPROVED, REVISION_REQUESTED, DECLINED, ON_HOLD
 	}
 
-	/** What a supplier may see of an RFQ. Client decision: no customer name, no targets, no notes, no remarks. */
-	record SupplierRfq(long id, String number, String partNumber, String revision, String description, Integer eau,
-			BigDecimal netWeightKg, BigDecimal grossWeightKg, String material, String materialSpec, String coating,
-			String coatingSpec, List<PlannedStep> processSteps, boolean quotingOpen) {
+	/**
+	 * What a supplier may see of one RFQ part sent to it. Client decision: no customer name, no targets, no notes, no
+	 * remarks, and nothing of the RFQ's other parts (they may be with other suppliers).
+	 */
+	record SupplierRfqItem(long rfqId, String rfqNumber, long itemId, String partNumber, String revision,
+			String description, Integer eau, BigDecimal netWeightKg, BigDecimal grossWeightKg, String material,
+			String materialSpec, String coating, String coatingSpec, List<PlannedStep> processSteps,
+			boolean quotingOpen) {
 	}
 
 	/**
-	 * One step of the RFQ's planned route as suppliers see it: process and step name only. Cycle times, sourcing,
+	 * One step of the part's planned route as suppliers see it: process and step name only. Cycle times, sourcing,
 	 * sub-suppliers and remarks are the customer's or ERGO's and may name third parties; each supplier fills in its own.
 	 */
 	record PlannedStep(Long processId, String processName, String stepName) {
@@ -82,62 +96,62 @@ public interface RfqApi {
 	/**
 	 * Just the RFQ's number, with no scope check of its own: for a module whose own record (an NPD project, an order)
 	 * the caller has already proven in scope, so an ERGO role with no RFQ access can still read which RFQ it came from.
-	 * External callers get 404: they read the number through {@link #forCustomer} / {@link #forSupplier}.
+	 * External callers get 404: they read the number through {@link #forCustomer} / {@link #forSupplierItem}.
 	 */
 	String numberOf(long rfqId);
 
-	/** Callers must have checked the supplier's invitation first. */
-	SupplierRfq forSupplier(long rfqId);
+	/** One part sent to the caller's supplier. Callers must have checked the supplier's assignment first. */
+	SupplierRfqItem forSupplierItem(long itemId);
 
-	Map<Long, SupplierRfq> forSupplier(Collection<Long> rfqIds);
-
-	/** RFQ files ERGO has shared with suppliers (visibility SUPPLIER or ALL). */
-	List<DocumentInfo> supplierDocuments(long rfqId);
-
-	/** SRS §14.2: the first invitations went out (Validated → Sent to Supplier). */
-	void sentToSuppliers(long rfqId);
+	/** The parts as {@link #forSupplierItem}, by item id; parts that do not exist (or while the RFQ module is hidden) are absent. */
+	Map<Long, SupplierRfqItem> forSupplierItems(Collection<Long> itemIds);
 
 	/**
-	 * SRS §14.2: quotes received partially or completely. {@code received}: suppliers with a submitted version;
-	 * {@code awaited}: suppliers still working (not yet submitted, or re-opened).
+	 * RFQ files ERGO has shared with suppliers (visibility SUPPLIER or ALL) for at least one of the given parts: the
+	 * caller passes the parts its supplier holds, so a file shared for another supplier's part is never returned.
 	 */
-	void quoteProgress(long rfqId, int received, int awaited);
+	List<DocumentInfo> supplierDocuments(long rfqId, Collection<Long> itemIds);
 
-	/** SRS §14.2 Under Comparison: ERGO has started evaluating the quotes. */
-	void comparing(long rfqId);
-
-	/** SRS §14.2 Sent to Customer; 409 unless the RFQ is ready for a quote to the customer. */
-	void sentToCustomer(long rfqId);
-
-	/** SRS §14.4: the customer's answer (customer approved / revision requested / declined); 409 if not awaited. */
-	void customerResponded(long rfqId, CustomerResponse response);
-
-	/**
-	 * A customer-approved RFQ, eligible for manual NPD conversion (SRS §12.8.2, §14.5). {@code approvedAt} is the RFQ's
-	 * last-updated time while approved: an approximation (the RFQ has no dedicated approval timestamp), close enough
-	 * for the conversion queue's display and safe to use since nothing else changes a customer-approved RFQ in 3a.
-	 */
-	record ApprovedRfq(long id, String number, long customerCompanyId, String partNumber, String revision,
-			String description, Instant approvedAt) {
+	/** The RFQ part ids of the caller's own company's RFQs that are still live, with their RFQ (a customer's dashboard). */
+	record CustomerPart(long rfqId, String rfqNumber, long itemId, String partNumber) {
 	}
 
+	List<CustomerPart> customerParts();
+
 	/**
-	 * Customer-approved RFQs in the caller's ERGO scope, for the "ready for NPD conversion" queue. Empty for anyone
-	 * else (customers, suppliers, and ERGO roles with no RFQ visibility).
+	 * How the RFQ's parts stand, reported by the quotation module after every change to a part. The RFQ's own status
+	 * (sent to suppliers, quotes partly / fully in, with the customer, on hold, correction required, approved,
+	 * declined) is worked out from it here. The counts cover the parts that are with a supplier or further; the RFQ's
+	 * other parts are unassigned.
 	 */
-	List<ApprovedRfq> customerApproved();
+	record QuotationSummary(int withSupplier, int underErgoReview, int accepted, int withCustomer, int onHold,
+			int correction, int approved, int rejected) {
+	}
+
+	void quotationProgress(long rfqId, QuotationSummary summary);
+
+	/**
+	 * Distribution (flow doc §2): the RFQ must be complete, and its first distribution moves it to "sent to
+	 * suppliers"; 409 unless suppliers can be sent parts, 422 listing what is missing from an incomplete RFQ.
+	 */
+	void distributing(long rfqId);
+
+	/**
+	 * One part as ERGO sees it, for the modules that start from an approved part (NPD). Empty unless the part exists
+	 * in an RFQ within the caller's ERGO scope.
+	 */
+	java.util.Optional<ItemRef> itemForErgo(long itemId);
 
 	/**
 	 * SRS §12.5.1/§12.5.2 dashboards: the caller's own in-scope, still-open RFQs (same role-scope switch as
 	 * {@code list()} - ERGO Admin/Management/RFQ get every RFQ, ERGO KAM its assigned accounts, customers their own
 	 * company, suppliers nothing here (RfqApi has no invitation data of its own)). Excludes the terminal statuses
-	 * (CLOSED, CANCELLED, CUSTOMER_DECLINED) and CUSTOMER_APPROVED, which {@link #customerApproved} already counts
-	 * separately for the "ready for NPD conversion" widget. {@code customerName} is null for a customer caller
-	 * (it's their own company). {@link Awaiting} is this module's own judgment call (ARCHITECTURE.md §8,
-	 * 2026-10-05): not an SRS-defined field.
+	 * (CLOSED, CANCELLED, CUSTOMER_DECLINED) and CUSTOMER_APPROVED. {@code customerName} is null for a customer
+	 * caller (it's their own company). {@link Awaiting} is this module's own judgment call (ARCHITECTURE.md §8,
+	 * 2026-10-05): not an SRS-defined field. {@code parts}: the RFQ's part numbers.
 	 */
 	record RfqDashboardItem(long id, String number, String customerName, String status, Awaiting awaiting,
-			LocalDate targetQuoteDate, boolean overdue, String priority) {
+			LocalDate targetQuoteDate, boolean overdue, String priority, List<String> parts) {
 	}
 
 	List<RfqDashboardItem> dashboardItems();

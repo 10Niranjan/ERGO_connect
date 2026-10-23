@@ -10,10 +10,12 @@ import {
   type NcrDashboardItem,
   type NpdDashboardItem,
   type OrderDashboardItem,
+  type PartStatusItem,
   type RfqDashboardItem,
   type SupplierPerformanceRow,
   type SupplierQuoteItem,
 } from '../dashboardApi'
+import { partStatusLabel } from '../../quotation/utils/labels'
 import { AWAITING, humanize } from '../labels'
 import { ItemsTable, type Column } from './ItemsTable'
 
@@ -41,6 +43,7 @@ export function RfqSection({ title = 'RFQs', items, hideWhenEmpty = false }: { t
   const columns: Column<RfqDashboardItem>[] = [
     { header: 'RFQ no.', render: (r) => r.number },
     { header: 'Customer', render: (r) => r.customerName },
+    { header: 'Parts', render: (r) => r.parts.join(', ') || '—' },
     { header: 'Status', render: (r) => humanize(r.status) },
     { header: 'Awaiting', render: (r) => <AwaitingChip value={r.awaiting} /> },
     {
@@ -53,6 +56,37 @@ export function RfqSection({ title = 'RFQs', items, hideWhenEmpty = false }: { t
   return (
     <Section title={title} hidden={hideWhenEmpty && items.length === 0}>
       <ItemsTable rows={items} columns={columns} getKey={(r) => r.id} emptyMessage="No RFQs." />
+    </Section>
+  )
+}
+
+/** Flow doc §4: the dashboard shows the status of each part, not only of the RFQ. A customer reads the collapsed status and never sees a supplier. */
+export function PartStatusSection({
+  title = 'Status of each part',
+  items,
+  showSupplier = false,
+  hideWhenEmpty = false,
+}: {
+  title?: string
+  items: PartStatusItem[]
+  showSupplier?: boolean
+  hideWhenEmpty?: boolean
+}) {
+  const columns: Column<PartStatusItem>[] = [
+    { header: 'RFQ no.', render: (r) => r.rfqNumber },
+    { header: 'Part', render: (r) => r.partNumber },
+    ...(showSupplier ? [{ header: 'Supplier', render: (r: PartStatusItem) => r.supplierName ?? '—' }] : []),
+    {
+      header: 'Status',
+      render: (r) => {
+        const s = partStatusLabel(r.status as Parameters<typeof partStatusLabel>[0])
+        return <Chip size="small" label={s.label} color={s.color} />
+      },
+    },
+  ]
+  return (
+    <Section title={title} hidden={hideWhenEmpty && items.length === 0}>
+      <ItemsTable rows={items} columns={columns} getKey={(r) => r.rfqItemId} emptyMessage="No parts yet." />
     </Section>
   )
 }

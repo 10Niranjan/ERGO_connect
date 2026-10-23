@@ -121,18 +121,6 @@ class RfqController {
 		return rfqs.requestClarification(id, body.comment());
 	}
 
-	@PostMapping("/{id}/validate")
-	@PreAuthorize(REVIEWERS)
-	RfqView validate(@PathVariable long id, @Valid @RequestBody CommentForm body) {
-		return rfqs.validate(id, body.comment());
-	}
-
-	@PostMapping("/{id}/reopen")
-	@PreAuthorize(REVIEWERS)
-	RfqView reopen(@PathVariable long id, @Valid @RequestBody CommentForm body) {
-		return rfqs.reopen(id, body.comment());
-	}
-
 	@PostMapping("/{id}/close")
 	@PreAuthorize(REVIEWERS)
 	RfqView close(@PathVariable long id, @Valid @RequestBody CommentForm body) {
@@ -155,8 +143,9 @@ class RfqController {
 	@PreAuthorize(CREATORS)
 	@ResponseStatus(HttpStatus.CREATED)
 	DocumentView upload(@PathVariable long id, @RequestParam("file") MultipartFile file,
-			@RequestParam(required = false) Visibility visibility) throws IOException {
-		return rfqs.upload(id, file.getOriginalFilename(), file.getBytes(), visibility);
+			@RequestParam(required = false) Visibility visibility,
+			@RequestParam(required = false) java.util.List<Long> itemIds) throws IOException {
+		return rfqs.upload(id, file.getOriginalFilename(), file.getBytes(), visibility, itemIds);
 	}
 
 	/** Always a download (never rendered in the browser), not cached. */
@@ -177,7 +166,7 @@ class RfqController {
 	@PreAuthorize(ERGO_EDITORS)
 	DocumentView setVisibility(@PathVariable long id, @PathVariable long documentId,
 			@Valid @RequestBody VisibilityForm body) {
-		return rfqs.setVisibility(id, documentId, body.visibility());
+		return rfqs.setVisibility(id, documentId, body.visibility(), body.itemIds());
 	}
 
 	@DeleteMapping("/{id}/documents/{documentId}")

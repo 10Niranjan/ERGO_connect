@@ -107,7 +107,8 @@ public class DashboardService {
 
 		return new ManagementDashboard(rfq.size(), count(Module.QUOTATION, quotationApi::pendingSubmissionCount), awaitingCustomerApproval,
 				count(Module.NPD, npdApi::unconvertedApprovedRfqCount), npd.size(), delayed, highRisk, atRisk, ncrs.size(),
-				deviations.size(), supplierPerformance(), pendingApprovals);
+				deviations.size(), supplierPerformance(), pendingApprovals,
+				items(Module.QUOTATION, quotationApi::partStatusItems));
 	}
 
 	/** Combines OFP's per-supplier dispatch timeliness with Quality's per-supplier open-NCR count. Both facade
@@ -148,12 +149,14 @@ public class DashboardService {
 			.filter(a -> a == Awaiting.CUSTOMER || a == Awaiting.SUPPLIER)
 			.count();
 
-		return new FunctionalDashboard(rfq, npd, orders, ncrs, deviations, overdue, awaitingMe, awaitingExternal);
+		return new FunctionalDashboard(rfq, npd, orders, ncrs, deviations, overdue, awaitingMe, awaitingExternal,
+				items(Module.QUOTATION, quotationApi::partStatusItems));
 	}
 
 	private CustomerDashboard customer() {
 		return new CustomerDashboard(items(Module.RFQ, rfqApi::dashboardItems), items(Module.NPD, npdApi::dashboardItems), items(Module.OFP, ofpApi::dashboardItems),
-				items(Module.QUALITY, qualityApi::ncrDashboardItems));
+				items(Module.QUALITY, qualityApi::ncrDashboardItems),
+				items(Module.QUOTATION, quotationApi::partStatusItems));
 	}
 
 	private SupplierDashboard supplier() {

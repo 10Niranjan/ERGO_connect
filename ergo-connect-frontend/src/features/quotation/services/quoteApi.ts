@@ -1,34 +1,26 @@
 import { api } from '@/services/baseApi'
 import type { Named, ProcessStep, StepView, Visibility } from '@/features/rfq/rfqApi'
 
-/** SRS §14.3, plus REGRETTED (the supplier declined to quote, with a reason). */
+/** The status of one part's quote (flow doc §3-5). */
 export type QuoteStatus =
   | 'NOT_STARTED'
   | 'DRAFT_SAVED'
-  | 'CLARIFICATION_REQUESTED'
   | 'SUBMITTED'
-  | 'REOPENED'
+  | 'REVISION_REQUIRED'
   | 'RESUBMITTED'
-  | 'SHORTLISTED'
-  | 'SELECTED_FOR_CUSTOMER'
-  | 'NOT_SELECTED'
-  | 'REGRETTED'
+  | 'ACCEPTED'
+  | 'WITH_CUSTOMER'
+  | 'CUSTOMER_ON_HOLD'
+  | 'CUSTOMER_CORRECTION'
+  | 'CUSTOMER_APPROVED'
+  | 'CUSTOMER_REJECTED'
+  | 'RECALLED'
+
+/** What a customer sees of a part: where its quotation stands, nothing about suppliers. */
+export type CustomerPartStatus = 'IN_PROGRESS' | 'QUOTATION_RECEIVED' | 'ON_HOLD' | 'CORRECTION_REQUIRED' | 'APPROVED' | 'REJECTED'
 
 /** Buttons the backend allows for this user, role and status right now. */
-export type QuoteAction =
-  | 'EDIT'
-  | 'SUBMIT'
-  | 'REGRET'
-  | 'REQUEST_CLARIFICATION'
-  | 'ANSWER_CLARIFICATION'
-  | 'REOPEN'
-  | 'UPLOAD'
-  | 'EVALUATE'
-  | 'SHORTLIST'
-  | 'SELECT_FOR_CUSTOMER'
-  | 'MARK_NOT_SELECTED'
-  | 'CLEAR_DECISION'
-  | 'SEND_TO_CUSTOMER'
+export type QuoteAction = 'EDIT' | 'SUBMIT' | 'REQUEST_REVISION' | 'ACCEPT' | 'RECALL' | 'UPLOAD'
 
 export interface ToolingLine {
   toolName: string
@@ -64,17 +56,18 @@ export interface QuoteData {
   remarks: string | null
 }
 
-/** One step of the RFQ's planned route as suppliers see it: names only; each supplier fills in the rest. */
+/** One step of the part's planned route as suppliers see it: names only; each supplier fills in the rest. */
 export interface PlannedStep {
   processId: number | null
   processName: string | null
   stepName: string
 }
 
-/** What a supplier sees of an RFQ: no customer, targets, notes or remarks. */
-export interface SupplierRfq {
-  id: number
-  number: string
+/** What a supplier sees of one RFQ part sent to it: no customer, targets, notes or remarks, and no other part. */
+export interface SupplierRfqItem {
+  rfqId: number
+  rfqNumber: string
+  itemId: number
   partNumber: string
   revision: string | null
   description: string | null
@@ -89,52 +82,64 @@ export interface SupplierRfq {
   quotingOpen: boolean
 }
 
+/** The RFQ part a quote is about, as ERGO sees it. */
+export interface PartRef {
+  itemId: number
+  lineNo: number
+  partNumber: string
+  revision: string | null
+  description: string | null
+}
+
 interface QuoteViewBase {
   id: number
-  status: QuoteStatus
   responseDueDate: string
-  version: number
-  submittedAt: string | null
-  reopenReason: string | null
-  clarificationQuestion: string | null
-  clarificationAnswer: string | null
-  regretReason: string | null
+  subRfqNo: number
   actions: QuoteAction[]
 }
 
 export interface SupplierQuoteView extends QuoteViewBase {
   audience: 'SUPPLIER'
-  rfq: SupplierRfq
+  status: QuoteStatus
+  part: SupplierRfqItem
   /** The supplier's working copy (null until first saved). */
   quote: QuoteData | null
+  version: number
+  submittedAt: string | null
+  /** What ERGO wants changed (flow doc §4: revision required). */
+  revisionReason: string | null
 }
 
 export interface ErgoQuoteView extends QuoteViewBase {
   audience: 'ERGO'
+  status: QuoteStatus
   rfqId: number
   rfqNumber: string
   supplier: Named
+  part: PartRef
   invitedBy: string | null
   invitedAt: string
   /** The last submitted version; ERGO never sees unsent drafts. */
   quote: QuoteData | null
+  version: number
+  submittedAt: string | null
+  revisionReason: string | null
+  recallReason: string | null
 }
 
-/** A supplier role with RFQ access but none on Quotation: the assigned RFQ only, no quote status or correspondence. */
-export interface SupplierAssignedRfqView {
+/** A supplier role with RFQ access but none on Quotation: the assigned part only, no quote status or correspondence. */
+export interface SupplierAssignedRfqView extends QuoteViewBase {
   audience: 'SUPPLIER_RFQ'
-  id: number
-  responseDueDate: string
-  rfq: SupplierRfq
-  actions: QuoteAction[]
+  part: SupplierRfqItem
 }
 
 export type QuoteView = SupplierQuoteView | ErgoQuoteView | SupplierAssignedRfqView
 
-/** The supplier's "Assigned RFQs" list; the quote columns are absent for a role without Quotation access. */
+/** The supplier's "Assigned RFQs" list, one row per part sent to it; the quote columns are absent without Quotation access. */
 export interface SupplierQuoteRow {
   id: number
   rfqNumber: string
+  subRfqNo: number
   partNumber: string
   revision: string | null
   description: string | null
@@ -145,31 +150,46 @@ export interface SupplierQuoteRow {
   quotingOpen: boolean
 }
 
-/** One supplier on an RFQ (ERGO); the figures are from its last submitted version. */
-export interface ErgoQuoteRow {
-  id: number
-  supplier: Named
-  status: QuoteStatus
-  responseDueDate: string
-  version: number
+/**
+ * One part of an RFQ on ERGO's quotes tab, with the supplier it is with and that supplier's last submitted figures.
+ * `quoteId` is null while the part is not with a supplier.
+ */
+export interface PartRow {
+  part: PartRef
+  quoteId: number | null
+  subRfqNo: number | null
+  supplier: Named | null
+  status: QuoteStatus | null
+  responseDueDate: string | null
+  version: number | null
   submittedAt: string | null
   currency: string | null
   productionPiecePrice: number | null
   toolingCostTotal: number | null
   moq: number | null
   productionLeadTimeDays: number | null
+  actions: QuoteAction[]
 }
 
-export interface RfqSuppliers {
-  canInvite: boolean
-  quotes: ErgoQuoteRow[]
+export interface RfqQuotes {
+  canDistribute: boolean
+  parts: PartRow[]
+}
+
+/** A part's status: ERGO the full quote status (or UNASSIGNED), the RFQ's customer where its quotation stands. */
+export interface PartStatusRow {
+  itemId: number
+  lineNo: number
+  partNumber: string
+  revision: string | null
+  status: QuoteStatus | CustomerPartStatus | 'UNASSIGNED'
 }
 
 export interface VersionView {
   version: number
   submittedAt: string
   submittedBy: string | null
-  /** Why ERGO re-opened the quote before this version. */
+  /** Why ERGO sent the quote back before this version. */
   reopenReason: string | null
   reopenedBy: string | null
   reopenedAt: string | null
@@ -217,14 +237,21 @@ export interface QuoteForm {
   remarks: string | null
 }
 
-/** Workflow endpoints; all but submit take a comment. */
-export type QuoteCommand = 'submit' | 'regret' | 'request-clarification' | 'answer-clarification' | 'reopen'
+/** One sub-RFQ: the parts that go to one supplier. */
+export interface SubRfqForm {
+  supplierId: number
+  itemIds: number[]
+}
+
+/** Workflow endpoints: submit takes nothing, accept nothing; revision (required) and recall (required) a comment. */
+export type QuoteCommand = 'submit' | 'accept' | 'revision' | 'recall'
 
 // Quote changes move the RFQ status (sent, partly/fully received), hence the Rfq tag.
 const quoteApi = api.enhanceEndpoints({ addTagTypes: ['Quote', 'QuoteDocuments', 'Rfq'] }).injectEndpoints({
   endpoints: (build) => ({
-    rfqSuppliers: build.query<RfqSuppliers, number>({ query: (rfqId) => `/rfqs/${rfqId}/quotes`, providesTags: ['Quote'] }),
-    inviteSuppliers: build.mutation<RfqSuppliers, { rfqId: number; supplierIds: number[]; responseDueDate: string }>({
+    rfqQuotes: build.query<RfqQuotes, number>({ query: (rfqId) => `/rfqs/${rfqId}/quotes`, providesTags: ['Quote'] }),
+    rfqParts: build.query<PartStatusRow[], number>({ query: (rfqId) => `/rfqs/${rfqId}/parts`, providesTags: ['Quote'] }),
+    distributeRfq: build.mutation<RfqQuotes, { rfqId: number; subRfqs: SubRfqForm[]; responseDueDate: string }>({
       query: ({ rfqId, ...body }) => ({ url: `/rfqs/${rfqId}/quotes`, method: 'POST', body }),
       invalidatesTags: ['Quote', 'Rfq'],
     }),
@@ -237,8 +264,8 @@ const quoteApi = api.enhanceEndpoints({ addTagTypes: ['Quote', 'QuoteDocuments',
     }),
     quoteCommand: build.mutation<QuoteView, { id: number; command: QuoteCommand; comment?: string }>({
       query: ({ id, command, comment }) =>
-        command === 'submit'
-          ? { url: `/quotes/${id}/submit`, method: 'POST' }
+        command === 'submit' || command === 'accept'
+          ? { url: `/quotes/${id}/${command}`, method: 'POST' }
           : { url: `/quotes/${id}/${command}`, method: 'POST', body: { comment: comment ?? null } },
       invalidatesTags: ['Quote', 'Rfq'],
     }),
@@ -270,8 +297,9 @@ const quoteApi = api.enhanceEndpoints({ addTagTypes: ['Quote', 'QuoteDocuments',
 })
 
 export const {
-  useRfqSuppliersQuery,
-  useInviteSuppliersMutation,
+  useRfqQuotesQuery,
+  useRfqPartsQuery,
+  useDistributeRfqMutation,
   useMyQuotesQuery,
   useQuoteQuery,
   useQuoteVersionsQuery,

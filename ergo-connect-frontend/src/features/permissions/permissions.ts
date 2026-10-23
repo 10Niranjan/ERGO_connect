@@ -50,6 +50,8 @@ export const QUOTE_VIEW: Rule[] = [{ module: 'QUOTATION', need: 'view', sides: E
 export const QUOTATION_VIEW: Rule[] = [{ module: 'QUOTATION', need: 'view' }]
 /** Customer roles that see and answer the quotes ERGO sends. */
 export const QUOTATION_CUSTOMER_VIEW: Rule[] = [{ module: 'QUOTATION', need: 'view', sides: CUSTOMER }]
+/** ERGO's final-approval roles on Quotation: accept quotes and generate the customer quotation. */
+export const QUOTATION_ERGO_APPROVE: Rule[] = [{ module: 'QUOTATION', need: 'approve', sides: ERGO }]
 export const NPD_ERGO_VIEW: Rule[] = [{ module: 'NPD', need: 'view', sides: ERGO }]
 export const NPD_MINE_VIEW: Rule[] = [{ module: 'NPD', need: 'view', sides: EXTERNAL }]
 export const NPD_VIEW: Rule[] = [{ module: 'NPD', need: 'view' }]

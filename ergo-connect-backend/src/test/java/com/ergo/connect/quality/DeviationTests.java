@@ -26,6 +26,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import com.ergo.connect.IntegrationTest;
+import com.ergo.connect.TestRfq;
 import com.ergo.connect.TestUsers;
 import com.ergo.connect.TestUsers.Login;
 import com.ergo.connect.quality.domain.DeviationService;
@@ -823,14 +824,17 @@ class DeviationTests {
 		long currencyId = users.currency("INR");
 		long rfqId = jdbc.queryForObject("""
 				INSERT INTO rfqs (rfq_number, source_type, customer_company_id, created_by_user_id, status, priority,
-				                  part_number, currency_id)
-				VALUES (?, 'CUSTOMER', ?, ?, 'CUSTOMER_APPROVED', 'NORMAL', 'PN-RFQ', ?) RETURNING rfq_id""",
+				                  currency_id)
+				VALUES (?, 'CUSTOMER', ?, ?, 'CUSTOMER_APPROVED', 'NORMAL', ?) RETURNING rfq_id""",
 				Long.class, "NX" + SEQ.incrementAndGet(), customerCompanyId, ergoManagement.userId(), currencyId);
+		long rfqItemId = jdbc.queryForObject(
+				"INSERT INTO rfq_items (rfq_id, line_no, part_number) VALUES (?, 1, 'PN-RFQ') RETURNING rfq_item_id",
+				Long.class, rfqId);
 		return jdbc.queryForObject("""
-				INSERT INTO npd_projects (npd_number, source_rfq_id, customer_company_id, supplier_company_id,
+				INSERT INTO npd_projects (npd_number, source_rfq_id, source_rfq_item_id, customer_company_id, supplier_company_id,
 				                          part_number, stage, created_by_user_id)
-				VALUES (?, ?, ?, ?, 'PN-NPD', 'PLANNING', ?) RETURNING npd_project_id""", Long.class,
-				"NY" + SEQ.incrementAndGet(), rfqId, customerCompanyId, supplierCompanyId, ergoManagement.userId());
+				VALUES (?, ?, ?, ?, ?, 'PN-NPD', 'PLANNING', ?) RETURNING npd_project_id""", Long.class,
+				"NY" + SEQ.incrementAndGet(), rfqId, rfqItemId, customerCompanyId, supplierCompanyId, ergoManagement.userId());
 	}
 
 	private ResultActions call(MockHttpServletRequestBuilder request, Login user, String body) throws Exception {

@@ -1,7 +1,7 @@
 import { Stack } from '@mui/material'
 import type { ManagementDashboard } from '../dashboardApi'
 import { KpiTile } from './KpiTile'
-import { NpdSection, OrderSection, SupplierPerformanceSection } from './sections'
+import { NpdSection, OrderSection, PartStatusSection, SupplierPerformanceSection } from './sections'
 
 /** SRS §12.5: ERGO Admin/Management's cross-module view. */
 export function ManagementDashboardView({ view }: { view: ManagementDashboard }) {
@@ -17,6 +17,7 @@ export function ManagementDashboardView({ view }: { view: ManagementDashboard })
         <KpiTile label="Open deviations" value={view.openDeviationCount} flagged />
         <KpiTile label="Pending approvals" value={view.pendingApprovalsCount} flagged />
       </Stack>
+      <PartStatusSection items={view.partItems} showSupplier hideWhenEmpty />
       <NpdSection title="Delayed NPD projects" items={view.delayedNpdProjects} showSupplier />
       <NpdSection title="High-risk NPD projects" items={view.highRiskNpdProjects} showSupplier />
       <OrderSection title="Orders at risk" items={view.ordersAtRisk} showSupplier />

@@ -1,13 +1,9 @@
 package com.ergo.connect.rfq.domain;
 
 import static com.ergo.connect.common.security.Role.CUSTOMER_KAM;
-import static com.ergo.connect.common.security.Role.CUSTOMER_MANAGEMENT;
-import static com.ergo.connect.common.security.Role.CUSTOMER_NPD;
-import static com.ergo.connect.common.security.Role.CUSTOMER_QUALITY;
 import static com.ergo.connect.common.security.Role.CUSTOMER_RFQ;
 import static com.ergo.connect.common.security.Role.ERGO_ADMIN;
 import static com.ergo.connect.common.security.Role.ERGO_KAM;
-import static com.ergo.connect.common.security.Role.ERGO_MANAGEMENT;
 import static com.ergo.connect.common.security.Role.ERGO_RFQ;
 import static com.ergo.connect.rfq.domain.RfqStatus.CANCELLED;
 import static com.ergo.connect.rfq.domain.RfqStatus.CLARIFICATION_REQUIRED;
@@ -20,16 +16,16 @@ import static com.ergo.connect.rfq.domain.RfqStatus.QUOTES_COMPLETE;
 import static com.ergo.connect.rfq.domain.RfqStatus.QUOTES_PARTIAL;
 import static com.ergo.connect.rfq.domain.RfqStatus.SENT_TO_CUSTOMER;
 import static com.ergo.connect.rfq.domain.RfqStatus.SENT_TO_SUPPLIERS;
-import static com.ergo.connect.rfq.domain.RfqStatus.UNDER_COMPARISON;
 import static com.ergo.connect.rfq.domain.RfqStatus.SUBMITTED;
 import static com.ergo.connect.rfq.domain.RfqStatus.UNDER_REVIEW;
-import static com.ergo.connect.rfq.domain.RfqStatus.VALIDATED;
 
 import java.time.Year;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -65,8 +61,9 @@ import com.ergo.connect.rfq.domain.RfqDtos.CustomerRfqView;
 import com.ergo.connect.rfq.domain.RfqDtos.DocumentView;
 import com.ergo.connect.rfq.domain.RfqDtos.ErgoRfqRow;
 import com.ergo.connect.rfq.domain.RfqDtos.ErgoRfqView;
+import com.ergo.connect.rfq.domain.RfqDtos.ItemForm;
+import com.ergo.connect.rfq.domain.RfqDtos.ItemView;
 import com.ergo.connect.rfq.domain.RfqDtos.Named;
-import com.ergo.connect.rfq.domain.RfqDtos.PartView;
 import com.ergo.connect.rfq.domain.RfqDtos.RfqAction;
 import com.ergo.connect.rfq.domain.RfqDtos.RfqForm;
 import com.ergo.connect.rfq.domain.RfqDtos.RfqRow;
@@ -75,9 +72,11 @@ import com.ergo.connect.rfq.domain.RfqDtos.StepView;
 import com.ergo.connect.rfq.domain.RfqDtos.TargetsView;
 
 /**
- * RFQ lifecycle up to validation (SRS §5, §14.2, §17.1). Record scope (SRS §10.4, §8.2): ERGO RFQ / Admin /
- * Management see all, ERGO KAMs their assigned customers, ERGO NPD approved work, customers their own company.
- * {@link #allowed} is the single rule book: it enforces every action and lists the caller's buttons.
+ * RFQ lifecycle up to distribution to suppliers (SRS §5, §14.2; flow doc §1-2): the customer's RFQ with its items,
+ * ERGO's review and changes, then ERGO distributes the parts to suppliers (the quotation module). Record scope
+ * (SRS §10.4, §8.2): ERGO RFQ / Admin / Management see all, ERGO KAMs their assigned customers, ERGO NPD approved
+ * work, customers their own company. {@link #allowed} is the single rule book: it enforces every action and lists
+ * the caller's buttons.
  */
 @Service
 @Transactional
@@ -88,7 +87,7 @@ public class RfqService {
 	/** The role sheet (ModuleAccess): who creates / edits / submits ("A" and up) ... */
 	private static final Set<Role> ERGO_EDITORS = ModuleAccess.actors(Module.RFQ, CompanyType.ERGO);
 
-	/** ... and who gives the final approval ("O"): validate, reopen, close. */
+	/** ... and who gives the final approval ("O"): start the review, close. */
 	private static final Set<Role> ERGO_REVIEWERS = ModuleAccess.approvers(Module.RFQ, CompanyType.ERGO);
 
 	private static final Set<Role> CUSTOMER_EDITORS = ModuleAccess.actors(Module.RFQ, CompanyType.CUSTOMER);
@@ -101,21 +100,23 @@ public class RfqService {
 
 	/** Before any supplier has seen it: files may still be removed, ERGO may still cancel. */
 	private static final Set<RfqStatus> BEFORE_FLOAT = EnumSet.of(DRAFT, SUBMITTED, UNDER_REVIEW,
-			CLARIFICATION_REQUIRED, VALIDATED);
+			CLARIFICATION_REQUIRED);
 
 	/** SRS §17.1: cancel only before any supplier response. */
 	private static final Set<RfqStatus> ERGO_CANCELLABLE = EnumSet.of(DRAFT, SUBMITTED, UNDER_REVIEW,
-			CLARIFICATION_REQUIRED, VALIDATED, SENT_TO_SUPPLIERS);
+			CLARIFICATION_REQUIRED, SENT_TO_SUPPLIERS);
 
 	/** Once suppliers have answered, an RFQ that goes no further is closed (with a reason), not cancelled. */
-	private static final Set<RfqStatus> CLOSABLE = EnumSet.of(QUOTES_PARTIAL, QUOTES_COMPLETE, UNDER_COMPARISON,
-			SENT_TO_CUSTOMER, CUSTOMER_ON_HOLD, CUSTOMER_REVISION_REQUESTED);
+	private static final Set<RfqStatus> CLOSABLE = EnumSet.of(QUOTES_PARTIAL, QUOTES_COMPLETE, SENT_TO_CUSTOMER,
+			CUSTOMER_ON_HOLD, CUSTOMER_REVISION_REQUESTED);
 
 	/** A downloadable file: metadata plus content. */
 	public record DocumentFile(DocumentInfo info, byte[] content) {
 	}
 
 	private final RfqRepository rfqs;
+
+	private final RfqItemRepository items;
 
 	private final Directory directory;
 
@@ -129,10 +130,14 @@ public class RfqService {
 
 	private final Notifier notifier;
 
-	RfqService(RfqRepository rfqs, Directory directory, MasterDataApi masterData, DocumentStore documents,
-			AuditLogService audit, JdbcTemplate jdbc, Notifier notifier) {
+	@jakarta.persistence.PersistenceContext
+	private jakarta.persistence.EntityManager entityManager;
+
+	RfqService(RfqRepository rfqs, RfqItemRepository items, Directory directory, MasterDataApi masterData,
+			DocumentStore documents, AuditLogService audit, JdbcTemplate jdbc, Notifier notifier) {
 		this.notifier = notifier;
 		this.rfqs = rfqs;
+		this.items = items;
 		this.directory = directory;
 		this.masterData = masterData;
 		this.documents = documents;
@@ -155,19 +160,20 @@ public class RfqService {
 				default -> rfqs.findAllByOrderByIdDesc();
 			};
 			case CUSTOMER -> rfqs.findByCustomerCompanyIdOrderByIdDesc(me.companyId());
-			case SUPPLIER -> List.of(); // suppliers see RFQs only as the quotes ERGO asks them for (QuoteService)
+			case SUPPLIER -> List.of(); // suppliers see RFQs only as the part quotes ERGO asks them for (QuoteService)
 		};
+		Map<Long, List<String>> parts = partNumbers(visible);
 		if (!isErgo(me)) {
 			return visible.stream()
-				.<RfqRow>map(r -> new CustomerRfqRow(r.id, r.number, r.status.forCustomer(), r.partNumber, r.revision,
-						r.description, r.targetQuoteDate, r.priority, r.createdAt))
+				.<RfqRow>map(r -> new CustomerRfqRow(r.id, r.number, r.status.forCustomer(),
+						parts.getOrDefault(r.id, List.of()), r.targetQuoteDate, r.priority, r.createdAt))
 				.toList();
 		}
 		Map<Long, CompanyRef> customers = directory.companies(ids(visible, r -> r.customerCompanyId));
 		Map<Long, UserRef> owners = directory.users(ids(visible, r -> r.ownerUserId));
 		return visible.stream()
 			.<RfqRow>map(r -> new ErgoRfqRow(r.id, r.number, r.status, customers.get(r.customerCompanyId).name(),
-					r.partNumber, r.revision, r.description, r.targetQuoteDate, r.priority,
+					parts.getOrDefault(r.id, List.of()), r.targetQuoteDate, r.priority,
 					userName(owners, r.ownerUserId), r.createdAt))
 			.toList();
 	}
@@ -178,7 +184,10 @@ public class RfqService {
 		return view(visible(me, id), me);
 	}
 
-	/** SRS §15.5 audit trail tab. ERGO only: it contains internal notes and internal steps. */
+	/**
+	 * SRS §15.5 audit trail tab. ERGO only: it contains internal notes and internal steps. Includes the changes made
+	 * to the RFQ's parts, each labelled with its part number.
+	 */
 	@Transactional(readOnly = true)
 	public List<AuditEntry> history(long id) {
 		CurrentUser me = CurrentUser.get();
@@ -186,7 +195,16 @@ public class RfqService {
 		if (!isErgo(me)) {
 			throw ApiException.forbidden("The audit trail is internal to ERGO");
 		}
-		return audit.history(MODULE, "Rfq", id);
+		List<AuditEntry> result = new ArrayList<>(audit.history(MODULE, "Rfq", id));
+		for (RfqItem item : items.findByRfqIdOrderByLineNo(id)) {
+			for (AuditEntry e : audit.history(MODULE, "RfqItem", item.id)) {
+				String field = e.field() == null ? "Part " + item.partNumber : "Part " + item.partNumber + ": " + e.field();
+				result.add(new AuditEntry(e.at(), e.user(), e.role(), e.event(), field, e.oldValue(), e.newValue(),
+						e.reason(), e.channel()));
+			}
+		}
+		result.sort(Comparator.comparing(AuditEntry::at).reversed());
+		return result;
 	}
 
 	// ---------------------------------------------------------------- create and edit
@@ -200,25 +218,21 @@ public class RfqService {
 		rfq.sourceType = isErgo(me) ? SourceType.ERGO : SourceType.CUSTOMER;
 		rfq.createdByUserId = me.userId();
 		rfq.status = DRAFT;
-		apply(rfq, form, me);
+		applyHeader(rfq, form, me);
 		rfqs.save(rfq);
-		auditSteps(rfq, List.of());
+		syncItems(rfq, form.items());
 		return view(rfq, me);
 	}
 
+	/** ERGO may change anything while reviewing (flow doc §2), the customer while the RFQ is still its own. */
 	public RfqView update(long id, RfqForm form) {
 		CurrentUser me = CurrentUser.get();
+		jdbc.queryForList("SELECT rfq_id FROM rfqs WHERE rfq_id = ? FOR UPDATE", Long.class, id); // not while ERGO distributes
+		entityManager.clear();
 		Rfq rfq = visible(me, id);
 		require(RfqAction.EDIT, me, rfq);
-		if (rfq.status == UNDER_REVIEW && (!Objects.equals(rfq.partNumber, form.partNumber().trim())
-				|| !Objects.equals(rfq.revision, text(form.revision()))
-				|| !Objects.equals(rfq.description, text(form.description())))) {
-			throw ApiException.unprocessable(
-					"Part number, revision and description can only change while the RFQ is a draft or submitted");
-		}
-		List<ProcessStep> before = List.copyOf(rfq.processSteps);
-		apply(rfq, form, me);
-		auditSteps(rfq, before);
+		applyHeader(rfq, form, me);
+		syncItems(rfq, form.items());
 		return view(rfq, me);
 	}
 
@@ -243,29 +257,35 @@ public class RfqService {
 		copy.createdByUserId = me.userId();
 		copy.status = DRAFT;
 		copy.priority = source.priority;
-		copy.partNumber = source.partNumber;
-		copy.revision = source.revision;
-		copy.description = source.description;
-		copy.eau = source.eau;
-		copy.netWeightKg = source.netWeightKg;
-		copy.grossWeightKg = source.grossWeightKg;
-		copy.materialId = source.materialId;
-		copy.materialSpec = source.materialSpec;
-		copy.coatingId = source.coatingId;
-		copy.coatingSpec = source.coatingSpec;
 		copy.currencyId = source.currencyId;
-		copy.targetToolingCost = source.targetToolingCost;
-		copy.targetPpapPiecePrice = source.targetPpapPiecePrice;
-		copy.targetProductionPiecePrice = source.targetProductionPiecePrice;
 		copy.paymentTermId = source.paymentTermId;
-		copy.materialLeadTimeWeeks = source.materialLeadTimeWeeks;
-		copy.toolingLeadTimeDays = source.toolingLeadTimeDays;
-		copy.sampleLeadTimeDays = source.sampleLeadTimeDays;
-		copy.productionLeadTimeDays = source.productionLeadTimeDays;
-		copy.moq = source.moq;
 		copy.customerRemarks = source.customerRemarks;
-		copy.processSteps.addAll(source.processSteps);
 		rfqs.save(copy);
+		for (RfqItem from : items.findByRfqIdOrderByLineNo(source.id)) {
+			RfqItem to = new RfqItem();
+			to.rfqId = copy.id;
+			to.lineNo = from.lineNo;
+			to.partNumber = from.partNumber;
+			to.revision = from.revision;
+			to.description = from.description;
+			to.eau = from.eau;
+			to.netWeightKg = from.netWeightKg;
+			to.grossWeightKg = from.grossWeightKg;
+			to.materialId = from.materialId;
+			to.materialSpec = from.materialSpec;
+			to.coatingId = from.coatingId;
+			to.coatingSpec = from.coatingSpec;
+			to.targetToolingCost = from.targetToolingCost;
+			to.targetPpapPiecePrice = from.targetPpapPiecePrice;
+			to.targetProductionPiecePrice = from.targetProductionPiecePrice;
+			to.materialLeadTimeWeeks = from.materialLeadTimeWeeks;
+			to.toolingLeadTimeDays = from.toolingLeadTimeDays;
+			to.sampleLeadTimeDays = from.sampleLeadTimeDays;
+			to.productionLeadTimeDays = from.productionLeadTimeDays;
+			to.moq = from.moq;
+			to.processSteps.addAll(from.processSteps);
+			items.save(to);
+		}
 		audit.record(Rfq.class, copy.id, "CLONED_FROM", "rfq", null, source.number);
 		return view(copy, me);
 	}
@@ -277,7 +297,7 @@ public class RfqService {
 		CurrentUser me = CurrentUser.get();
 		Rfq rfq = visible(me, id);
 		require(RfqAction.SUBMIT, me, rfq);
-		requireComplete(rfq);
+		requireComplete(rfq, items.findByRfqIdOrderByLineNo(rfq.id));
 		if (rfq.status == CLARIFICATION_REQUIRED) {
 			rfq.clarificationAnswer = required(comment, "Answer the clarification question before resubmitting");
 			audit.reason(rfq.clarificationAnswer);
@@ -316,33 +336,7 @@ public class RfqService {
 		return view(rfq, me);
 	}
 
-	/** SRS §5.6 / §14.2: nothing goes to suppliers before ERGO validates it. */
-	public RfqView validate(long id, String comment) {
-		CurrentUser me = CurrentUser.get();
-		Rfq rfq = visible(me, id);
-		require(RfqAction.VALIDATE, me, rfq);
-		requireComplete(rfq);
-		reasonIfGiven(comment);
-		rfq.status = VALIDATED;
-		if (rfq.ownerUserId == null) {
-			rfq.ownerUserId = me.userId();
-		}
-		statusChanged(me, rfq, "Validated");
-		return view(rfq, me);
-	}
-
-	/** SRS §17.1 "Re-open RFQ" (ERGO Admin / RFQ), reason required (SRS §14.1, §15.6). */
-	public RfqView reopen(long id, String reason) {
-		CurrentUser me = CurrentUser.get();
-		Rfq rfq = visible(me, id);
-		require(RfqAction.REOPEN, me, rfq);
-		audit.reason(required(reason, "A reason is required to re-open an RFQ"));
-		rfq.status = UNDER_REVIEW;
-		statusChanged(me, rfq, "Reopened, under review");
-		return view(rfq, me);
-	}
-
-	/** An RFQ that will not go further after suppliers have quoted (SRS §14.2 Closed). */
+	/** An RFQ that will not go further after suppliers have been involved (SRS §14.2 Closed). */
 	public RfqView close(long id, String reason) {
 		CurrentUser me = CurrentUser.get();
 		Rfq rfq = visible(me, id);
@@ -391,20 +385,52 @@ public class RfqService {
 	public List<DocumentView> documents(long id) {
 		CurrentUser me = CurrentUser.get();
 		Rfq rfq = visible(me, id);
-		return documents.list(MODULE, id).stream().filter(d -> canSee(me, d)).map(d -> documentView(me, rfq, d))
-			.toList();
+		return documents.list(MODULE, id).stream().filter(d -> canSee(me, d)).map(d -> docView(me, rfq, d)).toList();
+	}
+
+	/** The parts a file is shared with suppliers for (ERGO sees it; nobody else needs it). */
+	private List<Long> partsOf(long documentId) {
+		return jdbc.queryForList("SELECT rfq_item_id FROM rfq_document_parts WHERE document_id = ? ORDER BY rfq_item_id",
+				Long.class, documentId);
+	}
+
+	private DocumentView docView(CurrentUser me, Rfq rfq, DocumentInfo d) {
+		return documentView(me, rfq, d, isErgo(me) ? partsOf(d.id()) : List.of());
+	}
+
+	/**
+	 * A file shared with suppliers is shared per part (flow doc: a supplier sees only the parts sent to it, so a
+	 * drawing of one part must not reach the supplier of another). Any other visibility shares it for no part.
+	 */
+	private void sharePerPart(Rfq rfq, long documentId, Visibility visibility, Collection<Long> itemIds) {
+		jdbc.update("DELETE FROM rfq_document_parts WHERE document_id = ?", documentId);
+		if (visibility != Visibility.SUPPLIER && visibility != Visibility.ALL) {
+			return;
+		}
+		Set<Long> chosen = itemIds == null ? Set.of() : new HashSet<>(itemIds);
+		if (chosen.isEmpty()) {
+			throw ApiException.unprocessable("Choose the parts this file is shared with suppliers for");
+		}
+		Set<Long> own = items.findByRfqIdOrderByLineNo(rfq.id).stream().map(i -> i.id).collect(Collectors.toSet());
+		if (!own.containsAll(chosen)) {
+			throw ApiException.unprocessable("A part does not belong to this RFQ");
+		}
+		for (Long itemId : chosen) {
+			jdbc.update("INSERT INTO rfq_document_parts (document_id, rfq_item_id) VALUES (?, ?)", documentId, itemId);
+		}
 	}
 
 	/**
 	 * Customers' uploads are visible to ERGO and themselves; only ERGO decides what suppliers see (client decision:
 	 * the customer's identity is hidden from suppliers, so ERGO may share a cleaned copy instead).
 	 */
-	public DocumentView upload(long id, String fileName, byte[] content, Visibility requested) {
+	public DocumentView upload(long id, String fileName, byte[] content, Visibility requested, Collection<Long> itemIds) {
 		CurrentUser me = CurrentUser.get();
 		Rfq rfq = visible(me, id);
 		require(RfqAction.UPLOAD, me, rfq);
 		Visibility visibility = isErgo(me) ? (requested == null ? Visibility.INTERNAL : requested) : Visibility.CUSTOMER;
 		DocumentInfo stored = documents.store(MODULE, id, fileName, content, visibility);
+		sharePerPart(rfq, stored.id(), visibility, itemIds);
 		// SRS §14.9 "document upload": ERGO hears about a customer's file; the customer hears about a file ERGO shares.
 		// Linked to the document itself, so delivery re-checks the file's own visibility, not just the RFQ's. Files ERGO
 		// shares with suppliers are not announced (suppliers have no RFQ screen; they see shared drawings on their quote).
@@ -412,7 +438,7 @@ public class RfqService {
 				: visibility == Visibility.CUSTOMER || visibility == Visibility.ALL
 						? Recipients.company(rfq.customerCompanyId, CUSTOMER_RFQ, CUSTOMER_KAM) : Recipients.none();
 		notifier.send(NotificationKind.DOCUMENT_UPLOADED, "document", stored.id(), rfq.number, stored.fileName(), to);
-		return documentView(me, rfq, stored);
+		return docView(me, rfq, stored);
 	}
 
 	@Transactional(readOnly = true)
@@ -423,15 +449,16 @@ public class RfqService {
 		return new DocumentFile(document, documents.content(document));
 	}
 
-	public DocumentView setVisibility(long id, long documentId, Visibility visibility) {
+	public DocumentView setVisibility(long id, long documentId, Visibility visibility, Collection<Long> itemIds) {
 		CurrentUser me = CurrentUser.get();
 		Rfq rfq = visible(me, id);
 		if (!ERGO_EDITORS.contains(me.role())) {
 			throw ApiException.forbidden("Only ERGO decides who sees a document");
 		}
 		DocumentInfo document = document(me, id, documentId);
-		documents.setVisibility(document, visibility);
-		return documentView(me, rfq, document(me, id, documentId));
+		documents.setVisibility(document, visibility); // refuses a locked document first
+		sharePerPart(rfq, documentId, visibility, itemIds);
+		return docView(me, rfq, document(me, id, documentId));
 	}
 
 	public void deleteDocument(long id, long documentId) {
@@ -501,8 +528,6 @@ public class RfqService {
 			case SUBMIT -> (status == DRAFT || status == CLARIFICATION_REQUIRED) && (customer || ergo);
 			case START_REVIEW -> status == SUBMITTED && reviewer;
 			case REQUEST_CLARIFICATION -> status == UNDER_REVIEW && ergo;
-			case VALIDATE -> status == UNDER_REVIEW && reviewer;
-			case REOPEN -> status == VALIDATED && reviewer;
 			case CANCEL -> customer ? CUSTOMER_OPEN.contains(status) : ergo && ERGO_CANCELLABLE.contains(status);
 			case CLOSE -> reviewer && CLOSABLE.contains(status);
 			case CLONE -> customer || ergo;
@@ -522,23 +547,35 @@ public class RfqService {
 		}
 	}
 
-	/** SRS §17.1 mandatory fields; process flow needed before suppliers can quote. */
-	private static void requireComplete(Rfq rfq) {
+	/**
+	 * SRS §17.1 mandatory fields; every part needs a process flow before suppliers can quote it. Also checked when
+	 * ERGO distributes the RFQ (flow doc §2), after any changes ERGO made.
+	 */
+	static void requireComplete(Rfq rfq, List<RfqItem> parts) {
 		List<String> missing = new ArrayList<>();
-		if (rfq.description == null) {
-			missing.add("description");
-		}
-		if (rfq.materialId == null && rfq.materialSpec == null) {
-			missing.add("material");
-		}
-		if (rfq.processSteps.isEmpty()) {
-			missing.add("process flow (at least one step)");
-		}
 		if (rfq.targetQuoteDate == null) {
 			missing.add("target quote date");
 		}
+		if (parts.isEmpty()) {
+			missing.add("at least one part");
+		}
+		for (RfqItem part : parts) {
+			List<String> partMissing = new ArrayList<>();
+			if (part.description == null) {
+				partMissing.add("description");
+			}
+			if (part.materialId == null && part.materialSpec == null) {
+				partMissing.add("material");
+			}
+			if (part.processSteps.isEmpty()) {
+				partMissing.add("process flow (at least one step)");
+			}
+			if (!partMissing.isEmpty()) {
+				missing.add("part " + part.partNumber + ": " + String.join(", ", partMissing));
+			}
+		}
 		if (!missing.isEmpty()) {
-			throw ApiException.unprocessable("Please complete: " + String.join(", ", missing));
+			throw ApiException.unprocessable("Please complete: " + String.join("; ", missing));
 		}
 	}
 
@@ -559,61 +596,99 @@ public class RfqService {
 	}
 
 	/** Newly chosen master entries must be active; entries that were already set may since have been retired. */
-	private void apply(Rfq rfq, RfqForm form, CurrentUser me) {
+	private void applyHeader(Rfq rfq, RfqForm form, CurrentUser me) {
 		if (!Objects.equals(rfq.currencyId, form.currencyId())) {
 			masterData.requireActive(Ref.CURRENCY, form.currencyId(), "Currency");
-		}
-		if (!Objects.equals(rfq.materialId, form.materialId())) {
-			masterData.requireActive(Ref.MATERIAL, form.materialId(), "Material");
-		}
-		if (!Objects.equals(rfq.coatingId, form.coatingId())) {
-			masterData.requireActive(Ref.COATING, form.coatingId(), "Coating");
 		}
 		if (!Objects.equals(rfq.paymentTermId, form.paymentTermId())) {
 			masterData.requireActive(Ref.PAYMENT_TERM, form.paymentTermId(), "Payment term");
 		}
-		List<ProcessStep> steps = form.processSteps() == null ? List.of()
-				: form.processSteps().stream().map(RfqService::clean).toList();
-		Set<Long> knownProcesses = rfq.processSteps.stream().map(ProcessStep::processId).filter(Objects::nonNull)
-			.collect(Collectors.toSet());
-		steps.stream().map(ProcessStep::processId).filter(p -> p != null && !knownProcesses.contains(p))
-			.forEach(p -> masterData.requireActive(Ref.PROCESS, p, "Process"));
-
-		rfq.partNumber = form.partNumber().trim();
-		rfq.revision = text(form.revision());
-		rfq.description = text(form.description());
-		rfq.eau = form.eau();
-		rfq.netWeightKg = form.netWeightKg();
-		rfq.grossWeightKg = form.grossWeightKg();
-		rfq.materialId = form.materialId();
-		rfq.materialSpec = text(form.materialSpec());
-		rfq.coatingId = form.coatingId();
-		rfq.coatingSpec = text(form.coatingSpec());
 		rfq.targetQuoteDate = form.targetQuoteDate();
 		rfq.priority = form.priority() == null ? Priority.NORMAL : form.priority();
 		rfq.currencyId = form.currencyId();
-		rfq.targetToolingCost = form.targetToolingCost();
-		rfq.targetPpapPiecePrice = form.targetPpapPiecePrice();
-		rfq.targetProductionPiecePrice = form.targetProductionPiecePrice();
 		rfq.paymentTermId = form.paymentTermId();
-		rfq.materialLeadTimeWeeks = form.materialLeadTimeWeeks();
-		rfq.toolingLeadTimeDays = form.toolingLeadTimeDays();
-		rfq.sampleLeadTimeDays = form.sampleLeadTimeDays();
-		rfq.productionLeadTimeDays = form.productionLeadTimeDays();
-		rfq.moq = form.moq();
 		rfq.customerRemarks = text(form.customerRemarks());
 		if (isErgo(me)) {
 			rfq.internalNotes = text(form.internalNotes()); // never written by customers, whatever they send
 		}
-		if (!rfq.processSteps.equals(steps)) {
-			rfq.processSteps.clear();
-			rfq.processSteps.addAll(steps);
+	}
+
+	/**
+	 * Makes the RFQ's parts what the form says: parts with an id are updated in place (their history stays with
+	 * them), parts without one are added, parts left out are removed. Line numbers follow the form's order. Only
+	 * possible before distribution (see {@link #allowed}), so no supplier has a quote on a removed part.
+	 */
+	private void syncItems(Rfq rfq, List<ItemForm> forms) {
+		List<RfqItem> existing = items.findByRfqIdOrderByLineNo(rfq.id);
+		Map<Long, RfqItem> byId = existing.stream().collect(Collectors.toMap(i -> i.id, Function.identity()));
+		Set<String> seen = new HashSet<>();
+		for (ItemForm form : forms) {
+			String revision = text(form.revision());
+			if (!seen.add(form.partNumber().trim().toLowerCase() + "|" + (revision == null ? "" : revision.toLowerCase()))) {
+				throw ApiException.unprocessable("Part " + form.partNumber().trim() + " is listed twice");
+			}
+			if (form.id() != null && !byId.containsKey(form.id())) {
+				throw ApiException.unprocessable("Unknown part in this RFQ");
+			}
+		}
+		for (RfqItem item : existing) {
+			if (forms.stream().noneMatch(f -> Objects.equals(f.id(), item.id))) {
+				items.delete(item);
+				audit.record(Rfq.class, rfq.id, "PART_REMOVED", "part", item.partNumber, null);
+			}
+		}
+		int lineNo = 0;
+		for (ItemForm form : forms) {
+			lineNo++;
+			RfqItem item = form.id() == null ? new RfqItem() : byId.get(form.id());
+			if (form.id() == null) {
+				item.rfqId = rfq.id;
+			}
+			List<ProcessStep> before = List.copyOf(item.processSteps);
+			applyItem(item, form, lineNo);
+			items.save(item);
+			if (!before.equals(item.processSteps)) {
+				audit.record(RfqItem.class, item.id, "UPDATE", "processFlow", route(before), route(item.processSteps));
+			}
 		}
 	}
 
-	private void auditSteps(Rfq rfq, List<ProcessStep> before) {
-		if (!before.equals(rfq.processSteps)) {
-			audit.record(Rfq.class, rfq.id, "UPDATE", "processFlow", route(before), route(rfq.processSteps));
+	private void applyItem(RfqItem item, ItemForm form, int lineNo) {
+		if (!Objects.equals(item.materialId, form.materialId())) {
+			masterData.requireActive(Ref.MATERIAL, form.materialId(), "Material");
+		}
+		if (!Objects.equals(item.coatingId, form.coatingId())) {
+			masterData.requireActive(Ref.COATING, form.coatingId(), "Coating");
+		}
+		List<ProcessStep> steps = form.processSteps() == null ? List.of()
+				: form.processSteps().stream().map(RfqService::clean).toList();
+		Set<Long> knownProcesses = item.processSteps.stream().map(ProcessStep::processId).filter(Objects::nonNull)
+			.collect(Collectors.toSet());
+		steps.stream().map(ProcessStep::processId).filter(p -> p != null && !knownProcesses.contains(p))
+			.forEach(p -> masterData.requireActive(Ref.PROCESS, p, "Process"));
+
+		item.lineNo = lineNo;
+		item.partNumber = form.partNumber().trim();
+		item.revision = text(form.revision());
+		item.description = text(form.description());
+		item.eau = form.eau();
+		item.netWeightKg = form.netWeightKg();
+		item.grossWeightKg = form.grossWeightKg();
+		item.materialId = form.materialId();
+		item.materialSpec = text(form.materialSpec());
+		item.coatingId = form.coatingId();
+		item.coatingSpec = text(form.coatingSpec());
+		item.targetToolingCost = form.targetToolingCost();
+		item.targetPpapPiecePrice = form.targetPpapPiecePrice();
+		item.targetProductionPiecePrice = form.targetProductionPiecePrice();
+		item.materialLeadTimeWeeks = form.materialLeadTimeWeeks();
+		item.toolingLeadTimeDays = form.toolingLeadTimeDays();
+		item.sampleLeadTimeDays = form.sampleLeadTimeDays();
+		item.productionLeadTimeDays = form.productionLeadTimeDays();
+		item.moq = form.moq();
+		if (!item.processSteps.equals(steps)) {
+			item.processSteps.clear();
+			item.processSteps.addAll(steps);
 		}
 	}
 
@@ -654,25 +729,14 @@ public class RfqService {
 	}
 
 	private RfqView view(Rfq r, CurrentUser me) {
-		Map<Long, MasterDataApi.Named> materials = masterData.describe(Ref.MATERIAL, ids(List.of(r), x -> x.materialId));
-		Map<Long, MasterDataApi.Named> coatings = masterData.describe(Ref.COATING, ids(List.of(r), x -> x.coatingId));
-		Map<Long, MasterDataApi.Named> processes = masterData.describe(Ref.PROCESS,
-				r.processSteps.stream().map(ProcessStep::processId).filter(Objects::nonNull).collect(Collectors.toSet()));
+		List<ItemView> itemViews = itemViews(items.findByRfqIdOrderByLineNo(r.id));
 		Map<Long, MasterDataApi.Named> currencies = masterData.describe(Ref.CURRENCY, List.of(r.currencyId));
 		Map<Long, MasterDataApi.Named> terms = masterData.describe(Ref.PAYMENT_TERM, ids(List.of(r), x -> x.paymentTermId));
-
-		PartView part = new PartView(r.partNumber, r.revision, r.description, r.eau, r.netWeightKg, r.grossWeightKg,
-				named(materials, r.materialId), r.materialSpec, named(coatings, r.coatingId), r.coatingSpec,
-				r.targetQuoteDate, r.priority,
-				r.processSteps.stream().map(s -> new StepView(named(processes, s.processId()), s.stepName(),
-						s.cycleTimeSeconds(), s.sourcingType(), s.outsourcedSupplierName(), s.remarks())).toList());
-		TargetsView targets = new TargetsView(named(currencies, r.currencyId), r.targetToolingCost,
-				r.targetPpapPiecePrice, r.targetProductionPiecePrice, named(terms, r.paymentTermId),
-				r.materialLeadTimeWeeks, r.toolingLeadTimeDays, r.sampleLeadTimeDays, r.productionLeadTimeDays, r.moq);
 		Set<RfqAction> actions = actions(me, r);
 
 		if (!isErgo(me)) {
-			return new CustomerRfqView("CUSTOMER", r.id, r.number, r.status.forCustomer(), part, targets,
+			return new CustomerRfqView("CUSTOMER", r.id, r.number, r.status.forCustomer(), r.targetQuoteDate,
+					r.priority, named(currencies, r.currencyId), named(terms, r.paymentTermId), itemViews,
 					r.customerRemarks, r.clarificationQuestion, r.clarificationAnswer, actions, r.createdAt,
 					r.updatedAt);
 		}
@@ -680,13 +744,45 @@ public class RfqService {
 		Map<Long, UserRef> users = directory.users(ids(List.of(r), x -> x.createdByUserId, x -> x.ownerUserId));
 		return new ErgoRfqView("ERGO", r.id, r.number, r.status, r.sourceType,
 				new Named(customer.id(), customer.code(), customer.name()), userName(users, r.createdByUserId),
-				userName(users, r.ownerUserId), part, targets, r.customerRemarks, r.internalNotes,
-				r.clarificationQuestion, r.clarificationAnswer, actions, r.createdAt, r.updatedAt);
+				userName(users, r.ownerUserId), r.targetQuoteDate, r.priority, named(currencies, r.currencyId),
+				named(terms, r.paymentTermId), itemViews, r.customerRemarks, r.internalNotes, r.clarificationQuestion,
+				r.clarificationAnswer, actions, r.createdAt, r.updatedAt);
 	}
 
-	private static DocumentView documentView(CurrentUser me, Rfq rfq, DocumentInfo d) {
+	/** The parts as ERGO and the RFQ's own customer see them (targets included; suppliers never get this view). */
+	private List<ItemView> itemViews(List<RfqItem> parts) {
+		Map<Long, MasterDataApi.Named> materials = masterData.describe(Ref.MATERIAL,
+				parts.stream().map(p -> p.materialId).filter(Objects::nonNull).collect(Collectors.toSet()));
+		Map<Long, MasterDataApi.Named> coatings = masterData.describe(Ref.COATING,
+				parts.stream().map(p -> p.coatingId).filter(Objects::nonNull).collect(Collectors.toSet()));
+		Map<Long, MasterDataApi.Named> processes = masterData.describe(Ref.PROCESS, parts.stream()
+			.flatMap(p -> p.processSteps.stream().map(ProcessStep::processId)).filter(Objects::nonNull)
+			.collect(Collectors.toSet()));
+		return parts.stream()
+			.map(p -> new ItemView(p.id, p.lineNo, p.partNumber, p.revision, p.description, p.eau, p.netWeightKg,
+					p.grossWeightKg, named(materials, p.materialId), p.materialSpec, named(coatings, p.coatingId),
+					p.coatingSpec,
+					new TargetsView(p.targetToolingCost, p.targetPpapPiecePrice, p.targetProductionPiecePrice,
+							p.materialLeadTimeWeeks, p.toolingLeadTimeDays, p.sampleLeadTimeDays,
+							p.productionLeadTimeDays, p.moq),
+					p.processSteps.stream()
+						.map(s -> new StepView(named(processes, s.processId()), s.stepName(), s.cycleTimeSeconds(),
+								s.sourcingType(), s.outsourcedSupplierName(), s.remarks()))
+						.toList()))
+			.toList();
+	}
+
+	private Map<Long, List<String>> partNumbers(Collection<Rfq> list) {
+		if (list.isEmpty()) {
+			return Map.of();
+		}
+		return items.findByRfqIdInOrderByRfqIdAscLineNoAsc(list.stream().map(r -> r.id).toList()).stream()
+			.collect(Collectors.groupingBy(i -> i.rfqId, Collectors.mapping(i -> i.partNumber, Collectors.toList())));
+	}
+
+	private static DocumentView documentView(CurrentUser me, Rfq rfq, DocumentInfo d, List<Long> itemIds) {
 		return new DocumentView(d.id(), d.fileName(), d.size(), d.visibility(),
-				d.uploadedByCompanyId() == me.companyId(), canDelete(me, rfq, d), d.createdAt());
+				d.uploadedByCompanyId() == me.companyId(), canDelete(me, rfq, d), d.createdAt(), itemIds);
 	}
 
 	// ---------------------------------------------------------------- small helpers

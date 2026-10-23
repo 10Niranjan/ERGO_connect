@@ -67,7 +67,7 @@ function fromView(view: SupplierQuoteView): FormState {
     steps: toStepRows(
       q?.processSteps.length
         ? q.processSteps.map((s) => ({ ...s, processId: s.process?.id ?? null }))
-        : view.rfq.processSteps.map((s) => ({ processId: s.processId, stepName: s.stepName, cycleTimeSeconds: null, sourcingType: null, outsourcedSupplierName: null, remarks: null })),
+        : view.part.processSteps.map((s) => ({ processId: s.processId, stepName: s.stepName, cycleTimeSeconds: null, sourcingType: null, outsourcedSupplierName: null, remarks: null })),
     ),
   }
 }

@@ -21,15 +21,16 @@ import {
 } from '@mui/material'
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
-import { QUOTATION_CUSTOMER_VIEW, useCan } from '@/features/permissions'
+import { QUOTATION_CUSTOMER_VIEW, QUOTATION_VIEW, useCan } from '@/features/permissions'
 import { AuditTrail } from '../../../shared/components/AuditTrail'
 import { CommentsPanel } from '../../communication/components/CommentsPanel'
 import { CommentDialog } from '../../../shared/components/CommentDialog'
 import { Facts } from '../../../shared/components/Facts'
 import { problemMessage } from '../../../shared/problem'
-import { ComparisonPanel } from '../../quotation/components/ComparisonPanel'
-import { CustomerQuotesPanel } from '../../quotation/components/CustomerQuotesPanel'
-import { SuppliersPanel } from '../../quotation/components/SuppliersPanel'
+import { CustomerQuotesPanel, ErgoQuotationsPanel } from '../../quotation/components/CustomerQuotesPanel'
+import { PartsPanel } from '../../quotation/components/PartsPanel'
+import { partStatusLabel } from '../../quotation/utils/labels'
+import { useRfqPartsQuery } from '../../quotation/services/quoteApi'
 import { DocumentsPanel } from '../components/DocumentsPanel'
 import { PRIORITIES, STATUS, formatDate, formatMoney, formatNumber } from '../labels'
 import {
@@ -38,16 +39,15 @@ import {
   useRfqHistoryQuery,
   useRfqQuery,
   useUpdateRfqNotesMutation,
+  type ItemView,
   type RfqCommand,
   type RfqView,
 } from '../rfqApi'
 
-/** How each workflow action asks for its comment (reasons are required for clarification, re-open, cancel). */
+/** How each workflow action asks for its comment (reasons are required for clarification, cancel and close). */
 const COMMANDS: Record<Exclude<RfqCommand, 'start-review'>, { title: string; label: string; confirm: string; required: boolean; danger?: boolean }> = {
   submit: { title: 'Submit RFQ', label: 'Comment (optional)', confirm: 'Submit', required: false },
   'request-clarification': { title: 'Ask the customer', label: 'Question for the customer', confirm: 'Send question', required: true },
-  validate: { title: 'Validate RFQ', label: 'Comment (optional)', confirm: 'Validate', required: false },
-  reopen: { title: 'Re-open RFQ', label: 'Reason for re-opening', confirm: 'Re-open', required: true },
   cancel: { title: 'Cancel RFQ', label: 'Reason for cancelling', confirm: 'Cancel RFQ', required: true, danger: true },
   close: { title: 'Close RFQ', label: 'Reason for closing', confirm: 'Close RFQ', required: true },
 }
@@ -68,8 +68,9 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
   const [cloneRfq] = useCloneRfqMutation()
   const [actionError, setActionError] = useState<unknown>(null)
   const isErgo = rfq.audience === 'ERGO'
-  // The role sheet: a customer role with RFQ access but none on Quotation (e.g. Customer NPD) never sees the quotes ERGO sends.
+  // The role sheet: a customer role with RFQ access but none on Quotation (e.g. Customer NPD) never sees the quotations ERGO sends.
   const canSeeQuotes = useCan(QUOTATION_CUSTOMER_VIEW)
+  const canSeeParts = useCan(QUOTATION_VIEW) && (isErgo || canSeeQuotes)
   const can = (action: RfqView['actions'][number]) => rfq.actions.includes(action)
   const answering = rfq.status === 'CLARIFICATION_REQUIRED' && can('SUBMIT')
 
@@ -93,7 +94,6 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
     }
   }
 
-  const currency = rfq.targets.currency.code
   const status = STATUS[rfq.status]
 
   return (
@@ -107,11 +107,10 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
             <Chip label={status.label} color={status.color} size="small" />
           </Stack>
           <Typography color="text.secondary">
-            {rfq.part.partNumber}
-            {rfq.part.revision ? ` rev ${rfq.part.revision}` : ''} · {rfq.part.description ?? 'No description yet'}
+            {rfq.items.length} part{rfq.items.length === 1 ? '' : 's'}: {rfq.items.map((i) => i.partNumber).join(', ') || 'none yet'}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            {isErgo && `${rfq.customer.name} · `}Quote needed by {formatDate(rfq.part.targetQuoteDate)} · Priority {PRIORITIES[rfq.part.priority]}
+            {isErgo && `${rfq.customer.name} · `}Quote needed by {formatDate(rfq.targetQuoteDate)} · Priority {PRIORITIES[rfq.priority]}
             {isErgo && ` · Owner ${rfq.owner ?? 'not assigned'}`}
           </Typography>
         </Stack>
@@ -123,17 +122,11 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
             </Button>
           )}
           {can('REQUEST_CLARIFICATION') && <Button onClick={() => setDialog('request-clarification')}>Ask customer</Button>}
-          {can('VALIDATE') && (
-            <Button variant="contained" onClick={() => setDialog('validate')}>
-              Validate
-            </Button>
-          )}
           {can('SUBMIT') && (
             <Button variant="contained" onClick={() => setDialog('submit')}>
               {answering ? 'Answer and resubmit' : 'Submit to ERGO'}
             </Button>
           )}
-          {can('REOPEN') && <Button onClick={() => setDialog('reopen')}>Re-open</Button>}
           {can('CLONE') && <Button onClick={() => void clone()}>Clone</Button>}
           {can('CLOSE') && <Button onClick={() => setDialog('close')}>Close RFQ</Button>}
           {can('CANCEL') && (
@@ -145,9 +138,14 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
       </Stack>
 
       {actionError != null && <Alert severity="error">{problemMessage(actionError)}</Alert>}
+      {rfq.status === 'UNDER_REVIEW' && isErgo && (
+        <Alert severity="info" action={<Button color="inherit" size="small" onClick={() => setTab('parts')}>Parts &amp; suppliers</Button>}>
+          Review the RFQ and change it where needed, then send the whole RFQ to one supplier, or split its parts into sub-RFQs for different suppliers.
+        </Alert>
+      )}
       {(rfq.status === 'QUOTE_RECEIVED' || rfq.status === 'ON_HOLD') && !isErgo && canSeeQuotes && (
-        <Alert severity="info" action={<Button color="inherit" size="small" onClick={() => setTab('quotes')}>Open quote</Button>}>
-          ERGO has sent you a quote. Approve it, request a correction, put it on hold or reject it - each with a comment.
+        <Alert severity="info" action={<Button color="inherit" size="small" onClick={() => setTab('quotes')}>Open quotation</Button>}>
+          ERGO has sent you a quotation. Approve it, request a correction, put it on hold or reject it - each with a comment.
         </Alert>
       )}
       {rfq.clarificationQuestion && (
@@ -166,86 +164,84 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
         <Tab value="overview" label="Overview" />
         <Tab value="process" label="Process flow" />
         <Tab value="documents" label="Documents" />
-        {!isErgo && canSeeQuotes && <Tab value="quotes" label="Quotes" />}
-        {isErgo && <Tab value="suppliers" label="Suppliers & quotes" />}
-        {isErgo && <Tab value="comparison" label="Comparison" />}
+        {!isErgo && canSeeQuotes && <Tab value="quotes" label="Quotation" />}
+        {isErgo && <Tab value="parts" label="Parts & suppliers" />}
+        {isErgo && <Tab value="quotation" label="Customer quotation" />}
         {isErgo && <Tab value="history" label="Audit trail" />}
         <Tab value="comments" label="Comments" />
       </Tabs>
 
       {tab === 'overview' && (
-        <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' } }}>
-          <Facts
-            title="Part and technical"
-            facts={[
-              ['Part number', rfq.part.partNumber],
-              ['Revision', rfq.part.revision ?? '—'],
-              ['EAU', formatNumber(rfq.part.eau, ' pcs/year')],
-              ['Net / gross weight', `${formatNumber(rfq.part.netWeightKg)} / ${formatNumber(rfq.part.grossWeightKg)} kg`],
-              ['Material', [rfq.part.material?.name, rfq.part.materialSpec].filter(Boolean).join(' · ') || '—'],
-              ['Coating / surface', [rfq.part.coating?.name, rfq.part.coatingSpec].filter(Boolean).join(' · ') || '—'],
-            ]}
-          />
-          <Facts
-            title="Commercial targets"
-            note="Never shown to suppliers"
-            facts={[
-              ['Currency', `${rfq.targets.currency.code} – ${rfq.targets.currency.name}`],
-              ['Tooling cost', formatMoney(rfq.targets.targetToolingCost, currency)],
-              ['PPAP piece price', formatMoney(rfq.targets.targetPpapPiecePrice, currency)],
-              ['Production piece price', formatMoney(rfq.targets.targetProductionPiecePrice, currency)],
-              ['Payment terms', rfq.targets.paymentTerm?.name ?? '—'],
-              ['MOQ', formatNumber(rfq.targets.moq, ' pcs')],
-              ['Lead times', `material ${formatNumber(rfq.targets.materialLeadTimeWeeks, ' wk')} · tooling ${formatNumber(rfq.targets.toolingLeadTimeDays, ' d')} · sample ${formatNumber(rfq.targets.sampleLeadTimeDays, ' d')} · production ${formatNumber(rfq.targets.productionLeadTimeDays, ' d')}`],
-            ]}
-          />
-          <Facts title="Requirements and remarks" facts={[['', rfq.customerRemarks ?? '—']]} />
-          {isErgo && <InternalNotes rfq={rfq} />}
-        </Box>
+        <Stack spacing={2}>
+          <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' } }}>
+            <Facts
+              title="Request"
+              facts={[
+                ['Quote needed by', formatDate(rfq.targetQuoteDate)],
+                ['Priority', PRIORITIES[rfq.priority]],
+                ['Currency of the targets', `${rfq.currency.code} – ${rfq.currency.name}`],
+                ['Payment terms', rfq.paymentTerm?.name ?? '—'],
+              ]}
+            />
+            <Facts title="Requirements and remarks" facts={[['', rfq.customerRemarks ?? '—']]} />
+            {isErgo && <InternalNotes rfq={rfq} />}
+          </Box>
+          {canSeeParts && <PartStatus rfqId={rfq.id} />}
+          {rfq.items.map((item) => (
+            <ItemOverview key={item.id} item={item} currency={rfq.currency.code} />
+          ))}
+        </Stack>
       )}
 
       {tab === 'process' && (
-        <TableContainer component={Paper} variant="outlined">
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>#</TableCell>
-                <TableCell>Process</TableCell>
-                <TableCell>Step</TableCell>
-                <TableCell>Cycle time (s)</TableCell>
-                <TableCell>Sourcing</TableCell>
-                <TableCell>Sub-supplier</TableCell>
-                <TableCell>Remarks</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {rfq.part.processSteps.map((step, index) => (
-                <TableRow key={index}>
-                  <TableCell>{index + 1}</TableCell>
-                  <TableCell>{step.process?.name ?? '—'}</TableCell>
-                  <TableCell>{step.stepName}</TableCell>
-                  <TableCell>{formatNumber(step.cycleTimeSeconds)}</TableCell>
-                  <TableCell>{step.sourcingType === 'INHOUSE' ? 'In-house' : step.sourcingType === 'OUTSOURCED' ? 'Outsourced' : '—'}</TableCell>
-                  <TableCell>{step.outsourcedSupplierName ?? '—'}</TableCell>
-                  <TableCell>{step.remarks ?? '—'}</TableCell>
-                </TableRow>
-              ))}
-              {rfq.part.processSteps.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={7} sx={{ color: 'text.secondary' }}>
-                    No process steps yet (needed before submitting).
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
+        <Stack spacing={2}>
+          {rfq.items.map((item) => (
+            <TableContainer component={Paper} variant="outlined" key={item.id}>
+              <Typography variant="subtitle1" component="h2" sx={{ p: 1.5, pb: 0 }}>
+                {item.partNumber}
+              </Typography>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>#</TableCell>
+                    <TableCell>Process</TableCell>
+                    <TableCell>Step</TableCell>
+                    <TableCell>Cycle time (s)</TableCell>
+                    <TableCell>Sourcing</TableCell>
+                    <TableCell>Sub-supplier</TableCell>
+                    <TableCell>Remarks</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {item.processSteps.map((step, index) => (
+                    <TableRow key={index}>
+                      <TableCell>{index + 1}</TableCell>
+                      <TableCell>{step.process?.name ?? '—'}</TableCell>
+                      <TableCell>{step.stepName}</TableCell>
+                      <TableCell>{formatNumber(step.cycleTimeSeconds)}</TableCell>
+                      <TableCell>{step.sourcingType === 'INHOUSE' ? 'In-house' : step.sourcingType === 'OUTSOURCED' ? 'Outsourced' : '—'}</TableCell>
+                      <TableCell>{step.outsourcedSupplierName ?? '—'}</TableCell>
+                      <TableCell>{step.remarks ?? '—'}</TableCell>
+                    </TableRow>
+                  ))}
+                  {item.processSteps.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={7} sx={{ color: 'text.secondary' }}>
+                        No process steps yet (needed before submitting).
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          ))}
+        </Stack>
       )}
 
       {tab === 'documents' && <DocumentsPanel rfqId={rfq.id} canUpload={can('UPLOAD')} isErgo={isErgo} />}
       {tab === 'quotes' && !isErgo && canSeeQuotes && <CustomerQuotesPanel rfqId={rfq.id} />}
-      {tab === 'suppliers' && isErgo && <SuppliersPanel rfqId={rfq.id} />}
-      {tab === 'comparison' && isErgo && <ComparisonPanel rfqId={rfq.id} />}
+      {tab === 'parts' && isErgo && <PartsPanel rfqId={rfq.id} />}
+      {tab === 'quotation' && isErgo && <ErgoQuotationsPanel rfqId={rfq.id} />}
       {tab === 'history' && isErgo && <History rfqId={rfq.id} />}
       {tab === 'comments' && <CommentsPanel linkedModule="rfq" recordId={rfq.id} />}
 
@@ -264,6 +260,76 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
         />
       )}
     </Stack>
+  )
+}
+
+/** Where each part stands (flow doc §4): ERGO sees the quote status, the customer where its quotation stands. */
+function PartStatus({ rfqId }: { rfqId: number }) {
+  const { data = [], error } = useRfqPartsQuery(rfqId)
+  if (error) return null
+  return (
+    <TableContainer component={Paper} variant="outlined">
+      <Typography variant="subtitle1" component="h2" sx={{ p: 1.5, pb: 0 }}>
+        Status of each part
+      </Typography>
+      <Table size="small">
+        <TableHead>
+          <TableRow>
+            <TableCell>#</TableCell>
+            <TableCell>Part</TableCell>
+            <TableCell>Status</TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {data.map((p) => {
+            const s = partStatusLabel(p.status)
+            return (
+              <TableRow key={p.itemId}>
+                <TableCell>{p.lineNo}</TableCell>
+                <TableCell>
+                  {p.partNumber}
+                  {p.revision ? ` rev ${p.revision}` : ''}
+                </TableCell>
+                <TableCell>
+                  <Chip size="small" label={s.label} color={s.color} />
+                </TableCell>
+              </TableRow>
+            )
+          })}
+        </TableBody>
+      </Table>
+    </TableContainer>
+  )
+}
+
+function ItemOverview({ item, currency }: { item: ItemView; currency: string }) {
+  const t = item.targets
+  return (
+    <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' } }}>
+      <Facts
+        title={`Part ${item.lineNo}: ${item.partNumber}`}
+        facts={[
+          ['Part number', item.partNumber],
+          ['Revision', item.revision ?? '—'],
+          ['Description', item.description ?? '—'],
+          ['EAU', formatNumber(item.eau, ' pcs/year')],
+          ['Net / gross weight', `${formatNumber(item.netWeightKg)} / ${formatNumber(item.grossWeightKg)} kg`],
+          ['Material', [item.material?.name, item.materialSpec].filter(Boolean).join(' · ') || '—'],
+          ['Coating / surface', [item.coating?.name, item.coatingSpec].filter(Boolean).join(' · ') || '—'],
+        ]}
+      />
+      <Facts
+        title={`Commercial targets: ${item.partNumber}`}
+        note="Never shown to suppliers"
+        facts={[
+          ['Tooling cost', formatMoney(t.targetToolingCost, currency)],
+          ['PPAP piece price', formatMoney(t.targetPpapPiecePrice, currency)],
+          ['Production piece price', formatMoney(t.targetProductionPiecePrice, currency)],
+          ['MOQ', formatNumber(t.moq, ' pcs')],
+          ['Lead times', `material ${formatNumber(t.materialLeadTimeWeeks, ' wk')} · tooling ${formatNumber(t.toolingLeadTimeDays, ' d')} · sample ${formatNumber(t.sampleLeadTimeDays, ' d')} · production ${formatNumber(t.productionLeadTimeDays, ' d')}`],
+        ]}
+      />
+    </Box>
   )
 }
 

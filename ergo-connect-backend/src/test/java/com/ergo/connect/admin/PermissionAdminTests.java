@@ -183,11 +183,11 @@ class PermissionAdminTests {
 		// View only: creating an RFQ is refused
 		mvc.perform(post("/api/rfqs").header(HttpHeaders.AUTHORIZATION, customerKam.bearer())
 			.contentType(MediaType.APPLICATION_JSON)
-			.content("{\"partNumber\": \"PN-1\", \"currencyId\": %d}".formatted(users.currency("INR")))).andExpect(status().isForbidden());
+			.content("{\"currencyId\": %d, \"items\": [{\"partNumber\": \"PN-1\"}]}".formatted(users.currency("INR")))).andExpect(status().isForbidden());
 		save("CUSTOMER", version(), "Allow", change("CUSTOMER_KAM", "RFQ", "A")).andExpect(status().isOk());
 		mvc.perform(post("/api/rfqs").header(HttpHeaders.AUTHORIZATION, customerKam.bearer())
 			.contentType(MediaType.APPLICATION_JSON)
-			.content("{\"partNumber\": \"PN-1\", \"currencyId\": %d}".formatted(users.currency("INR")))).andExpect(status().isCreated());
+			.content("{\"currencyId\": %d, \"items\": [{\"partNumber\": \"PN-1\"}]}".formatted(users.currency("INR")))).andExpect(status().isCreated());
 	}
 
 	@Test
@@ -254,7 +254,7 @@ class PermissionAdminTests {
 				.getResponse().getStatus();
 			org.assertj.core.api.Assertions.assertThat(open).as("level %s open", level).isIn(403, 404);
 			// and no level makes it an ERGO reviewer
-			for (String action : List.of("start-review", "validate", "reopen")) {
+			for (String action : List.of("start-review", "request-clarification")) {
 				int acted = mvc.perform(post("/api/rfqs/{id}/" + action, rfqId).header(HttpHeaders.AUTHORIZATION, bearer)
 					.contentType(MediaType.APPLICATION_JSON)
 					.content("{\"comment\": \"x\"}")).andReturn().getResponse().getStatus();
@@ -362,9 +362,10 @@ class PermissionAdminTests {
 		long material = users.masterEntry("materials", "material");
 		long process = users.masterEntry("processes", "process");
 		return """
-				{"partNumber": "PN-ISO", "revision": "A", "description": "Flange, machined", "eau": 5000,
-				 "materialId": %d, "targetQuoteDate": "%s", "currencyId": %d, "targetProductionPiecePrice": 42.50,
-				 "processSteps": [{"processId": %d, "stepName": "Step 1 forging"}], "customerRemarks": "Urgent"}"""
+				{"targetQuoteDate": "%2$s", "currencyId": %3$d, "customerRemarks": "Urgent",
+				 "items": [{"partNumber": "PN-ISO", "revision": "A", "description": "Flange, machined", "eau": 5000,
+				  "materialId": %1$d, "targetProductionPiecePrice": 42.50,
+				  "processSteps": [{"processId": %4$d, "stepName": "Step 1 forging"}]}]}"""
 			.formatted(material, LocalDate.now().plusDays(14), users.currency("INR"), process);
 	}
 

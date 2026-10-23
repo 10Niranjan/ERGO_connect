@@ -1,6 +1,7 @@
 package com.ergo.connect.rfq;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.everyItem;
@@ -82,7 +83,7 @@ class RfqTests {
 
 	@Test
 	void aCustomerDraftCanOnlyBeSubmittedWhenComplete() throws Exception {
-		long id = create(buyerA, "{\"partNumber\": \"PN-100\", \"currencyId\": %d}".formatted(inr))
+		long id = create(buyerA, "{\"currencyId\": %d, \"items\": [{\"partNumber\": \"PN-100\"}]}".formatted(inr))
 			.andExpect(jsonPath("$.number", matchesPattern("RFQ-\\d{4}-\\d{5}")))
 			.andExpect(jsonPath("$.status").value("DRAFT"))
 			.andExpect(jsonPath("$.audience").value("CUSTOMER"))
@@ -93,12 +94,30 @@ class RfqTests {
 		mvc.perform(json(put("/api/rfqs/{id}", id), completeForm(null, "PN-100"), buyerA)).andExpect(status().isOk());
 		act(buyerA, id, "submit", null).andExpect(jsonPath("$.status").value("SUBMITTED"))
 			.andExpect(jsonPath("$.internalNotes").doesNotExist())
-			.andExpect(jsonPath("$.owner").doesNotExist())
-			.andExpect(jsonPath("$.actions", not(hasItem("VALIDATE"))));
+			.andExpect(jsonPath("$.owner").doesNotExist());
 	}
 
 	@Test
-	void ergoReviewsAsksForClarificationAndValidates() throws Exception {
+	void anRfqNeedsAtLeastOnePartAndEveryPartNeedsItsOwnData() throws Exception {
+		create(buyerA, "{\"currencyId\": %d, \"items\": []}".formatted(inr)).andExpect(status().isBadRequest());
+		long id = create(buyerA, ("{\"currencyId\": %d, \"targetQuoteDate\": \"%s\", \"items\": ["
+				+ "{\"partNumber\": \"PN-A\", \"description\": \"Flange\", \"materialSpec\": \"EN8\", "
+				+ "\"processSteps\": [{\"stepName\": \"Forging\"}]}, {\"partNumber\": \"PN-B\"}]}")
+			.formatted(inr, LocalDate.now().plusDays(14))).andExpect(status().isCreated())
+			.andExpect(jsonPath("$.items", hasSize(2)))
+			.andExpect(jsonPath("$.items[*].partNumber", contains("PN-A", "PN-B")))
+			.andExpect(jsonPath("$.items[*].lineNo", contains(1, 2)))
+			.andReturn().getResponse().getContentAsString().transform(RfqTests::idOf);
+		// the second part is incomplete: the message names it
+		act(buyerA, id, "submit", null).andExpect(status().isUnprocessableContent())
+			.andExpect(jsonPath("$.detail", containsString("part PN-B")))
+			.andExpect(jsonPath("$.detail", not(containsString("part PN-A"))));
+		create(buyerA, "{\"currencyId\": %d, \"items\": [{\"partNumber\": \"PN-A\"}, {\"partNumber\": \"pn-a\"}]}"
+			.formatted(inr)).andExpect(status().isUnprocessableContent()); // the same part twice
+	}
+
+	@Test
+	void ergoReviewsAsksForClarificationAndMayChangeTheRfqBeforeDistributing() throws Exception {
 		long id = submitted(buyerA);
 		Login kam = users.login(users.company("ERGO"), "ERGO_KAM");
 		users.assignAccounts(kam.userId(), customerA);
@@ -115,35 +134,51 @@ class RfqTests {
 		act(buyerA, id, "submit", null).andExpect(status().isUnprocessableContent());
 		act(buyerA, id, "submit", "Ra 1.6 on all faces").andExpect(jsonPath("$.status").value("UNDER_REVIEW"));
 
-		act(kam, id, "validate", null).andExpect(status().isForbidden()); // SRS §10.4: KAM has no approve right
-		act(ergoRfq, id, "validate", "Complete").andExpect(jsonPath("$.status").value("VALIDATED"))
+		// flow doc §2: after the review ERGO distributes to suppliers; there is no separate validation step
+		mvc.perform(post("/api/rfqs/{id}/validate", id).header(HttpHeaders.AUTHORIZATION, ergoRfq.bearer())
+			.contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isNotFound());
+		mvc.perform(get("/api/rfqs/{id}", id).header(HttpHeaders.AUTHORIZATION, ergoRfq.bearer()))
 			.andExpect(jsonPath("$.clarificationAnswer").value("Ra 1.6 on all faces"));
-		mvc.perform(get("/api/rfqs/{id}", id).header(HttpHeaders.AUTHORIZATION, buyerA.bearer()))
-			.andExpect(jsonPath("$.status").value("IN_PROGRESS")); // customers see a simplified status
 		mvc.perform(json(put("/api/rfqs/{id}", id), completeForm(null, "PN-1"), buyerA))
-			.andExpect(status().isConflict());
-
-		act(ergoRfq, id, "reopen", "").andExpect(status().isUnprocessableContent());
-		act(ergoRfq, id, "reopen", "Customer changed the drawing").andExpect(jsonPath("$.status").value("UNDER_REVIEW"));
+			.andExpect(status().isConflict()); // customers wait while ERGO reviews
 		assertThat(jdbc.queryForList("""
 				SELECT action_reason FROM audit_logs WHERE entity_name = 'Rfq' AND record_id = ? AND field_name = 'status'
 				ORDER BY audit_log_id""", String.class, id))
-			.contains("Which surface finish?", "Ra 1.6 on all faces", "Complete", "Customer changed the drawing");
+			.contains("Which surface finish?", "Ra 1.6 on all faces");
 	}
 
 	@Test
-	void partNumberRevisionAndDescriptionLockOnceReviewStarts() throws Exception {
-		long id = submitted(buyerA);
+	void ergoMayChangeEverythingWhileReviewingAndPartsKeepTheirIdentity() throws Exception {
+		long id = create(buyerA, completeForm(null, "PN-100")).andReturn().getResponse().getContentAsString()
+			.transform(RfqTests::idOf);
+		act(buyerA, id, "submit", null);
 		act(ergoRfq, id, "start-review", null);
+		long partId = JsonPath.<Number>read(mvc.perform(get("/api/rfqs/{id}", id)
+			.header(HttpHeaders.AUTHORIZATION, ergoRfq.bearer())).andReturn().getResponse().getContentAsString(),
+				"$.items[0].id").longValue();
 
-		mvc.perform(json(put("/api/rfqs/{id}", id), completeForm(null, "PN-CHANGED"), ergoRfq))
-			.andExpect(status().isUnprocessableContent());
-		mvc.perform(json(put("/api/rfqs/{id}", id), completeForm(null, "PN-100").replace("\"eau\": 5000", "\"eau\": 7000"),
-				ergoRfq))
+		// ERGO changes the part number, the quantity and adds a second part; the first keeps its id
+		String edit = completeForm(null, "PN-CHANGED").replace("\"eau\": 5000", "\"eau\": 7000")
+			.replace("\"partNumber\": \"PN-CHANGED\"", "\"id\": %d, \"partNumber\": \"PN-CHANGED\"".formatted(partId))
+			.replace("\"items\": [", "\"items\": [{\"partNumber\": \"PN-NEW\"}, ");
+		mvc.perform(json(put("/api/rfqs/{id}", id), edit, ergoRfq))
 			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.part.eau").value(7000));
-		mvc.perform(json(put("/api/rfqs/{id}", id), completeForm(null, "PN-100"), buyerA))
+			.andExpect(jsonPath("$.items", hasSize(2)))
+			.andExpect(jsonPath("$.items[1].id").value(partId))
+			.andExpect(jsonPath("$.items[1].partNumber").value("PN-CHANGED"))
+			.andExpect(jsonPath("$.items[1].eau").value(7000));
+		mvc.perform(json(put("/api/rfqs/{id}", id), edit.replace("\"id\": " + partId, "\"id\": 999999999"), ergoRfq))
+			.andExpect(status().isUnprocessableContent()); // not a part of this RFQ
+		mvc.perform(json(put("/api/rfqs/{id}", id), completeForm(null, "PN-CHANGED"), buyerA))
 			.andExpect(status().isConflict()); // customers wait while ERGO reviews
+
+		// removing a part is possible before distribution; the changes are in the RFQ's history, labelled by part
+		mvc.perform(json(put("/api/rfqs/{id}", id), completeForm(null, "PN-ONLY").replace("\"partNumber\": \"PN-ONLY\"",
+				"\"id\": %d, \"partNumber\": \"PN-ONLY\"".formatted(partId)), ergoRfq))
+			.andExpect(jsonPath("$.items", hasSize(1)));
+		mvc.perform(get("/api/rfqs/{id}/history", id).header(HttpHeaders.AUTHORIZATION, ergoRfq.bearer()))
+			.andExpect(jsonPath("$[*].field", hasItem(containsString("Part PN-ONLY"))))
+			.andExpect(jsonPath("$[*].event", hasItem("PART_REMOVED")));
 	}
 
 	@Test
@@ -175,7 +210,8 @@ class RfqTests {
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.actions", empty()));
 		mvc.perform(post("/api/rfqs").header(HttpHeaders.AUTHORIZATION, customerNpd.bearer())
-			.contentType(MediaType.APPLICATION_JSON).content("{\"partNumber\": \"X\", \"currencyId\": %d}".formatted(inr)))
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("{\"currencyId\": %d, \"items\": [{\"partNumber\": \"X\"}]}".formatted(inr)))
 			.andExpect(status().isForbidden());
 		mvc.perform(get("/api/rfqs").header(HttpHeaders.AUTHORIZATION, supplier.bearer()))
 			.andExpect(status().isForbidden()); // until RFQs are sent to suppliers (Phase 2b)
@@ -253,8 +289,14 @@ class RfqTests {
 
 		mvc.perform(json(put("/api/rfqs/{id}/documents/{doc}/visibility", id, customerFile),
 				"{\"visibility\": \"ALL\"}", buyerA)).andExpect(status().isForbidden());
+		// a file shared with suppliers is shared for chosen parts (flow doc: a supplier sees only its own parts)
 		mvc.perform(json(put("/api/rfqs/{id}/documents/{doc}/visibility", id, customerFile),
-				"{\"visibility\": \"ALL\"}", ergoRfq)).andExpect(jsonPath("$.visibility").value("ALL"));
+				"{\"visibility\": \"ALL\"}", ergoRfq)).andExpect(status().isUnprocessableContent());
+		long partId = com.ergo.connect.TestRfq.itemIds(mvc, ergoRfq, id).getFirst();
+		mvc.perform(json(put("/api/rfqs/{id}/documents/{doc}/visibility", id, customerFile),
+				"{\"visibility\": \"ALL\", \"itemIds\": [%d]}".formatted(partId), ergoRfq))
+			.andExpect(jsonPath("$.visibility").value("ALL"))
+			.andExpect(jsonPath("$.itemIds[0]").value(partId));
 
 		mvc.perform(delete("/api/rfqs/{id}/documents/{doc}", id, internalFile)
 			.header(HttpHeaders.AUTHORIZATION, buyerA.bearer())).andExpect(status().isNotFound());
@@ -264,7 +306,10 @@ class RfqTests {
 
 	@Test
 	void cloningCopiesTheContentIntoANewDraft() throws Exception {
-		long id = submitted(buyerA);
+		String twoParts = completeForm(null, "PN-100").replace("\"items\": [",
+				"\"items\": [{\"partNumber\": \"PN-101\", \"description\": \"Cap\", \"materialSpec\": \"PA66\", "
+						+ "\"processSteps\": [{\"stepName\": \"Step 1 moulding\"}]}, ");
+		long id = create(buyerA, twoParts).andReturn().getResponse().getContentAsString().transform(RfqTests::idOf);
 		String original = mvc.perform(get("/api/rfqs/{id}", id).header(HttpHeaders.AUTHORIZATION, buyerA.bearer()))
 			.andReturn().getResponse().getContentAsString();
 
@@ -272,8 +317,10 @@ class RfqTests {
 			.andExpect(status().isCreated())
 			.andExpect(jsonPath("$.status").value("DRAFT"))
 			.andExpect(jsonPath("$.number", not(JsonPath.<String>read(original, "$.number"))))
-			.andExpect(jsonPath("$.part.processSteps[*].stepName", everyItem(containsString("Step"))))
-			.andExpect(jsonPath("$.part.processSteps", hasSize(2)));
+			.andExpect(jsonPath("$.items", hasSize(2)))
+			.andExpect(jsonPath("$.items[*].partNumber", contains("PN-101", "PN-100")))
+			.andExpect(jsonPath("$.items[1].processSteps[*].stepName", everyItem(containsString("Step"))))
+			.andExpect(jsonPath("$.items[1].processSteps", hasSize(2)));
 	}
 
 	// ---------------------------------------------------------------- helpers
@@ -287,13 +334,13 @@ class RfqTests {
 
 	private String completeForm(Long customerId, String partNumber) {
 		return """
-				{"customerCompanyId": %s, "partNumber": "%s", "revision": "A", "description": "Flange, machined",
-				 "eau": 5000, "materialId": %d, "targetQuoteDate": "%s", "currencyId": %d,
-				 "targetProductionPiecePrice": 42.50,
-				 "processSteps": [{"processId": %d, "stepName": "Step 1 forging"}, {"stepName": "Step 2 machining",
-				   "sourcingType": "OUTSOURCED", "outsourcedSupplierName": "Local shop"}],
-				 "customerRemarks": "Urgent"}"""
-			.formatted(customerId, partNumber, material, LocalDate.now().plusDays(14), inr, process);
+				{"customerCompanyId": %s, "targetQuoteDate": "%s", "currencyId": %d, "customerRemarks": "Urgent",
+				 "items": [
+				  {"partNumber": "%s", "revision": "A", "description": "Flange, machined", "eau": 5000,
+				   "materialId": %d, "targetProductionPiecePrice": 42.50,
+				   "processSteps": [{"processId": %d, "stepName": "Step 1 forging"}, {"stepName": "Step 2 machining",
+				     "sourcingType": "OUTSOURCED", "outsourcedSupplierName": "Local shop"}]}]}"""
+			.formatted(customerId, LocalDate.now().plusDays(14), inr, partNumber, material, process);
 	}
 
 	private ResultActions create(Login user, String body) throws Exception {

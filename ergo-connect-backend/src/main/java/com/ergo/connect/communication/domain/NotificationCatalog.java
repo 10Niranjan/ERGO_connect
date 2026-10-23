@@ -52,7 +52,7 @@ final class NotificationCatalog {
 		put(NotificationKind.QUOTE_CLARIFICATION_ANSWERED, RESPONSE_RECEIVED, EnumSet.of(SUPPLIER), null,
 				"Your clarification request was answered");
 		put(NotificationKind.QUOTE_REOPENED, ACTION_REQUIRED, EnumSet.of(SUPPLIER), null,
-				"Your quote was reopened for revision");
+				"Revision required on your quote");
 		put(NotificationKind.QUOTE_REGRETTED, RESPONSE_RECEIVED, EnumSet.of(ERGO), "Supplier declined to quote", null);
 		put(NotificationKind.CUSTOMER_QUOTE_SENT, ACTION_REQUIRED, EnumSet.of(CUSTOMER), null,
 				"A quote is ready for your decision");

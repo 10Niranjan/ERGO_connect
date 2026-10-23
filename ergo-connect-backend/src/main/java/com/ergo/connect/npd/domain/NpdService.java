@@ -74,10 +74,9 @@ import com.ergo.connect.npd.domain.NpdDtos.StageHistoryView;
 import com.ergo.connect.npd.domain.NpdDtos.SupplierNpdView;
 import com.ergo.connect.quality.api.QualityApi;
 import com.ergo.connect.quotation.api.QuotationApi;
-import com.ergo.connect.quotation.api.QuotationApi.SelectedQuote;
+import com.ergo.connect.quotation.api.QuotationApi.ApprovedPart;
 import com.ergo.connect.rfq.api.RfqApi;
-import com.ergo.connect.rfq.api.RfqApi.ApprovedRfq;
-import com.ergo.connect.rfq.api.RfqApi.RfqRef;
+import com.ergo.connect.rfq.api.RfqApi.ItemRef;
 
 /**
  * Phase 3a: the manual RFQ->NPD conversion queue and the 9-stage NPD workflow (SRS §13.4, §14.5, §17.4), ERGO-only.
@@ -173,34 +172,39 @@ public class NpdService {
 	 * {@link #conversionQueue} itself uses. */
 	@Transactional(readOnly = true)
 	public int unconvertedApprovedRfqCount() {
-		return (int) rfqApi.customerApproved().stream().filter(r -> !projects.existsBySourceRfqId(r.id())).count();
+		return (int) quotationApi.approvedParts().stream().filter(p -> !projects.existsBySourceRfqItemId(p.rfqItemId()))
+			.count();
 	}
 
 	@Transactional(readOnly = true)
 	public List<ConversionQueueRow> conversionQueue() {
 		CurrentUser me = CurrentUser.get();
 		// Already scoped to the caller's RFQ visibility (SRS §10.6/§14.5: empty for anyone with no RFQ visibility).
-		List<ApprovedRfq> approved = rfqApi.customerApproved();
+		List<ApprovedPart> approved = quotationApi.approvedParts();
 		if (approved.isEmpty()) {
 			return List.of();
 		}
-		List<ApprovedRfq> unconverted = approved.stream().filter(r -> !projects.existsBySourceRfqId(r.id())).toList();
-		Map<Long, CompanyRef> customers = directory.companies(unconverted.stream().map(ApprovedRfq::customerCompanyId)
+		List<ApprovedPart> unconverted = approved.stream().filter(p -> !projects.existsBySourceRfqItemId(p.rfqItemId()))
+			.toList();
+		Map<Long, CompanyRef> customers = directory.companies(unconverted.stream().map(ApprovedPart::customerCompanyId)
 			.collect(Collectors.toSet()));
 		Set<NpdAction> actions = OWNERS.contains(me.role()) && ModuleSwitch.writable(Module.NPD)
 				&& ModuleSwitch.readable(Module.QUOTATION) ? EnumSet.of(NpdAction.CONVERT) : Set.of();
-		return unconverted.stream()
-			.map(r -> new ConversionQueueRow(r.id(), r.number(), name(customers, r.customerCompanyId()),
-					r.partNumber(), r.revision(), r.description(), r.approvedAt(), actions))
-			.toList();
+		return unconverted.stream().map(p -> {
+			ItemRef item = rfqApi.itemForErgo(p.rfqItemId()).orElse(null);
+			return item == null ? null
+					: new ConversionQueueRow(p.rfqId(), item.id(), rfqNumber(p.rfqId()),
+							name(customers, p.customerCompanyId()), item.partNumber(), item.revision(),
+							item.description(), p.approvedAt(), actions);
+		}).filter(java.util.Objects::nonNull).toList();
 	}
 
-	/** SRS §14.5: only ERGO's NPD owners (the "O" roles) may convert. One approved RFQ converts to at most one NPD
-	 * project. */
-	public NpdView convert(long rfqId, String comment) {
+	/** SRS §14.5: only ERGO's NPD owners (the "O" roles) may convert. One approved RFQ part converts to at most one
+	 * NPD project. */
+	public NpdView convert(long rfqItemId, String comment) {
 		CurrentUser me = CurrentUser.get();
 		if (!OWNERS.contains(me.role())) {
-			throw ApiException.forbidden("Only ERGO NPD or ERGO Management can convert an RFQ");
+			throw ApiException.forbidden("Only ERGO NPD or ERGO Management can convert an RFQ part");
 		}
 		// Conversion creates an NPD project from the RFQ and the approved quote: it changes NPD and reads the other two.
 		ModuleSwitch.requireWritable(Module.NPD);
@@ -208,22 +212,31 @@ public class NpdService {
 			throw ApiException.conflict("Conversion needs the RFQ and Quotation modules, and one of them is not "
 					+ "available right now. Nothing was changed; it can be repeated once they are back on.");
 		}
-		RfqRef rfq = rfqApi.forErgo(rfqId); // 404 outside the caller's RFQ scope, checked before revealing anything else
-		if (projects.existsBySourceRfqId(rfqId)) {
-			throw ApiException.conflict("This RFQ has already been converted.");
+		// 404 outside the caller's scope, checked before revealing anything else
+		// ERGO NPD may read only a part whose quotation the customer approved; the others need the RFQ in their scope
+		java.util.Optional<ApprovedPart> approved = quotationApi.approvedPart(rfqItemId);
+		if (approved.isEmpty()) {
+			if (me.role() != ERGO_NPD && rfqApi.itemForErgo(rfqItemId).isPresent()) {
+				throw ApiException.unprocessable("This part has no approved customer quote yet");
+			}
+			throw ApiException.notFound("Part");
 		}
-		SelectedQuote quote = quotationApi.selectedQuoteFor(rfqId)
-			.orElseThrow(() -> ApiException.unprocessable("This RFQ has no approved customer quote yet"));
+		ApprovedPart quote = approved.get();
+		ItemRef part = rfqApi.itemForErgo(rfqItemId).orElseThrow(() -> ApiException.notFound("Part"));
+		if (projects.existsBySourceRfqItemId(rfqItemId)) {
+			throw ApiException.conflict("This part has already been converted.");
+		}
 
 		NpdProject project = new NpdProject();
 		project.npdNumber = "NPD-%d-%05d".formatted(Year.now().getValue(),
 				jdbc.queryForObject("SELECT nextval('npd_number_seq')", Long.class));
-		project.sourceRfqId = rfqId;
-		project.customerCompanyId = rfq.customerCompanyId();
+		project.sourceRfqId = quote.rfqId();
+		project.sourceRfqItemId = rfqItemId;
+		project.customerCompanyId = quote.customerCompanyId();
 		project.supplierCompanyId = quote.supplierCompanyId();
-		project.partNumber = rfq.partNumber();
-		project.revision = rfq.revision();
-		project.description = rfq.description();
+		project.partNumber = part.partNumber();
+		project.revision = part.revision();
+		project.description = part.description();
 		project.quoteReference = quote.quoteReference();
 		// Conversion is the Pending Conversion -> Planning transition itself; nothing is left sitting unconverted.
 		project.stage = NpdStage.PLANNING;
@@ -233,7 +246,7 @@ public class NpdService {
 			projects.save(project);
 		}
 		catch (DataIntegrityViolationException e) {
-			throw ApiException.conflict("This RFQ has already been converted."); // race defense (DB UNIQUE)
+			throw ApiException.conflict("This part has already been converted."); // race defense (DB UNIQUE)
 		}
 		reasonIfGiven(comment);
 		NpdStageHistoryEntry history = new NpdStageHistoryEntry();
@@ -960,7 +973,7 @@ public class NpdService {
 		// the source RFQ's number is RFQ-module data: shown only while that module is not hidden
 		String rfqNumber = !ModuleSwitch.readable(Module.RFQ) ? null
 				: isCustomer ? rfqApi.forCustomer(p.sourceRfqId).number()
-				: isSupplier ? rfqApi.forSupplier(p.sourceRfqId).number() : rfqApi.numberOf(p.sourceRfqId);
+				: isSupplier ? rfqApi.forSupplierItem(p.sourceRfqItemId).rfqNumber() : rfqApi.numberOf(p.sourceRfqId);
 		Map<Long, UserRef> owner = directory.users(ids(List.of(p), x -> x.ownerUserId));
 
 		List<NpdStageHistoryEntry> history = stageHistory.findByNpdProjectIdOrderById(p.id);

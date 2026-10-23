@@ -38,6 +38,10 @@ class NpdProject {
 	@Column(updatable = false)
 	Long sourceRfqId;
 
+	/** The RFQ part this project develops: each approved part proceeds on its own (flow doc §5). */
+	@Column(updatable = false)
+	Long sourceRfqItemId;
+
 	@Column(updatable = false)
 	Long customerCompanyId;
 

@@ -22,12 +22,12 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.ergo.connect.quotation.domain.QuoteDtos.CommentForm;
-import com.ergo.connect.quotation.domain.QuoteDtos.DecisionForm;
+import com.ergo.connect.quotation.domain.QuoteDtos.DistributeForm;
 import com.ergo.connect.quotation.domain.QuoteDtos.DocumentView;
-import com.ergo.connect.quotation.domain.QuoteDtos.InviteForm;
+import com.ergo.connect.quotation.domain.QuoteDtos.PartStatusRow;
 import com.ergo.connect.quotation.domain.QuoteDtos.QuoteForm;
 import com.ergo.connect.quotation.domain.QuoteDtos.QuoteView;
-import com.ergo.connect.quotation.domain.QuoteDtos.RfqSuppliers;
+import com.ergo.connect.quotation.domain.QuoteDtos.RfqQuotes;
 import com.ergo.connect.quotation.domain.QuoteDtos.VersionView;
 import com.ergo.connect.quotation.domain.QuoteService;
 import com.ergo.connect.quotation.domain.QuoteService.DocumentFile;
@@ -35,13 +35,13 @@ import com.ergo.connect.quotation.domain.QuoteService.DocumentFile;
 import jakarta.validation.Valid;
 
 /**
- * SRS §10.5 Quotation Management and §18 quote APIs. Layer 1 (which roles may attempt what) is here; layer 2 (whose
- * quotes, in which status) is QuoteService. Customers have no access: ERGO sends them quotes in Phase 2c.
+ * SRS §10.5 Quotation Management and §18 quote APIs; flow doc §2-4. Layer 1 (which roles may attempt what) is here;
+ * layer 2 (whose quotes, in which status) is QuoteService. Customers have no access here: ERGO generates their quotation.
  */
 @RestController
 class QuoteController {
 
-	// The role sheet (ModuleAccess) decides. Customers never reach these endpoints (ComparisonController is theirs),
+	// The role sheet (ModuleAccess) decides. Customers never reach these endpoints (CustomerQuoteController is theirs),
 	// whatever the sheet grants them on Quotation, hence the explicit sides.
 	private static final String ERGO_VIEWERS = "@access.view('QUOTATION', 'ERGO')";
 
@@ -70,14 +70,21 @@ class QuoteController {
 
 	@GetMapping("/api/rfqs/{rfqId}/quotes")
 	@PreAuthorize(ERGO_VIEWERS)
-	RfqSuppliers forRfq(@PathVariable long rfqId) {
+	RfqQuotes forRfq(@PathVariable long rfqId) {
 		return quotes.forRfq(rfqId);
 	}
 
 	@PostMapping("/api/rfqs/{rfqId}/quotes")
 	@PreAuthorize(ERGO_BUYERS)
-	RfqSuppliers invite(@PathVariable long rfqId, @Valid @RequestBody InviteForm body) {
-		return quotes.invite(rfqId, body.supplierIds(), body.responseDueDate());
+	RfqQuotes distribute(@PathVariable long rfqId, @Valid @RequestBody DistributeForm body) {
+		return quotes.distribute(rfqId, body);
+	}
+
+	/** Each part's status: ERGO the full one, the RFQ's customer where its quotation stands (flow doc §4). */
+	@GetMapping("/api/rfqs/{rfqId}/parts")
+	@PreAuthorize("@access.view('QUOTATION', 'ERGO') or @access.view('QUOTATION', 'CUSTOMER')")
+	List<PartStatusRow> partStatuses(@PathVariable long rfqId) {
+		return quotes.partStatuses(rfqId);
 	}
 
 	// ---- quotes
@@ -107,35 +114,25 @@ class QuoteController {
 		return quotes.submit(id);
 	}
 
-	@PostMapping("/api/quotes/{id}/regret")
-	@PreAuthorize(SUPPLIERS)
-	QuoteView regret(@PathVariable long id, @Valid @RequestBody CommentForm body) {
-		return quotes.regret(id, body.comment());
-	}
-
-	@PostMapping("/api/quotes/{id}/request-clarification")
-	@PreAuthorize(SUPPLIERS)
-	QuoteView requestClarification(@PathVariable long id, @Valid @RequestBody CommentForm body) {
-		return quotes.requestClarification(id, body.comment());
-	}
-
-	@PostMapping("/api/quotes/{id}/answer-clarification")
+	/** Flow doc §4 "Revision required": back to the supplier with the required changes. */
+	@PostMapping("/api/quotes/{id}/revision")
 	@PreAuthorize(ERGO_BUYERS)
-	QuoteView answerClarification(@PathVariable long id, @Valid @RequestBody CommentForm body) {
-		return quotes.answerClarification(id, body.comment());
+	QuoteView requestRevision(@PathVariable long id, @Valid @RequestBody CommentForm body) {
+		return quotes.requestRevision(id, body.comment());
 	}
 
-	@PostMapping("/api/quotes/{id}/reopen")
-	@PreAuthorize(ERGO_BUYERS)
-	QuoteView reopen(@PathVariable long id, @Valid @RequestBody CommentForm body) {
-		return quotes.reopen(id, body.comment());
-	}
-
-	/** SRS §17.3 shortlist / select for customer / not selected. */
-	@PostMapping("/api/quotes/{id}/decision")
+	/** Flow doc §4 "Accepted for customer submission". */
+	@PostMapping("/api/quotes/{id}/accept")
 	@PreAuthorize(EVALUATORS)
-	QuoteView decide(@PathVariable long id, @Valid @RequestBody DecisionForm body) {
-		return quotes.decide(id, body.decision(), body.comment());
+	QuoteView accept(@PathVariable long id) {
+		return quotes.accept(id);
+	}
+
+	/** ERGO takes a part back from its supplier so it can go to another one. */
+	@PostMapping("/api/quotes/{id}/recall")
+	@PreAuthorize(ERGO_BUYERS)
+	QuoteView recall(@PathVariable long id, @Valid @RequestBody CommentForm body) {
+		return quotes.recall(id, body.comment());
 	}
 
 	@GetMapping("/api/quotes/{id}/versions")

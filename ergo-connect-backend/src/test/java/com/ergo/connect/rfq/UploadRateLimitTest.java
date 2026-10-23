@@ -57,9 +57,10 @@ class UploadRateLimitTest {
 		buyer = users.login(customer, "CUSTOMER_RFQ");
 
 		String body = """
-				{"partNumber": "PN-UP", "revision": "A", "description": "Flange, machined", "eau": 5000,
-				 "materialId": %d, "targetQuoteDate": "%s", "currencyId": %d, "targetProductionPiecePrice": 42.50,
-				 "processSteps": [{"processId": %d, "stepName": "Step 1"}], "customerRemarks": "n/a"}"""
+				{"targetQuoteDate": "%2$s", "currencyId": %3$d, "customerRemarks": "n/a",
+				 "items": [{"partNumber": "PN-UP", "revision": "A", "description": "Flange, machined", "eau": 5000,
+				  "materialId": %1$d, "targetProductionPiecePrice": 42.50,
+				  "processSteps": [{"processId": %4$d, "stepName": "Step 1"}]}]}"""
 			.formatted(material, LocalDate.now().plusDays(14), inr, process);
 		rfqId = mvc
 			.perform(post("/api/rfqs").header(HttpHeaders.AUTHORIZATION, buyer.bearer())

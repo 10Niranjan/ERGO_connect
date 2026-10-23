@@ -20,7 +20,7 @@ import { formatDate } from '../../rfq/labels'
 import { QUOTE_STATUS } from '../labels'
 import { useMyQuotesQuery, type QuoteStatus } from '../quoteApi'
 
-const OPEN: QuoteStatus[] = ['NOT_STARTED', 'DRAFT_SAVED', 'CLARIFICATION_REQUESTED', 'REOPENED']
+const OPEN: QuoteStatus[] = ['NOT_STARTED', 'DRAFT_SAVED', 'REVISION_REQUIRED']
 
 /** SRS §12.15: the supplier's "Assigned RFQs". The backend returns only this supplier's invitations. */
 export function AssignedRfqsPage() {
@@ -45,6 +45,7 @@ export function AssignedRfqsPage() {
           <TableHead>
             <TableRow>
               <TableCell>RFQ</TableCell>
+              <TableCell>Sub-RFQ</TableCell>
               <TableCell>Part</TableCell>
               <TableCell>Description</TableCell>
               <TableCell>Your quote</TableCell>
@@ -62,6 +63,7 @@ export function AssignedRfqsPage() {
               return (
                 <TableRow key={r.id} hover sx={{ cursor: 'pointer' }} onClick={() => navigate(`/quotes/${r.id}`)}>
                   <TableCell>{r.rfqNumber}</TableCell>
+                  <TableCell>{r.subRfqNo}</TableCell>
                   <TableCell>
                     {r.partNumber}
                     {r.revision ? ` rev ${r.revision}` : ''}
@@ -81,7 +83,7 @@ export function AssignedRfqsPage() {
             })}
             {!isLoading && shown.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} sx={{ color: 'text.secondary' }}>
+                <TableCell colSpan={8} sx={{ color: 'text.secondary' }}>
                   No RFQs assigned to your company yet.
                 </TableCell>
               </TableRow>

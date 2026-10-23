@@ -31,6 +31,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import com.ergo.connect.IntegrationTest;
+import com.ergo.connect.TestRfq;
 import com.ergo.connect.TestUsers;
 import com.ergo.connect.TestUsers.Login;
 import com.jayway.jsonpath.JsonPath;
@@ -592,12 +593,7 @@ class CommentsTests {
 	}
 
 	private String rfqForm() {
-		return """
-				{"partNumber": "PN-COM1", "description": "Flange", "materialSpec": "EN8", "targetQuoteDate": "%s",
-				 "currencyId": %d, "targetProductionPiecePrice": 99.5,
-				 "processSteps": [{"stepName": "Forging", "cycleTimeSeconds": 55, "sourcingType": "INHOUSE"},
-				                  {"stepName": "Machining"}]}"""
-			.formatted(LocalDate.now().plusDays(10), inr);
+		return TestRfq.form(inr, "PN-1", "PN-2");
 	}
 
 	private long draftRfq(Login buyer) throws Exception {
@@ -608,19 +604,11 @@ class CommentsTests {
 		long id = draftRfq(buyer);
 		call(post("/api/rfqs/{id}/submit", id), buyer, "{}").andExpect(status().isOk());
 		call(post("/api/rfqs/{id}/start-review", id), ergoRfq, null).andExpect(status().isOk());
-		call(post("/api/rfqs/{id}/validate", id), ergoRfq, "{}").andExpect(status().isOk());
 		return id;
 	}
 
 	private void invite(long rfqId, long... supplierIds) throws Exception {
-		StringBuilder ids = new StringBuilder("[");
-		for (int i = 0; i < supplierIds.length; i++) {
-			ids.append(i == 0 ? "" : ", ").append(supplierIds[i]);
-		}
-		ids.append("]");
-		call(post("/api/rfqs/{id}/quotes", rfqId), ergoRfq,
-				"{\"supplierIds\": %s, \"responseDueDate\": \"%s\"}".formatted(ids, LocalDate.now().plusDays(7)))
-			.andExpect(status().isOk());
+		TestRfq.invite(mvc, ergoRfq, rfqId, supplierIds);
 	}
 
 	private long invitationOf(Login supplier, long rfqId) throws Exception {

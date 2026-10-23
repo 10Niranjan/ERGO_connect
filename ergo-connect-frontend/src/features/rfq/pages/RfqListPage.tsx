@@ -38,7 +38,7 @@ export function RfqListPage() {
   const shown = rfqs.filter(
     (r) =>
       (!status || r.status === status) &&
-      (!needle || [r.number, r.partNumber, r.description, r.customer].some((v) => v?.toLowerCase().includes(needle))),
+      (!needle || [r.number, ...r.parts, r.customer].some((v) => v?.toLowerCase().includes(needle))),
   )
   const statuses = [...new Set(rfqs.map((r) => r.status))]
 
@@ -73,8 +73,7 @@ export function RfqListPage() {
             <TableRow>
               <TableCell>RFQ</TableCell>
               {isErgo && <TableCell>Customer</TableCell>}
-              <TableCell>Part</TableCell>
-              <TableCell>Description</TableCell>
+              <TableCell>Parts</TableCell>
               <TableCell>Status</TableCell>
               <TableCell>Quote needed by</TableCell>
               <TableCell>Priority</TableCell>
@@ -87,11 +86,7 @@ export function RfqListPage() {
               <TableRow key={r.id} hover sx={{ cursor: 'pointer' }} onClick={() => navigate(`/rfqs/${r.id}`)}>
                 <TableCell>{r.number}</TableCell>
                 {isErgo && <TableCell>{r.customer}</TableCell>}
-                <TableCell>
-                  {r.partNumber}
-                  {r.revision ? ` rev ${r.revision}` : ''}
-                </TableCell>
-                <TableCell sx={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.description ?? '—'}</TableCell>
+                <TableCell sx={{ maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.parts.join(', ') || '—'}</TableCell>
                 <TableCell>
                   <Chip size="small" label={STATUS[r.status].label} color={STATUS[r.status].color} />
                 </TableCell>
@@ -103,7 +98,7 @@ export function RfqListPage() {
             ))}
             {!isLoading && shown.length === 0 && (
               <TableRow>
-                <TableCell colSpan={isErgo ? 9 : 7} sx={{ color: 'text.secondary' }}>
+                <TableCell colSpan={isErgo ? 8 : 6} sx={{ color: 'text.secondary' }}>
                   No RFQs yet.
                 </TableCell>
               </TableRow>
