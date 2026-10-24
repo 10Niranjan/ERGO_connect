@@ -61,10 +61,17 @@ class NpdApiService implements NpdApi {
 
 	private final SamplePoService samplePoService;
 
+	private final ProductionPoService productionPoService;
+
+	private final ProductionPoRepository productionPos;
+
 	private final Directory directory;
 
 	NpdApiService(NpdProjectRepository projects, NpdApprovalRepository approvals, NpdService npdService,
-			SamplePoService samplePoService, Directory directory) {
+			SamplePoService samplePoService, ProductionPoService productionPoService, ProductionPoRepository productionPos,
+			Directory directory) {
+		this.productionPoService = productionPoService;
+		this.productionPos = productionPos;
 		this.projects = projects;
 		this.approvals = approvals;
 		this.npdService = npdService;
@@ -81,6 +88,16 @@ class NpdApiService implements NpdApi {
 			return java.util.List.of();
 		}
 		return npdService.overdue(today);
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public boolean writableForRecord(long npdProjectId) {
+		if (!ModuleSwitch.readable(Module.NPD)) {
+			return false;
+		}
+		// an OFP project belongs to NPD and OFP: both must accept changes (a project that is not there changes nothing)
+		return projects.findById(npdProjectId).map(p -> NpdRights.of(p).writable()).orElse(ModuleSwitch.writable(Module.NPD));
 	}
 
 	@Override
@@ -104,6 +121,10 @@ class NpdApiService implements NpdApi {
 		NpdProject project = projects.findById(npdProjectId).orElseThrow(() -> ApiException.notFound("NPD project"));
 		// Security review M1 (ARCHITECTURE.md §8 2026-09-29): a project must actually have reached the stage that
 		// gates production handover before OFP can create an order from it, not just "any ERGO-visible project".
+		// flow doc step 11: production starts from the customer's production order, so the order is created from the OFP project
+		if (project.kind != ProjectKind.PRODUCTION) {
+			throw ApiException.conflict("An order is created from an OFP project: the customer releases a production order first");
+		}
 		if (project.stage != NpdStage.APPROVED_FOR_PRODUCTION_HANDOVER) {
 			throw ApiException.conflict("This NPD project is not yet approved for production handover");
 		}
@@ -111,8 +132,9 @@ class NpdApiService implements NpdApi {
 			throw ApiException.conflict("This NPD project has already been handed over to OFP");
 		}
 		project.handoverReadyFlag = true;
+		ProductionPo po = productionPos.findById(project.productionPoId).orElseThrow();
 		return new HandoverProject(project.id, project.customerCompanyId, project.supplierCompanyId,
-				project.sourceRfqId, project.partNumber, project.revision);
+				project.sourceRfqId, project.partNumber, project.revision, po.customerPoNumber, po.quantity, po.requiredDate);
 	}
 
 	@Override
@@ -125,7 +147,8 @@ class NpdApiService implements NpdApi {
 		// Until the plan is released to the supplier (flow doc step 7) nothing may be linked to the project: a quality
 		// record carries the project id and part number, and the supplier reads its own company's records.
 		return projects.findById(npdProjectId)
-			.filter(p -> p.planStatus != PlanStatus.AWAITING_PLAN)
+				.filter(p -> p.planStatus != PlanStatus.AWAITING_PLAN)
+			.filter(p -> p.kind != ProjectKind.PRODUCTION || ModuleSwitch.readable(Module.OFP))
 			.map(p -> new ProjectRef(p.id, p.customerCompanyId, p.supplierCompanyId));
 	}
 
@@ -136,23 +159,22 @@ class NpdApiService implements NpdApi {
 			return List.of();
 		}
 		CurrentUser me = CurrentUser.get();
-		List<NpdProject> visible;
-		if (FULL_VIEWERS.contains(me.role())) {
-			visible = projects.findAllByOrderByIdDesc();
+		List<NpdProject> candidates;
+		if (me.companyType() == CompanyType.CUSTOMER) {
+			candidates = projects.findByCustomerCompanyIdInOrderByIdDesc(Set.of(me.companyId()));
 		}
-		else if (me.role() == ERGO_KAM && ModuleAccess.canView(me.role(), Module.NPD)) {
+		else if (me.companyType() == CompanyType.SUPPLIER) {
+			candidates = projects.findBySupplierCompanyIdAndPlanStatusNotOrderByIdDesc(me.companyId(), PlanStatus.AWAITING_PLAN);
+		}
+		else if (me.role() == ERGO_KAM) {
 			Set<Long> accounts = directory.accountsOf(me.userId());
-			visible = accounts.isEmpty() ? List.of() : projects.findByCustomerCompanyIdInOrderByIdDesc(accounts);
-		}
-		else if (CUSTOMER_VIEWERS.contains(me.role())) {
-			visible = projects.findByCustomerCompanyIdInOrderByIdDesc(Set.of(me.companyId()));
-		}
-		else if (SUPPLIER_VIEWERS.contains(me.role())) {
-			visible = projects.findBySupplierCompanyIdAndPlanStatusNotOrderByIdDesc(me.companyId(), PlanStatus.AWAITING_PLAN);
+			candidates = accounts.isEmpty() ? List.of() : projects.findByCustomerCompanyIdInOrderByIdDesc(accounts);
 		}
 		else {
-			visible = List.of();
+			candidates = projects.findAllByOrderByIdDesc();
 		}
+		// the record scope decides per project and its kind (an OFP project also needs OFP visible and the role on it)
+		List<NpdProject> visible = candidates.stream().filter(p -> npdService.inScope(me, p)).toList();
 		boolean ergo = me.companyType() == CompanyType.ERGO;
 		List<NpdProject> open = visible.stream().filter(p -> p.stage != NpdStage.CLOSED).toList();
 		Map<Long, CompanyRef> customers = ergo ? directory.companies(ids(open, p -> p.customerCompanyId)) : Map.of();
@@ -175,6 +197,12 @@ class NpdApiService implements NpdApi {
 	@Transactional(readOnly = true)
 	public Optional<com.ergo.connect.common.record.RecordParties> samplePoPartiesVisibleToCaller(long samplePoId) {
 		return samplePoService.customerIfVisible(samplePoId).map(c -> new com.ergo.connect.common.record.RecordParties(c, null));
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public Optional<com.ergo.connect.common.record.RecordParties> productionPoPartiesVisibleToCaller(long productionPoId) {
+		return productionPoService.customerIfVisible(productionPoId).map(c -> new com.ergo.connect.common.record.RecordParties(c, null));
 	}
 
 	@Override

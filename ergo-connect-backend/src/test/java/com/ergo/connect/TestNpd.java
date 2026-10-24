@@ -123,6 +123,89 @@ public final class TestNpd {
 		send(mvc, post("/api/npd/{id}/validation/decide", projectId), customerQuality, "{\"approved\": true}", 200);
 	}
 
+	/** The people a whole project needs, for the helpers that drive it from sample to production handover. */
+	public record Team(Login customerNpd, Login customerQuality, Login customerOfp, Login desk, Login ergoNpd, Login ergoOfp,
+			Login ergoQuality, Login ergoManagement, Login supplierNpd, Login supplierQuality, Login supplierQualityColleague,
+			Login supplierOfp, long supplierCompanyId) {
+	}
+
+	/** A passed final-sample inspection linked to the project: created and submitted by ERGO Quality, passed by Management. */
+	public static void passInspection(MockMvc mvc, Login ergoQuality, Login ergoManagement, long projectId) throws Exception {
+		String created = send(mvc, post("/api/quality/inspections"), ergoQuality, """
+				{"linkedModule": "NPD", "linkedRecordId": %d, "partNumber": "PN-STD", "customerVisible": false}"""
+			.formatted(projectId), 201);
+		long inspectionId = JsonPath.<Number>read(created, "$.id").longValue();
+		send(mvc, post("/api/quality/inspections/{id}/submit", inspectionId), ergoQuality, """
+				{"partNumber": "PN-STD", "quantityChecked": 5, "quantityRejected": 0, "inspectionDate": "%s",
+				 "customerVisible": false}""".formatted(LocalDate.now()), 200);
+		send(mvc, post("/api/quality/inspections/{id}/pass", inspectionId), ergoManagement, "{}", 200);
+	}
+
+	/** Closes every stage, with the quality validation and the customer's final approval where they are due, until the
+	 * project is approved for production handover. No mandatory steps are assumed. */
+	public static void completeProject(MockMvc mvc, Team t, long projectId) throws Exception {
+		String stage;
+		while (!(stage = stageOf(mvc, t.ergoNpd(), projectId)).equals("APPROVED_FOR_PRODUCTION_HANDOVER")) {
+			if (stage.equals("FINAL_SAMPLE_READINESS")) {
+				passInspection(mvc, t.ergoQuality(), t.ergoManagement(), projectId);
+				validate(mvc, t.supplierQuality(), t.supplierQualityColleague(), t.ergoQuality(), projectId);
+			}
+			else if (stage.equals("CUSTOMER_FEEDBACK")) {
+				customerApprove(mvc, t.customerNpd(), t.customerQuality(), projectId);
+			}
+			send(mvc, post("/api/npd/{id}/close-stage", projectId), t.ergoNpd(), "{}", 200);
+		}
+	}
+
+	public static String stageOf(MockMvc mvc, Login who, long projectId) throws Exception {
+		String json = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/npd/{id}", projectId)
+			.header(HttpHeaders.AUTHORIZATION, who.bearer()))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		return JsonPath.read(json, "$.stage");
+	}
+
+	/** A sample project taken all the way to the customer's final approval: the customer can now release a production order. */
+	public static long approvedSample(MockMvc mvc, Team t, long rfqItemId) throws Exception {
+		long project = release(mvc, t.customerNpd(), t.desk(), t.ergoNpd(), t.ergoQuality(), t.supplierCompanyId(), rfqItemId);
+		submitPlan(mvc, t.supplierNpd(), project);
+		agreePlan(mvc, t.ergoNpd(), project);
+		completeProject(mvc, t, project);
+		return project;
+	}
+
+	public static String productionPoForm(long sourceProjectId) {
+		return """
+				{"sourceProjectId": %d, "customerPoNumber": "PPO-%d", "quantity": 1000, "requiredDate": "%s", "remarks": "First lot"}"""
+			.formatted(sourceProjectId, PO_SEQ.incrementAndGet(), LocalDate.now().plusDays(60));
+	}
+
+	/** Customer OFP releases a production order for an approved sample project; returns the production order id. */
+	public static long raiseProductionPo(MockMvc mvc, Login customerOfp, long sourceProjectId) throws Exception {
+		String json = send(mvc, post("/api/ofp/production-pos"), customerOfp, productionPoForm(sourceProjectId), 201);
+		return JsonPath.<Number>read(json, "$.id").longValue();
+	}
+
+	/** The KAM / Management accepts the production order by creating the OFP project; returns the project id. */
+	public static long createOfpProject(MockMvc mvc, Login desk, long productionPoId, Login ergoOfp, Login ergoQuality) throws Exception {
+		String json = send(mvc, post("/api/ofp/production-pos/{id}/create-project", productionPoId), desk,
+				"{\"ergoOfpUserId\": %d, \"ergoQualityUserId\": %d}".formatted(ergoOfp.userId(), ergoQuality.userId()), 201);
+		return JsonPath.<Number>read(json, "$.id").longValue();
+	}
+
+	/** An OFP project with its plan agreed (one dated supplier step, released by ERGO OFP, submitted by Supplier OFP), at its first stage. */
+	public static long productionProject(MockMvc mvc, Team t, long sourceProjectId) throws Exception {
+		long po = raiseProductionPo(mvc, t.customerOfp(), sourceProjectId);
+		long project = createOfpProject(mvc, t.desk(), po, t.ergoOfp(), t.ergoQuality());
+		addSupplierStep(mvc, t.ergoOfp(), project, t.supplierCompanyId(), "Production run", false);
+		assignPlan(mvc, t.ergoOfp(), project);
+		submitPlan(mvc, t.supplierOfp(), project);
+		agreePlan(mvc, t.ergoOfp(), project);
+		return project;
+	}
+
 	private static String send(MockMvc mvc, MockHttpServletRequestBuilder request, Login user, String body,
 			int expectedStatus) throws Exception {
 		request.header(HttpHeaders.AUTHORIZATION, user.bearer()).contentType(MediaType.APPLICATION_JSON).content(body);

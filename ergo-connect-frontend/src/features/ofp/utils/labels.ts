@@ -1,5 +1,6 @@
 import type { ChipColor } from '@/types'
 import type { InspectionStatus, MaterialStatus, OrderStatus, PackagingStatus, ProductionStatus } from '../services/ofpApi'
+import type { ProductionPoStatus } from '../services/productionPoApi'
 
 export const ORDER_STATUS: Record<OrderStatus, { label: string; color: ChipColor }> = {
   ORDER_CREATED: { label: 'Order Created', color: 'default' },
@@ -80,4 +81,10 @@ export const PACKAGING_STATUS: Record<PackagingStatus, { label: string; color: C
   PENDING: { label: 'Pending', color: 'default' },
   IN_PROGRESS: { label: 'In progress', color: 'info' },
   PACKED: { label: 'Packed', color: 'success' },
+}
+
+export const PRODUCTION_PO_STATUS: Record<ProductionPoStatus, { label: string; color: ChipColor }> = {
+  SUBMITTED: { label: 'Submitted to KAM', color: 'info' },
+  RETURNED: { label: 'Returned for correction', color: 'warning' },
+  ACCEPTED: { label: 'Accepted', color: 'success' },
 }

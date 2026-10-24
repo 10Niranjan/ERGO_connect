@@ -148,7 +148,8 @@ public class NpdValidationService {
 		}
 		else {
 			target = form.returnStage();
-			if (target == null || target.compareTo(NpdStage.PLANNING) < 0 || target.compareTo(NpdStage.FINAL_SAMPLE_READINESS) >= 0) {
+			if (target == null || target.compareTo(NpdStage.PLANNING) < 0 || target.compareTo(NpdStage.FINAL_SAMPLE_READINESS) >= 0
+					|| target.skippedBy(project.kind)) {
 				throw ApiException.unprocessable("Say which development stage the project goes back to (Planning to Trial Execution)");
 			}
 		}
@@ -220,8 +221,9 @@ public class NpdValidationService {
 	 */
 	static Set<NpdAction> actions(CurrentUser me, NpdProject project, Set<ValidationParty> decidedThisRound, Long submitterThisRound) {
 		Set<NpdAction> actions = EnumSet.noneOf(NpdAction.class);
-		if (project.planStatus != PlanStatus.AGREED || project.stage == NpdStage.CLOSED || !ModuleSwitch.writable(Module.NPD)
-				|| !ModuleAccess.actors(Module.NPD, me.companyType()).contains(me.role())) {
+		NpdRights rights = NpdRights.of(project);
+		if (project.planStatus != PlanStatus.AGREED || project.stage == NpdStage.CLOSED || !rights.writable()
+				|| !rights.canAct(me.role())) {
 			return actions;
 		}
 		if (me.role() == SUPPLIER_QUALITY && project.stage == NpdStage.FINAL_SAMPLE_READINESS

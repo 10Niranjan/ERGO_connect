@@ -48,30 +48,31 @@ class NpdController {
 	// The role sheet (ModuleAccess), NPD column; NpdService applies the record scope and the per-action rules.
 
 	/** The ERGO project list. */
-	private static final String VIEWERS = "@access.view('NPD', 'ERGO')";
+	private static final String VIEWERS = "@access.view('NPD', 'ERGO') or @access.view('OFP', 'ERGO')";
 
 	/** Everyone with any NPD access: the ERGO roles plus the customer and supplier roles that reach their own projects. */
-	private static final String DETAIL_VIEWERS = "@access.view('NPD')";
+	private static final String DETAIL_VIEWERS = "@access.view('NPD') or @access.view('OFP')";
 
 	/** ERGO roles that create / edit / submit in NPD ("A" and up). */
-	private static final String EDITORS = "@access.act('NPD', 'ERGO')";
+	private static final String EDITORS = "@access.act('NPD', 'ERGO') or @access.act('OFP', 'ERGO')";
 
 	/** ERGO's owning roles ("O"): release the plan to the supplier, close a stage. */
-	private static final String OWNERS = "@access.approve('NPD', 'ERGO')";
+	private static final String OWNERS = "@access.approve('NPD', 'ERGO') or @access.approve('OFP', 'ERGO')";
 
 	/** The supplier roles that work the released plan (the service narrows submitting to Supplier NPD). */
-	private static final String SUPPLIER_EDITORS = "@access.act('NPD', 'SUPPLIER')";
+	private static final String SUPPLIER_EDITORS = "@access.act('NPD', 'SUPPLIER') or @access.act('OFP', 'SUPPLIER')";
 
 	/** EDITORS plus the owning company's own activity/issue/checklist actions (the service confines each to its own
 	 * company). */
-	private static final String OWN_ACTIVITY_EDITORS = "@access.act('NPD')";
+	private static final String OWN_ACTIVITY_EDITORS = "@access.act('NPD') or @access.act('OFP')";
 
 	/** Customer/supplier NPD-touching roles only (not ERGO, which already has {@code list()}). */
-	private static final String OWN_PROJECT_VIEWERS = "@access.view('NPD', 'CUSTOMER') or @access.view('NPD', 'SUPPLIER')";
+	private static final String OWN_PROJECT_VIEWERS = "@access.view('NPD', 'CUSTOMER') or @access.view('NPD', 'SUPPLIER') or @access.view('OFP', 'CUSTOMER')"
+			+ " or @access.view('OFP', 'SUPPLIER')";
 
 	/** Final approval ("O" / "CO"): ERGO's owners decide ERGO-owned gates, the customer's CO the customer ones; no
 	 * supplier role ever decides. NpdService matches the side to the approval's own type. */
-	private static final String APPROVAL_DECIDERS = "@access.approve('NPD', 'ERGO') or @access.approve('NPD', 'CUSTOMER')";
+	private static final String APPROVAL_DECIDERS = "@access.approve('NPD', 'ERGO') or @access.approve('NPD', 'CUSTOMER') or @access.approve('OFP', 'ERGO')";
 
 	private final NpdService npd;
 

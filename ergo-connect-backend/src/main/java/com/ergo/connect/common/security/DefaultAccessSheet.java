@@ -18,7 +18,7 @@ public final class DefaultAccessSheet {
 	static {
 		row(Role.ERGO_ADMIN, "V", "V", "V", "V", "V");
 		row(Role.ERGO_MANAGEMENT, "O", "O", "O", "O", "O");
-		row(Role.ERGO_KAM, "A", "V", "A", "V", "V");
+		row(Role.ERGO_KAM, "A", "V", "A", "A", "V");
 		row(Role.ERGO_RFQ, "O", "O", "V", "V", "V");
 		row(Role.ERGO_NPD, "V", "V", "O", "V", "V");
 		row(Role.ERGO_OFP, "NV", "NV", "V", "O", "A");

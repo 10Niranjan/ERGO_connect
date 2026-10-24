@@ -87,6 +87,7 @@ public final class ModuleSwitch {
 			case "rfq" -> Module.RFQ;
 			case "quotation" -> Module.QUOTATION;
 			case "npd", "NPD", "sample-po" -> Module.NPD;
+			case "production-po" -> Module.OFP;
 			case "ofp", "OFP", "OFP_SHIPMENT" -> Module.OFP;
 			case "inspection", "ncr", "deviation", "QUALITY_CAPA" -> Module.QUALITY;
 			default -> null;

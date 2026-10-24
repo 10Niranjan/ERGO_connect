@@ -133,6 +133,24 @@ class OfpTests {
 	}
 
 	@Test
+	void theKamsAccessToProductionOrdersDoesNotLetItHoldReleaseOrClearOrders() throws Exception {
+		long orderId = createStandalone(customerA);
+		call(get("/api/ofp/orders/{id}", orderId), ergoKam, null).andExpect(status().isOk()).andExpect(jsonPath("$.actions").isEmpty());
+		call(post("/api/ofp/orders/{id}/hold", orderId), ergoKam, "{\"comment\": \"Stop\"}").andExpect(status().isConflict());
+		call(post("/api/ofp/orders/{id}/advance", orderId), ergoKam, "{}").andExpect(status().is4xxClientError());
+		assertThat(jdbc.queryForObject("SELECT current_status FROM orders WHERE order_id = ?", String.class, orderId)).isEqualTo("ORDER_CREATED");
+	}
+
+	@Test
+	void anOrderIsNeverCreatedFromASampleProject() throws Exception {
+		long sample = TestNpd.approvedSample(mvc, team(), partOf(approvedRfq(buyerA, "88")));
+		call(post("/api/ofp/orders/handover/{id}", sample), ergoOfp,
+				"{\"orderedQuantity\": 500, \"dueDate\": \"%s\"}".formatted(LocalDate.now().plusDays(45)))
+			.andExpect(status().isConflict());
+		assertThat(jdbc.queryForObject("SELECT count(*) FROM orders WHERE linked_npd_project_id = ?", Long.class, sample)).isZero();
+	}
+
+	@Test
 	void handoverCopiesTheNpdProjectsOwnDataAndCannotBeRepeated() throws Exception {
 		long rfqId = approvedRfq(buyerA, "90");
 		long projectId = convert(rfqId);
@@ -1132,8 +1150,21 @@ class OfpTests {
 
 	/** Customer A raises the Sample PO and its KAM accepts it: an NPD project in PLANNING with its plan released to the supplier (flow doc step 7), so it can be moved through its stages. */
 	private long convert(long rfqId) throws Exception {
-		return TestNpd.agreed(mvc, npdCustomerA, ergoKam, ergoNpd, ergoQuality, users.login(supplier, "SUPPLIER_NPD"), supplier,
-				partOf(rfqId));
+		// flow doc step 11: production starts from the customer's production order for a part whose sample was approved
+		long sample = TestNpd.approvedSample(mvc, team(), partOf(rfqId));
+		return TestNpd.productionProject(mvc, team(), sample);
+	}
+
+	TestNpd.Team team;
+
+	private TestNpd.Team team() throws Exception {
+		if (team == null) {
+			team = new TestNpd.Team(npdCustomerA, users.login(customerA, "CUSTOMER_QUALITY"), users.login(customerA, "CUSTOMER_OFP"),
+					ergoKam, ergoNpd, ergoOfp, ergoQuality, ergoManagement, users.login(supplier, "SUPPLIER_NPD"),
+					users.login(supplier, "SUPPLIER_QUALITY"), users.login(supplier, "SUPPLIER_QUALITY"),
+					users.login(supplier, "SUPPLIER_OFP"), supplier);
+		}
+		return team;
 	}
 
 	/** Closes every remaining NPD stage (no mandatory activities were added, so each Close Stage succeeds
@@ -1142,19 +1173,7 @@ class OfpTests {
 	 * additionally needs a real Quality sign-off against the project, so one PASSED inspection is created right
 	 * before that particular close-stage call. */
 	private void advanceToHandoverReady(long projectId) throws Exception {
-		for (int i = 0; i < 7; i++) {
-			String current = JsonPath.read(
-					call(get("/api/npd/{id}", projectId), ergoNpd, null).andReturn().getResponse().getContentAsString(),
-					"$.stage");
-			if (current.equals("FINAL_SAMPLE_READINESS")) {
-				passNpdInspection(projectId);
-				TestNpd.validate(mvc, users.login(supplier, "SUPPLIER_QUALITY"), users.login(supplier, "SUPPLIER_QUALITY"), ergoQuality, projectId);
-			}
-			else if (current.equals("CUSTOMER_FEEDBACK")) {
-				TestNpd.customerApprove(mvc, users.login(customerA, "CUSTOMER_NPD"), users.login(customerA, "CUSTOMER_QUALITY"), projectId);
-			}
-			call(post("/api/npd/{id}/close-stage", projectId), ergoNpd, "{}").andExpect(status().isOk());
-		}
+		TestNpd.completeProject(mvc, team(), projectId);
 	}
 
 	/** A fresh Quality inspection linked to this NPD project, driven straight through to PASSED (Phase 5d's Final

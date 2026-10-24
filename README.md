@@ -144,7 +144,7 @@ src/
 │   ├── documents/       # Cross-module document library, versions & approvals
 │   ├── notifications/   # Real-time notification bell & drawer
 │   ├── npd/             # 9-stage New Product Development workflow
-│   ├── ofp/             # Order fulfillment, milestone & dispatch tracking
+│   ├── ofp/             # Production POs, order fulfillment, milestone & dispatch tracking
 │   ├── quality/         # Inspections, NCRs, Deviations & CAPA workflows
 │   ├── quotation/       # Float RFQs, supplier quote comparison, negotiation
 │   └── rfq/             # RFQ creation, BOM process flow, validation
@@ -253,7 +253,8 @@ CI-only secret: `NVD_API_KEY` (GitHub repo secret, not an app env var) turns on 
 - [x] Phase 6: Documents Library (versions, locking, approvals) + Communication Center (threaded per-record comments, @mentions, attachments)
 - [x] Phase 7: Role-specific Dashboards (Management, Functional, Customer, Supplier)
 - [x] Sprint 2: Frontend refactored to scalable feature-based layout with responsive sidebar navigation for all logins
-- [x] Sprint 3: single role access sheet (`ModuleAccess` + `AccessGuard`) adopted across RFQ, Quotation, NPD, OFP and Quality, with security-review follow-ups (assigned-RFQ view for suppliers without Quotation access, exposure flags limited to Quality approvers, tightened cross-module facades). Backend suite still to be re-run with Docker.
+- [x] Sprint 3: single role access sheet (`ModuleAccess` + `AccessGuard`) adopted across RFQ, Quotation, NPD, OFP and Quality, with security-review follow-ups (assigned-RFQ view for suppliers without Quotation access, exposure flags limited to Quality approvers, tightened cross-module facades). 
+- [x] Sprint 3 flow alignment (client flow document, `docs/FLOW_ALIGNMENT.md`): On Hold decision, multi-item RFQs with sub-RFQs and per-part quotes, Sample PO and KAM-created projects, supplier plan submission and ERGO agreement, dual quality gate with customer final approval, and Customer OFP production POs that start OFP projects (migrations V31-V38).
 - [ ] Phase 8: hardening & Azure deployment — done: CVE gate, secrets audit, transport hardening, Redis rate limiter, change-password, first-admin bootstrap, forgot-password email, optional 2FA, Azure Blob storage, upload virus scanning, Dockerfiles, Bicep (`infra/`, not yet deployed) and deploy workflow (not yet run). Remaining: Application Insights, backup & recovery, load testing, pen-test pass, SRS §21 sign-off.
 
 See `ARCHITECTURE.md` §6 for the full build order and rationale.

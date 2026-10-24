@@ -59,6 +59,10 @@ export const NPD_VIEW: Rule[] = [{ module: 'NPD', need: 'view' }]
 export const SAMPLE_PO_VIEW: Rule[] = [{ module: 'NPD', need: 'view', sides: ERGO_CUSTOMER }]
 /** The customer-side final-approval role of NPD (Customer NPD) raises Sample POs. */
 export const SAMPLE_PO_RAISE: Rule[] = [{ module: 'NPD', need: 'approve', sides: CUSTOMER }]
+/** Production POs (flow doc step 11): ERGO roles and the customer; a supplier never sees them. */
+export const PRODUCTION_PO_VIEW: Rule[] = [{ module: 'OFP', need: 'view', sides: ERGO_CUSTOMER }]
+/** The customer-side final-approval role of OFP (Customer OFP) releases production POs. */
+export const PRODUCTION_PO_RAISE: Rule[] = [{ module: 'OFP', need: 'approve', sides: CUSTOMER }]
 export const OFP_VIEW: Rule[] = [{ module: 'OFP', need: 'view' }]
 /** ERGO's owning roles: create orders, run the workflow, hand an NPD project over. */
 export const OFP_CREATE: Rule[] = [{ module: 'OFP', need: 'approve', sides: ERGO }]

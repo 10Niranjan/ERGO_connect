@@ -78,7 +78,7 @@ class ModuleSwitchFacadeTests {
 		// NPD
 		rules(NpdApi.class, Rule.WRITE, "handover(long)");
 		rules(NpdApi.class, Rule.HIDDEN_EMPTY, "projectRef(long)", "partiesVisibleToCaller(long)", "dashboardItems()",
-				"samplePosAwaitingCount()", "samplePoPartiesVisibleToCaller(long)", "pendingApprovalsCount()");
+				"samplePosAwaitingCount()", "writableForRecord(long)", "samplePoPartiesVisibleToCaller(long)", "productionPoPartiesVisibleToCaller(long)", "pendingApprovalsCount()");
 		rules(NpdApi.class, Rule.FROZEN_EMPTY, "overdueItems(LocalDate)");
 		// OFP
 		rules(OfpApi.class, Rule.WRITE, "podDocumentReplaced(long,long)");

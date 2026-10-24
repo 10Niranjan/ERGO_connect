@@ -96,31 +96,10 @@ import com.ergo.connect.rfq.api.RfqApi.ItemRef;
 @Transactional
 public class NpdService {
 
-	/** The role sheet (ModuleAccess), NPD column. ERGO roles that create / edit / submit ("A" and up), except the KAM:
-	 * its "A" on NPD is for deciding Sample POs and creating the project (SamplePoService), not for editing a project
-	 * or working a customer's or supplier's steps on their behalf. */
-	private static final Set<Role> EDITORS = ModuleAccess.actorsExcept(Module.NPD, CompanyType.ERGO, ERGO_KAM);
-
-	/** ERGO's owning roles ("O"): release the plan, close a stage, decide the ERGO-owned approvals. */
-	private static final Set<Role> OWNERS = ModuleAccess.approvers(Module.NPD, CompanyType.ERGO);
-
-	/** Customer roles that work on their own company's activities and issues ("A" and up). */
-	private static final Set<Role> CUSTOMER_EDITORS = ModuleAccess.actors(Module.NPD, CompanyType.CUSTOMER);
-
-	/** Supplier roles that work on their own company's activities and issues ("A" and up). */
-	private static final Set<Role> SUPPLIER_EDITORS = ModuleAccess.actors(Module.NPD, CompanyType.SUPPLIER);
-
-	/** Every customer / supplier role that may open its own company's projects, view-only ones included. */
-	private static final Set<Role> CUSTOMER_VIEWERS = ModuleAccess.viewers(Module.NPD, CompanyType.CUSTOMER);
-
-	private static final Set<Role> SUPPLIER_VIEWERS = ModuleAccess.viewers(Module.NPD, CompanyType.SUPPLIER);
-
 	/** The three customer-facing approval types (SRS §13.4.7); a supplier's view never queries approvals at all. */
 	private static final Set<ApprovalType> CUSTOMER_APPROVAL_TYPES = EnumSet.of(ApprovalType.CUSTOMER_SAMPLE_APPROVAL,
 			ApprovalType.CUSTOMER_MILESTONE_ACKNOWLEDGMENT, ApprovalType.CUSTOMER_QUALITY_ACCEPTANCE);
 
-	/** The "full, unrestricted view" grouping: every ERGO role with NPD access except the account-scoped KAM. */
-	private static final Set<Role> FULL_VIEWERS = ModuleAccess.viewersExcept(Module.NPD, CompanyType.ERGO, ERGO_KAM);
 
 	private final NpdProjectRepository projects;
 
@@ -224,6 +203,51 @@ public class NpdService {
 		return view(me, project);
 	}
 
+	/** Flow doc step 11: the KAM's acceptance of a production order creates the OFP project, a project like the sample one
+	 * (same plan, execution, validation and approval workflow) with only the relevant stages and the OFP teams added,
+	 * assigned to one ERGO OFP and one ERGO Quality user. Called only by ProductionPoService, which has already checked the
+	 * caller, the scope and the state of the production order. */
+	NpdView createFromProductionPo(CurrentUser me, ProductionPo po, NpdProject source, UserRef ofpUser, UserRef qualityUser,
+			String comment) {
+		NpdProject project = new NpdProject();
+		project.npdNumber = "OFP-%d-%05d".formatted(Year.now().getValue(),
+				jdbc.queryForObject("SELECT nextval('npd_number_seq')", Long.class));
+		project.kind = ProjectKind.PRODUCTION;
+		project.productionPoId = po.id;
+		project.sourceProjectId = source.id;
+		project.sourceRfqId = source.sourceRfqId;
+		project.sourceRfqItemId = source.sourceRfqItemId;
+		project.customerCompanyId = source.customerCompanyId;
+		project.supplierCompanyId = source.supplierCompanyId;
+		project.partNumber = source.partNumber;
+		project.revision = source.revision;
+		project.description = source.description;
+		project.quoteReference = source.quoteReference;
+		project.stage = NpdStage.PLANNING;
+		project.planStatus = PlanStatus.AWAITING_PLAN;
+		project.targetSampleDate = po.requiredDate;
+		project.ownerUserId = ofpUser.id();
+		project.qualityOwnerUserId = qualityUser.id();
+		project.createdByUserId = me.userId();
+		try {
+			projects.save(project);
+		}
+		catch (DataIntegrityViolationException e) {
+			throw ApiException.conflict("A project already exists for this production order."); // race defense (DB UNIQUE)
+		}
+		reasonIfGiven(comment);
+		NpdStageHistoryEntry history = new NpdStageHistoryEntry();
+		history.npdProjectId = project.id;
+		history.stageName = NpdStage.PLANNING;
+		history.previousStageName = null;
+		history.changedByUserId = me.userId();
+		history.remarks = text(comment);
+		stageHistory.save(history);
+		notifier.send(NotificationKind.NPD_PROJECT_ASSIGNED, "npd", project.id, project.npdNumber, "Part " + project.partNumber,
+				Recipients.users(Set.of(ofpUser.id(), qualityUser.id())));
+		return view(me, project);
+	}
+
 	/** Flow doc step 7: ERGO NPD, once the plan template is built, assigns it to the supplier's NPD, RFQ and Quality
 	 * teams. The supplier sees the project from here on, with the steps that are theirs. */
 	public NpdView assignPlan(long id, String comment) {
@@ -238,7 +262,7 @@ public class NpdService {
 		project.planStatus = PlanStatus.ASSIGNED_TO_SUPPLIER;
 		planEvent(me, project, NpdPlanHistoryEntry.Event.RELEASED, comment);
 		notifier.send(NotificationKind.NPD_PLAN_ASSIGNED, "npd", project.id, project.npdNumber, "Part " + project.partNumber,
-				editors(project.supplierCompanyId, Set.of(SUPPLIER_NPD, Role.SUPPLIER_RFQ, SUPPLIER_QUALITY)));
+				editors(project.supplierCompanyId, supplierPlanTeam(project)));
 		return view(me, project);
 	}
 
@@ -251,7 +275,7 @@ public class NpdService {
 		NpdActivity activity = activities.findById(activityId).orElseThrow(() -> ApiException.notFound("Activity"));
 		lockProject(activity.npdProjectId);
 		NpdProject project = visible(me, activity.npdProjectId);
-		requireOwnActivityScope(me, activity);
+		requireOwnActivityScope(me, project, activity);
 		require(NpdAction.EDIT_PLAN_STEP, me, project, activity);
 		if (form.responsibleUserId() != null) {
 			UserRef responsible = directory.users(Set.of(form.responsibleUserId())).get(form.responsibleUserId());
@@ -297,7 +321,7 @@ public class NpdService {
 		project.planStatus = PlanStatus.AGREED;
 		planEvent(me, project, NpdPlanHistoryEntry.Event.AGREED, comment);
 		notifier.send(NotificationKind.NPD_PLAN_AGREED, "npd", project.id, project.npdNumber, "Part " + project.partNumber,
-				editors(project.supplierCompanyId, Set.of(SUPPLIER_NPD, Role.SUPPLIER_RFQ, SUPPLIER_QUALITY)));
+				editors(project.supplierCompanyId, supplierPlanTeam(project)));
 		return view(me, project);
 	}
 
@@ -313,7 +337,7 @@ public class NpdService {
 		project.planStatus = PlanStatus.CHANGES_REQUESTED;
 		planEvent(me, project, NpdPlanHistoryEntry.Event.SENT_BACK, reason);
 		notifier.send(NotificationKind.NPD_PLAN_RETURNED, "npd", project.id, project.npdNumber, "Part " + project.partNumber,
-				editors(project.supplierCompanyId, Set.of(SUPPLIER_NPD)));
+				editors(project.supplierCompanyId, NpdRights.of(project).planSubmitters));
 		return view(me, project);
 	}
 
@@ -333,9 +357,16 @@ public class NpdService {
 		planHistory.save(entry);
 	}
 
+	/** The supplier teams a released plan goes to: NPD, RFQ and Quality, and the OFP team on a production project. */
+	private static Set<Role> supplierPlanTeam(NpdProject project) {
+		return project.kind == ProjectKind.PRODUCTION
+				? Set.of(SUPPLIER_NPD, Role.SUPPLIER_RFQ, SUPPLIER_QUALITY, SUPPLIER_OFP)
+				: Set.of(SUPPLIER_NPD, Role.SUPPLIER_RFQ, SUPPLIER_QUALITY);
+	}
+
 	/** Who reviews a submitted plan: ERGO's owning NPD roles (they alone can decide it) and the project's NPD owner. */
 	private static Recipients planReviewers(NpdProject project) {
-		Recipients owners = Recipients.ergo(OWNERS.toArray(Role[]::new));
+		Recipients owners = Recipients.ergo(NpdRights.of(project).owners.toArray(Role[]::new));
 		return project.ownerUserId == null ? owners : Recipients.users(Set.of(project.ownerUserId)).and(owners);
 	}
 
@@ -344,22 +375,24 @@ public class NpdService {
 	@Transactional(readOnly = true)
 	public List<NpdListRow> list() {
 		CurrentUser me = CurrentUser.get();
-		List<NpdProject> visible;
-		if (FULL_VIEWERS.contains(me.role())) {
-			visible = projects.findAllByOrderByIdDesc();
+		List<NpdProject> candidates;
+		if (me.companyType() != CompanyType.ERGO) {
+			candidates = List.of(); // the customer and supplier lists are /mine
 		}
-		else if (me.role() == ERGO_KAM && ModuleAccess.canView(me.role(), Module.NPD)) {
+		else if (me.role() == ERGO_KAM) {
 			Set<Long> accounts = directory.accountsOf(me.userId());
-			visible = accounts.isEmpty() ? List.of() : projects.findByCustomerCompanyIdInOrderByIdDesc(accounts);
+			candidates = accounts.isEmpty() ? List.of() : projects.findByCustomerCompanyIdInOrderByIdDesc(accounts);
 		}
 		else {
-			visible = List.of(); // no NPD project list for this role: ERGO OFP/Quality (3a), customer/supplier (3b)
+			candidates = projects.findAllByOrderByIdDesc();
 		}
+		// the record scope decides, per project and its kind
+		List<NpdProject> visible = candidates.stream().filter(p -> inScope(me, p)).toList();
 		Map<Long, CompanyRef> customers = directory.companies(ids(visible, p -> p.customerCompanyId));
 		Map<Long, CompanyRef> suppliers = directory.companies(ids(visible, p -> p.supplierCompanyId));
 		Map<Long, UserRef> owners = directory.users(ids(visible, p -> p.ownerUserId));
 		return visible.stream()
-			.map(p -> new NpdListRow(p.id, p.npdNumber, rfqNumber(p.sourceRfqId), name(customers, p.customerCompanyId),
+			.map(p -> new NpdListRow(p.id, p.npdNumber, p.kind, rfqNumber(p.sourceRfqId), name(customers, p.customerCompanyId),
 					name(suppliers, p.supplierCompanyId), p.partNumber, p.stage, p.targetSampleDate, delayDays(p),
 					userName(owners, p.ownerUserId), p.riskLevel, p.planStatus))
 			.toList();
@@ -371,18 +404,20 @@ public class NpdService {
 	@Transactional(readOnly = true)
 	public List<NpdOwnProjectRow> myProjects() {
 		CurrentUser me = CurrentUser.get();
-		List<NpdProject> mine;
-		if (CUSTOMER_VIEWERS.contains(me.role())) {
-			mine = projects.findByCustomerCompanyIdInOrderByIdDesc(Set.of(me.companyId()));
+		List<NpdProject> candidates;
+		if (me.companyType() == CompanyType.CUSTOMER) {
+			candidates = projects.findByCustomerCompanyIdInOrderByIdDesc(Set.of(me.companyId()));
 		}
-		else if (SUPPLIER_VIEWERS.contains(me.role())) {
-			mine = projects.findBySupplierCompanyIdAndPlanStatusNotOrderByIdDesc(me.companyId(), PlanStatus.AWAITING_PLAN);
+		else if (me.companyType() == CompanyType.SUPPLIER) {
+			candidates = projects.findBySupplierCompanyIdAndPlanStatusNotOrderByIdDesc(me.companyId(), PlanStatus.AWAITING_PLAN);
 		}
 		else {
-			mine = List.of();
+			candidates = List.of();
 		}
+		// which of the company's projects a role reaches depends on the project's kind (the OFP teams reach OFP projects only)
+		List<NpdProject> mine = candidates.stream().filter(p -> inScope(me, p)).toList();
 		return mine.stream()
-			.map(p -> new NpdOwnProjectRow(p.id, p.npdNumber, p.partNumber, p.revision, p.stage, p.targetSampleDate,
+			.map(p -> new NpdOwnProjectRow(p.id, p.npdNumber, p.kind, p.partNumber, p.revision, p.stage, p.targetSampleDate,
 					delayDays(p)))
 			.toList();
 	}
@@ -468,7 +503,7 @@ public class NpdService {
 		if (current == NpdStage.CUSTOMER_FEEDBACK && project.validationStatus != ValidationStatus.CUSTOMER_APPROVED) {
 			throw ApiException.conflict("Customer NPD and Customer Quality must both approve before Customer Feedback can be closed");
 		}
-		NpdStage next = current.next();
+		NpdStage next = current.next(project.kind);
 		reasonIfGiven(comment);
 		project.stage = next;
 		NpdStageHistoryEntry history = new NpdStageHistoryEntry();
@@ -570,7 +605,7 @@ public class NpdService {
 		CurrentUser me = CurrentUser.get();
 		NpdActivity activity = activities.findById(activityId).orElseThrow(() -> ApiException.notFound("Activity"));
 		NpdProject project = visible(me, activity.npdProjectId);
-		requireOwnActivityScope(me, activity);
+		requireOwnActivityScope(me, project, activity);
 		require(NpdAction.UPDATE_OWN_ACTIVITY, me, project, activity);
 		if (form.status() == ActivityStatus.BLOCKED) {
 			throw ApiException.unprocessable("Use \"Mark Blocked\" to block an activity, with a reason");
@@ -589,7 +624,7 @@ public class NpdService {
 		CurrentUser me = CurrentUser.get();
 		NpdActivity activity = activities.findById(activityId).orElseThrow(() -> ApiException.notFound("Activity"));
 		NpdProject project = visible(me, activity.npdProjectId);
-		requireOwnActivityScope(me, activity);
+		requireOwnActivityScope(me, project, activity);
 		require(NpdAction.MARK_BLOCKED, me, project, activity);
 		audit.reason(required(reason, "A reason is required to mark an activity blocked"));
 		activity.blockedFlag = true;
@@ -601,7 +636,7 @@ public class NpdService {
 		CurrentUser me = CurrentUser.get();
 		NpdActivity activity = activities.findById(activityId).orElseThrow(() -> ApiException.notFound("Activity"));
 		NpdProject project = visible(me, activity.npdProjectId);
-		requireOwnActivityScope(me, activity);
+		requireOwnActivityScope(me, project, activity);
 		require(NpdAction.UNBLOCK, me, project, activity);
 		reasonIfGiven(comment);
 		activity.blockedFlag = false;
@@ -648,7 +683,7 @@ public class NpdService {
 		NpdActivity activity = activities.findById(checklist.npdActivityId)
 			.orElseThrow(() -> ApiException.notFound("Activity"));
 		NpdProject project = visible(me, activity.npdProjectId);
-		requireOwnActivityScope(me, activity);
+		requireOwnActivityScope(me, project, activity);
 		require(NpdAction.RESPOND_TO_PROMPT, me, project, activity);
 		NpdPromptResponse response = responses.findByChecklistId(checklistId).orElseGet(NpdPromptResponse::new);
 		response.checklistId = checklistId;
@@ -692,7 +727,7 @@ public class NpdService {
 		CurrentUser me = CurrentUser.get();
 		NpdIssueRisk issue = issueRisks.findById(issueId).orElseThrow(() -> ApiException.notFound("Issue/risk"));
 		NpdProject project = visible(me, issue.npdProjectId);
-		requireOwnIssueScope(me, issue);
+		requireOwnIssueScope(me, project, issue);
 		require(NpdAction.UPDATE_ISSUE, me, project, issue);
 		boolean reopening = issue.status == IssueRiskStatus.CLOSED && form.status() != IssueRiskStatus.CLOSED;
 		if (reopening) {
@@ -768,10 +803,10 @@ public class NpdService {
 			// A closed project's activities can no longer be edited, so they could never be cleared (review 6e M2). Before the plan is agreed nobody
 			// can update a step either, so a planned date alone is no reason to remind.
 			// (slice 4 review L4)
-			if (project != null && project.stage != NpdStage.CLOSED && executing(project)) {
+			if (project != null && project.stage != NpdStage.CLOSED && executing(project) && NpdRights.of(project).writable()) {
 				items.add(new com.ergo.connect.common.event.OverdueItem(NotificationKind.OVERDUE_ACTIVITY, "npd", project.id, project.npdNumber,
 						a.activityName + " was planned for " + a.plannedDate,
-						ownerSide(a).and(Recipients.ergo(Role.ERGO_ADMIN, Role.ERGO_NPD)), "npd-activity:" + a.id));
+						ownerSide(project, a).and(Recipients.ergo(Role.ERGO_ADMIN, Role.ERGO_NPD)), "npd-activity:" + a.id));
 			}
 		}
 		return items;
@@ -782,27 +817,30 @@ public class NpdService {
 		return roles.isEmpty() ? Recipients.none() : Recipients.company(companyId, roles.toArray(Role[]::new));
 	}
 
-	private static Recipients ownerSide(NpdActivity activity) {
+	private static Recipients ownerSide(NpdProject project, NpdActivity activity) {
+		NpdRights r = NpdRights.of(project);
 		return switch (activity.ownerOrganizationType) {
 			case ERGO -> activity.responsibleUserId != null ? Recipients.users(java.util.Set.of(activity.responsibleUserId))
 					: Recipients.ergo(Role.ERGO_NPD);
-			case CUSTOMER -> editors(activity.ownerCompanyId, CUSTOMER_EDITORS);
-			case SUPPLIER -> editors(activity.ownerCompanyId, SUPPLIER_EDITORS);
+			case CUSTOMER -> editors(activity.ownerCompanyId, r.customerEditors);
+			case SUPPLIER -> editors(activity.ownerCompanyId, r.supplierEditors);
 		};
 	}
 
 	/** ERGO's NPD team and each side's NPD editors: everyone who works on this project. */
 	private static Recipients everyone(NpdProject project) {
-		return Recipients.ergo(Role.ERGO_ADMIN, Role.ERGO_NPD)
-			.and(editors(project.customerCompanyId, CUSTOMER_EDITORS))
-			.and(editors(project.supplierCompanyId, SUPPLIER_EDITORS));
+		NpdRights r = NpdRights.of(project);
+		return (project.kind == ProjectKind.PRODUCTION ? Recipients.ergo(Role.ERGO_ADMIN, Role.ERGO_NPD, Role.ERGO_OFP)
+				: Recipients.ergo(Role.ERGO_ADMIN, Role.ERGO_NPD))
+			.and(editors(project.customerCompanyId, r.customerEditors))
+			.and(editors(project.supplierCompanyId, r.supplierEditors));
 	}
 
 	/** The side the approval's role belongs to: an ERGO role (plus Admin, who may decide ERGO-owned types) or the
 	 * project's customer. */
 	private static Recipients approverSide(NpdProject project, Role approver) {
 		return switch (approver.companyType()) {
-			case ERGO -> Recipients.ergo(OWNERS.toArray(Role[]::new));
+			case ERGO -> Recipients.ergo(NpdRights.of(project).owners.toArray(Role[]::new));
 			case CUSTOMER -> Recipients.company(project.customerCompanyId, approver);
 			case SUPPLIER -> Recipients.company(project.supplierCompanyId, approver);
 		};
@@ -812,7 +850,7 @@ public class NpdService {
 	 * for an ERGO-owned one, otherwise the owner company's NPD editors. */
 	private void assigned(NpdProject project, NpdActivity activity) {
 		notifier.send(NotificationKind.NPD_ACTIVITY_ASSIGNED, "npd", project.id, project.npdNumber, activity.activityName,
-				ownerSide(activity));
+				ownerSide(project, activity));
 	}
 
 	static String pretty(Enum<?> value) {
@@ -837,22 +875,34 @@ public class NpdService {
 		return inScope(me, projects.findById(id).orElse(null));
 	}
 
-	private boolean inScope(CurrentUser me, NpdProject project) {
-		return project != null && ModuleAccess.canView(me.role(), Module.NPD) && (FULL_VIEWERS.contains(me.role())
+	boolean inScope(CurrentUser me, NpdProject project) {
+		if (project == null || !ModuleSwitch.readable(Module.NPD)) {
+			return false;
+		}
+		NpdRights r = NpdRights.of(project);
+		// an OFP project also needs OFP to be visible
+		if (project.kind == ProjectKind.PRODUCTION && !ModuleSwitch.readable(Module.OFP)) {
+			return false;
+		}
+		return r.canView(me.role()) && (r.fullViewers.contains(me.role())
 				|| me.role() == ERGO_KAM && directory.accountsOf(me.userId()).contains(project.customerCompanyId)
-				|| CUSTOMER_VIEWERS.contains(me.role()) && me.companyId() == project.customerCompanyId
-				// the supplier meets a project only once ERGO NPD has released the plan to it (flow doc step 7)
-				|| SUPPLIER_VIEWERS.contains(me.role()) && me.companyId() == project.supplierCompanyId
+				|| r.customerViewers.contains(me.role()) && me.companyId() == project.customerCompanyId
+				// the supplier meets a project only once ERGO has released the plan to it (flow doc step 7)
+				|| r.supplierViewers.contains(me.role()) && me.companyId() == project.supplierCompanyId
 						&& project.planStatus != PlanStatus.AWAITING_PLAN);
 	}
 
 	/** Project-level actions: header edit, stage close, and everything EDITORS alone may originate. */
 	private static boolean allowed(NpdAction action, CurrentUser me, NpdProject project) {
-		boolean editor = EDITORS.contains(me.role());
+		NpdRights r = NpdRights.of(project);
+		if (!r.writable()) {
+			return false; // every module the project belongs to must accept changes
+		}
+		boolean editor = r.editors.contains(me.role());
 		return switch (action) {
 			case UPDATE_PROJECT -> editor;
 			// a project moves on only once the plan is agreed (flow doc step 8)
-			case CLOSE_STAGE -> OWNERS.contains(me.role()) && project.stage != NpdStage.CLOSED
+			case CLOSE_STAGE -> r.owners.contains(me.role()) && project.stage != NpdStage.CLOSED
 					&& project.planStatus == PlanStatus.AGREED;
 			case ADD_ACTIVITY -> editor && project.stage != NpdStage.CLOSED && !planUnderReview(project) && !underValidation(project);
 			case MANAGE_PROMPT_CHECKLIST -> editor && project.stage != NpdStage.CLOSED && !planUnderReview(project) && !underValidation(project);
@@ -860,11 +910,11 @@ public class NpdService {
 			// approvals (sample, quality, stage gate) belong to the work, which starts once the plan is agreed
 			case REQUEST_APPROVAL -> editor && project.stage != NpdStage.CLOSED && executing(project);
 			// the supplier's NPD team hands the filled-in plan to ERGO NPD
-			case SUBMIT_PLAN -> me.role() == SUPPLIER_NPD && SUPPLIER_EDITORS.contains(me.role())
+			case SUBMIT_PLAN -> r.planSubmitters.contains(me.role()) && r.supplierEditors.contains(me.role())
 					&& project.planStatus.openForSupplier();
-			case AGREE_PLAN, SEND_BACK_PLAN -> OWNERS.contains(me.role()) && project.planStatus == PlanStatus.SUBMITTED;
+			case AGREE_PLAN, SEND_BACK_PLAN -> r.owners.contains(me.role()) && project.planStatus == PlanStatus.SUBMITTED;
 			// only ERGO NPD's owning roles release the plan; the KAM who created the project does not
-			case ASSIGN_PLAN -> OWNERS.contains(me.role()) && ModuleSwitch.writable(Module.NPD)
+			case ASSIGN_PLAN -> r.owners.contains(me.role())
 					&& project.planStatus == PlanStatus.AWAITING_PLAN;
 			default -> false; // the rest need a specific activity/issue/approval
 		};
@@ -875,13 +925,17 @@ public class NpdService {
 		if (project.stage == NpdStage.CLOSED || frozenByValidation(project, activity)) {
 			return false;
 		}
-		boolean editor = EDITORS.contains(me.role());
-		boolean ownCompany = (CUSTOMER_EDITORS.contains(me.role()) || SUPPLIER_EDITORS.contains(me.role()))
+		NpdRights r = NpdRights.of(project);
+		if (!r.writable()) {
+			return false;
+		}
+		boolean editor = r.editors.contains(me.role());
+		boolean ownCompany = (r.customerEditors.contains(me.role()) || r.supplierEditors.contains(me.role()))
 				&& ownsActivity(me, activity);
 		return switch (action) {
 			case EDIT_ACTIVITY -> editor && !planUnderReview(project);
 			// the supplier fills in its own steps while the plan is with it (flow doc step 8)
-			case EDIT_PLAN_STEP -> SUPPLIER_EDITORS.contains(me.role()) && ownCompany
+			case EDIT_PLAN_STEP -> r.supplierEditors.contains(me.role()) && ownCompany
 					&& activity.ownerOrganizationType == CompanyType.SUPPLIER && project.planStatus.openForSupplier();
 			// work on a step starts only once the plan is agreed
 			case MARK_BLOCKED -> executing(project) && !activity.blockedFlag && (editor || ownCompany);
@@ -921,8 +975,8 @@ public class NpdService {
 	/** A customer/supplier caller may only reach an activity their own company owns; another company's activity
 	 * does not exist for them (404), the same record-scope pattern used at the project level ({@link #visible}).
 	 * ERGO's EDITORS reach any activity regardless (their broader rights are enforced by require() instead). */
-	private static void requireOwnActivityScope(CurrentUser me, NpdActivity activity) {
-		if (!EDITORS.contains(me.role()) && !ownsActivity(me, activity)) {
+	private static void requireOwnActivityScope(CurrentUser me, NpdProject project, NpdActivity activity) {
+		if (!NpdRights.of(project).editors.contains(me.role()) && !ownsActivity(me, activity)) {
 			throw ApiException.notFound("Activity");
 		}
 	}
@@ -934,8 +988,8 @@ public class NpdService {
 	/** A customer/supplier caller may only reach an issue/risk its own company owns; another company's issue does
 	 * not exist for them (404), the exact same record-scope pattern as {@link #requireOwnActivityScope}. ERGO's
 	 * EDITORS reach any issue regardless. */
-	private static void requireOwnIssueScope(CurrentUser me, NpdIssueRisk issue) {
-		if (!EDITORS.contains(me.role()) && !ownsIssue(me, issue)) {
+	private static void requireOwnIssueScope(CurrentUser me, NpdProject project, NpdIssueRisk issue) {
+		if (!NpdRights.of(project).editors.contains(me.role()) && !ownsIssue(me, issue)) {
 			throw ApiException.notFound("Issue/risk");
 		}
 	}
@@ -948,8 +1002,12 @@ public class NpdService {
 		if (action != NpdAction.UPDATE_ISSUE || project.stage == NpdStage.CLOSED) {
 			return false;
 		}
-		boolean editor = EDITORS.contains(me.role());
-		boolean ownCompany = (CUSTOMER_EDITORS.contains(me.role()) || SUPPLIER_EDITORS.contains(me.role()))
+		NpdRights r = NpdRights.of(project);
+		if (!r.writable()) {
+			return false;
+		}
+		boolean editor = r.editors.contains(me.role());
+		boolean ownCompany = (r.customerEditors.contains(me.role()) || r.supplierEditors.contains(me.role()))
 				&& ownsIssue(me, issue);
 		return editor || ownCompany;
 	}
@@ -959,7 +1017,7 @@ public class NpdService {
 	 * of a 404, security review finding L2) from "the row just isn't decidable right now" (409: already decided, or
 	 * the project itself is CLOSED — the latter matching every other write in this module). */
 	private static void requireCanDecideApproval(CurrentUser me, NpdProject project, NpdApproval approval) {
-		if (!mayDecide(me, approval)) {
+		if (!mayDecide(me, project, approval)) {
 			throw ApiException.notFound("Approval");
 		}
 		if (project.stage == NpdStage.CLOSED || approval.approvalStatus != ApprovalStatus.PENDING) {
@@ -981,13 +1039,13 @@ public class NpdService {
 	private static boolean allowed(NpdAction action, CurrentUser me, NpdProject project, NpdApproval approval) {
 		return action == NpdAction.DECIDE_APPROVAL && project.stage != NpdStage.CLOSED
 				&& approval.approvalStatus == ApprovalStatus.PENDING
-				&& mayDecide(me, approval) && me.userId() != approval.requestedByUserId;
+				&& NpdRights.of(project).writable() && mayDecide(me, project, approval) && me.userId() != approval.requestedByUserId;
 	}
 
 	/** The role sheet: only the final-approval role of the approval's own side decides it - ERGO's "O" roles an
 	 * ERGO-owned type, the customer's "CO" role a customer type. Which side is the type's own, not the named role. */
-	private static boolean mayDecide(CurrentUser me, NpdApproval approval) {
-		return ModuleAccess.canApprove(me.role(), Module.NPD)
+	private static boolean mayDecide(CurrentUser me, NpdProject project, NpdApproval approval) {
+		return NpdRights.of(project).approvers.contains(me.role())
 				&& me.companyType() == approval.approvalType.approverRole().companyType();
 	}
 
@@ -1039,6 +1097,9 @@ public class NpdService {
 		}
 		if (requested.compareTo(project.stage) < 0 || requested == NpdStage.CLOSED) {
 			throw ApiException.unprocessable("A step can only be planned in the current stage or a later one");
+		}
+		if (requested.skippedBy(project.kind)) {
+			throw ApiException.unprocessable("An OFP project does not go through this stage");
 		}
 		return requested;
 	}
@@ -1132,12 +1193,15 @@ public class NpdService {
 	// ---------------------------------------------------------------- per-audience view assembly
 
 	NpdView view(CurrentUser me, NpdProject p) {
-		boolean isCustomer = CUSTOMER_VIEWERS.contains(me.role());
-		boolean isSupplier = SUPPLIER_VIEWERS.contains(me.role());
+		NpdRights rights = NpdRights.of(p);
+		boolean isCustomer = rights.customerViewers.contains(me.role());
+		boolean isSupplier = rights.supplierViewers.contains(me.role());
 		// RfqApi's own record scope is per-audience (forErgo/forCustomer/forSupplier): the caller's own visible()
 		// pass already proved this project (and so this RFQ) is theirs, so each is safe to call here.
 		// the source RFQ's number is RFQ-module data: shown only while that module is not hidden
-		String rfqNumber = !ModuleSwitch.readable(Module.RFQ) ? null
+		// the OFP teams have no RFQ access of their own: they get no RFQ number rather than a refusal
+		boolean rfqVisible = ModuleSwitch.readable(Module.RFQ) && (!(isCustomer || isSupplier) || ModuleAccess.canView(me.role(), Module.RFQ));
+		String rfqNumber = !rfqVisible ? null
 				: isCustomer ? rfqApi.forCustomer(p.sourceRfqId).number()
 				: isSupplier ? rfqApi.forSupplierItem(p.sourceRfqItemId).rfqNumber() : rfqApi.numberOf(p.sourceRfqId);
 		Map<Long, UserRef> owner = directory.users(ids(List.of(p), x -> x.ownerUserId, x -> x.qualityOwnerUserId));
@@ -1226,14 +1290,14 @@ public class NpdService {
 		List<NpdPlanHistoryEntry> planHistoryRows = isCustomer ? List.of() : planHistory.findByNpdProjectIdOrderById(p.id);
 
 		if (isSupplier) {
-			return new SupplierNpdView("SUPPLIER", p.id, p.npdNumber, p.sourceRfqId, rfqNumber, p.partNumber, p.revision,
+			return new SupplierNpdView("SUPPLIER", p.id, p.npdNumber, p.kind, p.sourceRfqId, rfqNumber, p.partNumber, p.revision,
 					p.description, p.quoteReference, p.stage, p.targetSampleDate, p.actualSampleSubmissionDate, delay,
 					activityViews, issueViews, externalHistoryViews, p.planStatus, planViews(planHistoryRows, true), progress, validation, actions,
 					p.createdAt, p.updatedAt);
 		}
 		if (isCustomer) {
 			CompanyRef customer = directory.company(p.customerCompanyId).orElseThrow();
-			return new CustomerNpdView("CUSTOMER", p.id, p.npdNumber, p.sourceRfqId, rfqNumber,
+			return new CustomerNpdView("CUSTOMER", p.id, p.npdNumber, p.kind, p.sourceRfqId, rfqNumber,
 					new Named(customer.id(), customer.code(), customer.name()), samplePoId, samplePoNumber, p.partNumber, p.revision,
 					p.description, p.stage, p.targetSampleDate, p.actualSampleSubmissionDate, delay, activityViews,
 					issueViews, approvalViews, externalHistoryViews, progress, validation, actions, p.createdAt, p.updatedAt);
@@ -1244,7 +1308,7 @@ public class NpdService {
 		}
 		CompanyRef customer = directory.company(p.customerCompanyId).orElseThrow();
 		CompanyRef supplier = directory.company(p.supplierCompanyId).orElseThrow();
-		return new ErgoNpdView("ERGO", p.id, p.npdNumber, p.sourceRfqId, rfqNumber,
+		return new ErgoNpdView("ERGO", p.id, p.npdNumber, p.kind, p.sourceRfqId, rfqNumber,
 				new Named(customer.id(), customer.code(), customer.name()),
 				new Named(supplier.id(), supplier.code(), supplier.name()), p.partNumber, p.revision, p.description,
 				p.quoteReference, p.stage, p.targetSampleDate, p.actualSampleSubmissionDate, delay, p.ownerUserId,
@@ -1270,7 +1334,7 @@ public class NpdService {
 	private static ProgressView progress(NpdProject p, List<NpdActivity> visibleActivities) {
 		List<StageProgress> stages = new ArrayList<>();
 		for (NpdStage stage : NpdStage.values()) {
-			if (stage == NpdStage.PENDING_CONVERSION || stage == NpdStage.CLOSED) {
+			if (stage == NpdStage.PENDING_CONVERSION || stage == NpdStage.CLOSED || stage.skippedBy(p.kind)) {
 				continue;
 			}
 			List<NpdActivity> inStage = visibleActivities.stream().filter(a -> a.phaseName == stage).toList();
@@ -1297,8 +1361,9 @@ public class NpdService {
 	 * people. The customer sees only its own decisions and a coarse status that does not reveal the supplier-side
 	 * steps. */
 	private ValidationView validationView(CurrentUser me, NpdProject p, List<NpdValidationDecision> rows) {
-		boolean customer = CUSTOMER_VIEWERS.contains(me.role());
-		boolean supplier = SUPPLIER_VIEWERS.contains(me.role());
+		NpdRights rights = NpdRights.of(p);
+		boolean customer = rights.customerViewers.contains(me.role());
+		boolean supplier = rights.supplierViewers.contains(me.role());
 		Map<Long, UserRef> users = directory.users(ids(rows, r -> r.decidedByUserId));
 		List<ValidationDecisionView> views = new ArrayList<>();
 		Set<Integer> emittedCustomerRounds = new java.util.HashSet<>();

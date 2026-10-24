@@ -28,7 +28,7 @@ class ModuleAccessTests {
 	static {
 		SHEET.put(Role.ERGO_ADMIN, new Level[] { V, V, V, V, V });
 		SHEET.put(Role.ERGO_MANAGEMENT, new Level[] { O, O, O, O, O });
-		SHEET.put(Role.ERGO_KAM, new Level[] { A, V, A, V, V }); // NPD: A so the KAM can decide Sample POs (flow doc step 7)
+		SHEET.put(Role.ERGO_KAM, new Level[] { A, V, A, A, V }); // NPD: A to decide Sample POs (flow doc step 7); OFP: A to decide production POs (step 11)
 		SHEET.put(Role.ERGO_RFQ, new Level[] { O, O, V, V, V });
 		SHEET.put(Role.ERGO_NPD, new Level[] { V, V, O, V, V });
 		SHEET.put(Role.ERGO_OFP, new Level[] { NONE, NONE, V, O, A });

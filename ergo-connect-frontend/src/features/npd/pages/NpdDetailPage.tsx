@@ -113,7 +113,7 @@ function NpdDetail({ npd }: { npd: NpdView }) {
   const [assigning, setAssigning] = useState(false)
   const [handingOver, setHandingOver] = useState(false)
   // Server enforces stage + role + once-only; this only avoids showing the button where it can never work.
-  const canHandover = useCan(OFP_CREATE) && npd.audience === 'ERGO' && npd.stage === 'APPROVED_FOR_PRODUCTION_HANDOVER'
+  const canHandover = useCan(OFP_CREATE) && npd.audience === 'ERGO' && npd.kind === 'PRODUCTION' && npd.stage === 'APPROVED_FOR_PRODUCTION_HANDOVER'
   const [editingProject, setEditingProject] = useState(false)
   const [closeStage, closeState] = useCloseNpdStageMutation()
   const [assignPlan, assignState] = useAssignNpdPlanMutation()
@@ -186,6 +186,7 @@ function NpdDetail({ npd }: { npd: NpdView }) {
               {npd.npdNumber}
             </Typography>
             <Chip label={stage.label} color={stage.color} size="small" />
+            {npd.kind === 'PRODUCTION' && <Chip label="OFP project" size="small" variant="outlined" />}
             {ergo && <Chip label={PLAN_STATUS[ergo.planStatus].label} color={PLAN_STATUS[ergo.planStatus].color} size="small" variant="outlined" />}
             <Typography variant="caption" color="text.secondary">
               {progress.label}

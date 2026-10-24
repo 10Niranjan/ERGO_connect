@@ -59,6 +59,7 @@ class RecordScope {
 			case "quotation" -> quotationApi.partiesVisibleToCaller(id);
 			case "npd" -> npdApi.partiesVisibleToCaller(id);
 			case "sample-po" -> npdApi.samplePoPartiesVisibleToCaller(id);
+			case "production-po" -> npdApi.productionPoPartiesVisibleToCaller(id);
 			case "ofp" -> ofpApi.orderPartiesVisibleToCaller(id);
 			case "inspection" -> qualityApi.inspectionPartiesVisibleToCaller(id);
 			case "ncr" -> qualityApi.ncrPartiesVisibleToCaller(id);
@@ -75,9 +76,22 @@ class RecordScope {
 		return ModuleSwitch.ownerOf(module).map(ModuleSwitch::writable).orElse(true);
 	}
 
+	/** As {@link #writable(String)}, for one record: an OFP project is also bound by the OFP switch. */
+	boolean writable(String module, long id) {
+		return writable(module) && (!"npd".equals(module) || npdApi.writableForRecord(id));
+	}
+
 	/** The enforcing check for a change to a record of this kind: 409 while its module is read-only or hidden. */
 	void requireWritable(String module) {
 		ModuleSwitch.ownerOf(module).ifPresent(ModuleSwitch::requireWritable);
+	}
+
+	/** As {@link #requireWritable(String)}, for one record: an OFP project is also bound by the OFP switch. */
+	void requireWritable(String module, long id) {
+		requireWritable(module);
+		if ("npd".equals(module) && !npdApi.writableForRecord(id)) {
+			ModuleSwitch.requireWritable(com.ergo.connect.common.security.ModuleAccess.Module.OFP);
+		}
 	}
 
 	/** Where the record lives in the UI: the same routes the frontend uses. */
@@ -87,6 +101,7 @@ class RecordScope {
 			case "quotation" -> "/quotes/" + id;
 			case "npd" -> "/npd/" + id;
 			case "sample-po" -> "/npd/sample-pos/" + id;
+			case "production-po" -> "/ofp/production-pos/" + id;
 			case "ofp" -> "/ofp/" + id;
 			case "inspection" -> "/quality/" + id;
 			case "ncr" -> "/quality/ncrs/" + id;

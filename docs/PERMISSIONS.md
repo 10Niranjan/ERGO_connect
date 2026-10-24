@@ -336,3 +336,24 @@ The migration changes a cell only if it still holds the old shipped value (an ER
 - New record kind `sample-po` for notifications (`RecordScope`, `ModuleSwitch.ownerOf` = NPD).
 - **Plan submission (slice 4, V36)**: the supplier's roles with A on NPD fill in their own steps (`PUT /api/npd/activities/{id}/plan`) while the plan is with them; only **Supplier NPD** submits (`/plan/submit`); only ERGO's "O" roles (ERGO NPD, Management) agree or send back (`/plan/agree`, `/plan/send-back`, comment mandatory on send-back). No cell of the sheet changed. Working a step and closing a stage need `plan_status = AGREED`; while `SUBMITTED` nobody edits the steps.
 - **Quality validation (slice 5, V37)**: the party is taken from the caller's role - Supplier Quality submits (internal approval) and validates (a colleague of the submitter), ERGO Quality validates, Customer NPD and Customer Quality give the customer's final approval - each as long as the role can act on NPD. This is a deliberate exception to the legend "A acts but gives no final approval": the flow document names these roles, so demoting Customer NPD from O to A does not remove its final approval. No cell of the sheet changed.
+
+## 12. Changes for the flow document (2026-10-24, Slice 6, migration V38)
+
+| Role | Module | Was | Now | Why |
+|---|---|---|---|---|
+| ERGO_KAM | OFP | V | **A** | The KAM decides a customer's production PO and creates the OFP project (flow doc step 11). |
+
+The migration changes the cell only if it still holds the shipped value and bumps `access_config.version`. Two new
+sidebar items are seeded: `production-pos` (Production POs) and `ofp-projects` (OFP projects).
+
+- **The KAM's A on OFP is deliberately narrow.** It covers production PO return / accept and OFP project creation
+  (`ProductionPoService`, confined to the KAM's assigned accounts). `OrderService.ERGO_ACTORS` excludes ERGO_KAM, so a
+  KAM still cannot hold, release or clear orders, and `NpdRights` keeps it out of the editors of a project.
+- **Roles per project kind (`NpdRights.of(project)`).** A sample project is governed by the NPD column as before. A
+  production (OFP) project is governed by the OFP column of the sheet, unioned with the NPD roles that already have
+  access, and it is bound by both the NPD and the OFP switch. Customer OFP is **not** an approver: the customer's final
+  approval stays with the NPD column's approving role.
+- **Production PO**: raised only by the customer-side OFP approver (Customer OFP) for an approved sample project of its
+  own company; returned or accepted only by ERGO_KAM (assigned accounts) and ERGO_MANAGEMENT that can act on OFP; read by
+  customer OFP viewers (own company) and ERGO roles with OFP view. Suppliers never reach a production PO.
+- **Handover to an order** exists only for production projects.

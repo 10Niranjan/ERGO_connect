@@ -21,6 +21,7 @@ import {
   NPD_MINE_VIEW,
   NPD_VIEW,
   SAMPLE_PO_VIEW,
+  PRODUCTION_PO_VIEW,
   OFP_CREATE,
   OFP_VIEW,
   PERMISSIONS_VIEW,
@@ -44,6 +45,8 @@ import { DocumentDetailPage } from '@/features/documents/pages/DocumentDetailPag
 import { DocumentLibraryPage } from '@/features/documents/pages/DocumentLibraryPage'
 import { SamplePoDetailPage } from '@/features/npd/pages/SamplePoDetailPage'
 import { SamplePoListPage } from '@/features/npd/pages/SamplePoListPage'
+import { ProductionPoDetailPage } from '@/features/ofp/pages/ProductionPoDetailPage'
+import { ProductionPoListPage } from '@/features/ofp/pages/ProductionPoListPage'
 import { MyNpdProjectsPage } from '@/features/npd/pages/MyNpdProjectsPage'
 import { NpdDetailPage } from '@/features/npd/pages/NpdDetailPage'
 import { NpdListPage } from '@/features/npd/pages/NpdListPage'
@@ -103,6 +106,13 @@ export const router = createBrowserRouter([
             children: [
               { path: '/npd/sample-pos', element: <SamplePoListPage /> },
               { path: '/npd/sample-pos/:id', element: <SamplePoDetailPage /> },
+            ],
+          },
+          {
+            element: <RequirePermission rules={PRODUCTION_PO_VIEW} />,
+            children: [
+              { path: '/ofp/production-pos', element: <ProductionPoListPage /> },
+              { path: '/ofp/production-pos/:id', element: <ProductionPoDetailPage /> },
             ],
           },
           {

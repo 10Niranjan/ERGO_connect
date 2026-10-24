@@ -81,6 +81,9 @@ final class NotificationCatalog {
 				"Your NPD plan was sent back");
 		put(NotificationKind.NPD_PLAN_AGREED, RECORD_UPDATED, EnumSet.of(ERGO, SUPPLIER), "NPD plan agreed",
 				"Your NPD plan was agreed");
+		put(NotificationKind.PRODUCTION_PO_SUBMITTED, ACTION_REQUIRED, EnumSet.of(ERGO), "Production PO awaiting review", null);
+		put(NotificationKind.PRODUCTION_PO_RETURNED, ACTION_REQUIRED, EnumSet.of(CUSTOMER), null,
+				"Your production PO was returned");
 		put(NotificationKind.NPD_VALIDATION_REQUESTED, ACTION_REQUIRED, EnumSet.of(ERGO, SUPPLIER), "Quality validation awaiting you",
 				"Quality validation awaiting your decision");
 		put(NotificationKind.NPD_VALIDATION_COMPLETE, RECORD_UPDATED, EnumSet.of(ERGO), "Quality validation approved", null);

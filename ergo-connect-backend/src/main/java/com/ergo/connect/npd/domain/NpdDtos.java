@@ -84,7 +84,7 @@ public final class NpdDtos {
 	}
 
 	/** SRS §12.8.1 NPD project list columns. ERGO-only: the other company is never in scope here (ERGO sees both). */
-	public record NpdListRow(long id, String npdNumber, String rfqNumber, String customerName, String supplierName,
+	public record NpdListRow(long id, String npdNumber, ProjectKind kind, String rfqNumber, String customerName, String supplierName,
 			String partNumber, NpdStage stage, LocalDate targetSampleDate, Long delayDays, String owner,
 			RiskLevel riskLevel, PlanStatus planStatus) {
 	}
@@ -92,7 +92,7 @@ public final class NpdDtos {
 	/** SRS §12.15's customer "NPD" / supplier "NPD Tasks" nav entry: the caller's own company's projects, with no
 	 * field for the other company at all (safe for both audiences, unlike NpdListRow). Feeds the "reach a project by
 	 * id" detail view — every other 3b field lives there instead of being duplicated onto this row. */
-	public record NpdOwnProjectRow(long id, String npdNumber, String partNumber, String revision, NpdStage stage,
+	public record NpdOwnProjectRow(long id, String npdNumber, ProjectKind kind, String partNumber, String revision, NpdStage stage,
 			LocalDate targetSampleDate, Long delayDays) {
 	}
 
@@ -209,7 +209,7 @@ public final class NpdDtos {
 	}
 
 	/** ERGO's unrestricted view: both customer and supplier, every activity/checklist/issue/approval. */
-	public record ErgoNpdView(String audience, long id, String npdNumber, long rfqId, String rfqNumber, Named customer,
+	public record ErgoNpdView(String audience, long id, String npdNumber, ProjectKind kind, long rfqId, String rfqNumber, Named customer,
 			Named supplier, String partNumber, String revision, String description, String quoteReference,
 			NpdStage stage, LocalDate targetSampleDate, LocalDate actualSampleSubmissionDate, Long delayDays,
 			Long ownerUserId, String owner, Long qualityOwnerUserId, String qualityOwner, RiskLevel riskLevel,
@@ -226,7 +226,7 @@ public final class NpdDtos {
 	 * identity through a field neither party ever intended as a disclosure channel. {@code riskLevel} (ERGO's own
 	 * internal project risk rating, not an SRS §12.8.3 header field) is dropped for the same reason. {@code
 	 * stageHistory} is the {@link ExternalStageHistoryView} variant (no {@code remarks}). */
-	public record CustomerNpdView(String audience, long id, String npdNumber, long rfqId, String rfqNumber,
+	public record CustomerNpdView(String audience, long id, String npdNumber, ProjectKind kind, long rfqId, String rfqNumber,
 			Named customer, Long samplePoId, String samplePoNumber, String partNumber, String revision, String description,
 			NpdStage stage, LocalDate targetSampleDate, LocalDate actualSampleSubmissionDate, Long delayDays,
 			List<ActivityView> activities, List<IssueRiskView> issuesRisks, List<ApprovalView> approvals,
@@ -237,7 +237,7 @@ public final class NpdDtos {
 	/** Never carries the customer, and no approvals at all (SRS §10.6: every supplier role is X on Approve).
 	 * {@code riskLevel} is dropped, same reasoning as {@link CustomerNpdView}. {@code stageHistory} is the
 	 * {@link ExternalStageHistoryView} variant (no {@code remarks}). */
-	public record SupplierNpdView(String audience, long id, String npdNumber, long rfqId, String rfqNumber,
+	public record SupplierNpdView(String audience, long id, String npdNumber, ProjectKind kind, long rfqId, String rfqNumber,
 			String partNumber, String revision, String description, String quoteReference, NpdStage stage,
 			LocalDate targetSampleDate, LocalDate actualSampleSubmissionDate, Long delayDays,
 			List<ActivityView> activities, List<IssueRiskView> issuesRisks,

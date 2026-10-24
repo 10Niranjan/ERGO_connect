@@ -139,8 +139,10 @@ public class AccessPolicy {
 		return caps;
 	}
 
-	/** Reload now (called after a permission save commits). */
+	/** Reload now (called after a permission save commits). The instance that just saved is the live one: the static
+	 * switch checks read its database (matters only where several application contexts share a JVM, as in tests). */
 	public void refresh() {
+		instance = this;
 		install(read());
 	}
 

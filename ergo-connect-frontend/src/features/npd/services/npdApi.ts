@@ -122,10 +122,14 @@ export interface ProgressView {
   stages: StageProgress[]
 }
 
+/** SAMPLE: the sample development project; PRODUCTION: the OFP project of a customer's production order (flow doc step 11). */
+export type ProjectKind = 'SAMPLE' | 'PRODUCTION'
+
 /** SRS §12.8.1 NPD project list columns. */
 export interface NpdListRow {
   id: number
   npdNumber: string
+  kind: ProjectKind
   rfqNumber: string | null
   customerName: string
   supplierName: string
@@ -143,6 +147,7 @@ export interface NpdListRow {
 export interface NpdOwnProjectRow {
   id: number
   npdNumber: string
+  kind: ProjectKind
   partNumber: string
   revision: string | null
   stage: NpdStage
@@ -335,6 +340,7 @@ export interface ExternalStageHistoryView {
 interface NpdViewBase {
   id: number
   npdNumber: string
+  kind: ProjectKind
   rfqId: number
   rfqNumber: string | null
   partNumber: string

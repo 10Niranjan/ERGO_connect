@@ -113,7 +113,7 @@ export function ValidationPanel({ npd }: { npd: NpdView }) {
           onClose={() => setDialog(null)}
         />
       )}
-      {dialog === 'reject' && <RejectDialog npdId={npd.id} askStage={!customerPhase} onClose={() => setDialog(null)} />}
+      {dialog === 'reject' && <RejectDialog npdId={npd.id} askStage={!customerPhase} production={npd.kind === 'PRODUCTION'} onClose={() => setDialog(null)} />}
     </Paper>
   )
 }
@@ -157,7 +157,7 @@ function History({ decisions }: { decisions: ValidationDecisionView[] }) {
   )
 }
 
-function RejectDialog({ npdId, askStage, onClose }: { npdId: number; askStage: boolean; onClose: () => void }) {
+function RejectDialog({ npdId, askStage, production, onClose }: { npdId: number; askStage: boolean; production: boolean; onClose: () => void }) {
   const [decide, deciding] = useDecideNpdValidationMutation()
   const [comment, setComment] = useState('')
   const [returnStage, setReturnStage] = useState<NpdStage | ''>('')
@@ -183,7 +183,7 @@ function RejectDialog({ npdId, askStage, onClose }: { npdId: number; askStage: b
         </Typography>
         {askStage && (
           <TextField select required label="Send back to" value={returnStage} onChange={(e) => setReturnStage(e.target.value as NpdStage)}>
-            {RETURN_STAGES.map((s) => (
+            {RETURN_STAGES.filter((s) => !production || (s !== 'TOOLING_MATERIAL_RELEASE' && s !== 'TRIAL_PREPARATION')).map((s) => (
               <MenuItem key={s} value={s}>
                 {NPD_STAGE[s].label}
               </MenuItem>

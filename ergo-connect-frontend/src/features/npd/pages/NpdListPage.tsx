@@ -92,7 +92,10 @@ export function NpdListPage() {
               const progress = stageProgress(r.stage)
               return (
                 <TableRow key={r.id} hover sx={{ cursor: 'pointer' }} onClick={() => navigate(`/npd/${r.id}`)}>
-                  <TableCell>{r.npdNumber}</TableCell>
+                  <TableCell>
+                    {r.npdNumber}
+                    {r.kind === 'PRODUCTION' && <Chip size="small" variant="outlined" label="OFP" sx={{ ml: 1 }} />}
+                  </TableCell>
                   <TableCell>{r.rfqNumber ?? '—'}</TableCell>
                   <TableCell>{r.customerName}</TableCell>
                   <TableCell>{r.supplierName}</TableCell>

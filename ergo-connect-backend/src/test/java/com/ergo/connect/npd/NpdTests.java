@@ -152,7 +152,7 @@ class NpdTests {
 			call(get("/api/npd/{id}", projectB), viewer, null).andExpect(status().isOk());
 		}
 		call(post("/api/npd/{id}/plan/assign", projectA), quality, "{}").andExpect(status().isForbidden());
-		call(post("/api/npd/{id}/plan/assign", projectA), ofp, "{}").andExpect(status().isForbidden());
+		call(post("/api/npd/{id}/plan/assign", projectA), ofp, "{}").andExpect(status().isConflict());
 		// the KAM (A on NPD) creates projects but does not release their plan
 		call(post("/api/npd/{id}/plan/assign", projectA), kam, "{}").andExpect(status().isForbidden());
 
@@ -1053,10 +1053,10 @@ class NpdTests {
 		assignAndAgree(projectId);
 		call(post("/api/npd/activities/{id}/progress", activityId), qualitySupplier, """
 				{"status": "IN_PROGRESS", "issueFlag": false, "riskFlag": false}""").andExpect(status().isOk());
-		// role sheet: Supplier OFP has no NPD access at all
+		// Supplier OFP has no NPD access to a sample project (it joins OFP projects only, flow doc step 11)
 		call(post("/api/npd/activities/{id}/progress", activityId), ofpSupplier, """
-				{"status": "DONE", "issueFlag": false, "riskFlag": false}""").andExpect(status().isForbidden());
-		call(get("/api/npd/{id}", projectId), ofpSupplier, null).andExpect(status().isForbidden());
+				{"status": "DONE", "issueFlag": false, "riskFlag": false}""").andExpect(status().isNotFound());
+		call(get("/api/npd/{id}", projectId), ofpSupplier, null).andExpect(status().isNotFound());
 	}
 
 	@Test

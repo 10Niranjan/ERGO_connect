@@ -263,7 +263,7 @@ class StrictModuleSwitchTests {
 
 	@Test
 	void anOfpHandoverChangesNpdAndOfpTogetherOrNotAtAll() throws Exception {
-		long project = npdProject("APPROVED_FOR_PRODUCTION_HANDOVER");
+		long project = productionProject("APPROVED_FOR_PRODUCTION_HANDOVER");
 		String handover = "{\"orderedQuantity\": 100, \"dueDate\": \"%s\"}".formatted(LocalDate.now().plusDays(30));
 
 		for (String cap : List.of("V", "NV")) {
@@ -447,6 +447,23 @@ class StrictModuleSwitchTests {
 				                          part_number, stage, created_by_user_id)
 				VALUES (?, ?, ?, ?, ?, 'PN-NPD', ?, ?) RETURNING npd_project_id""", Long.class, "SN" + SEQ.incrementAndGet(),
 				rfq, rfqItemId, customer, supplier, stage, ergoManagement.userId());
+	}
+
+	/** An OFP project (flow doc step 11) at this stage, with its accepted production order and the finished sample project. */
+	private long productionProject(String stage) {
+		long sample = npdProject("CLOSED");
+		long po = jdbc.queryForObject("""
+				INSERT INTO production_pos (production_po_number, source_project_id, customer_company_id, part_number,
+				                            customer_po_number, quantity, required_date, status, created_by_user_id)
+				VALUES (?, ?, ?, 'PN-NPD', 'CPO-1', 10, current_date + 30, 'ACCEPTED', ?) RETURNING production_po_id""",
+				Long.class, "SP" + SEQ.incrementAndGet(), sample, customer, ergoManagement.userId());
+		return jdbc.queryForObject("""
+				INSERT INTO npd_projects (npd_number, source_rfq_id, source_rfq_item_id, customer_company_id, supplier_company_id,
+				                          part_number, stage, created_by_user_id, kind, production_po_id, source_project_id)
+				SELECT ?, source_rfq_id, source_rfq_item_id, customer_company_id, supplier_company_id, part_number, ?, ?,
+				       'PRODUCTION', ?, npd_project_id
+				FROM npd_projects WHERE npd_project_id = ? RETURNING npd_project_id""", Long.class,
+				"SO" + SEQ.incrementAndGet(), stage, ergoManagement.userId(), po, sample);
 	}
 
 	private static String inspection(String linkedModule, long linkedRecordId) {

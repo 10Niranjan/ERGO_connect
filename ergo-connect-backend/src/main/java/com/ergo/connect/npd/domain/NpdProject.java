@@ -65,6 +65,19 @@ class NpdProject {
 
 	LocalDate actualSampleSubmissionDate;
 
+	/** SAMPLE: the sample development project; PRODUCTION: the OFP project of a customer's production order (step 11). */
+	@Column(updatable = false)
+	@Enumerated(EnumType.STRING)
+	ProjectKind kind = ProjectKind.SAMPLE;
+
+	/** The production order a PRODUCTION project was created from; null for a sample project. */
+	@Column(updatable = false)
+	Long productionPoId;
+
+	/** The approved sample project a PRODUCTION project continues; null for a sample project. */
+	@Column(updatable = false)
+	Long sourceProjectId;
+
 	/** The Sample PO this project was created from (flow doc step 7); null for projects that predate it. */
 	@Column(updatable = false)
 	Long samplePoId;

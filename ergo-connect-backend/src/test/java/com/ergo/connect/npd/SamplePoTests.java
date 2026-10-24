@@ -586,8 +586,8 @@ class SamplePoTests {
 		call(get("/api/dashboard"), npdSupplier, null).andExpect(jsonPath("$.npdItems[*].id", hasItem((int) project)));
 		// a project of another supplier company stays invisible
 		call(get("/api/npd/{id}", project), npdSupplierB, null).andExpect(status().isNotFound());
-		// no NPD access for a supplier's OFP team
-		call(get("/api/npd/{id}", project), ofpSupplier, null).andExpect(status().isForbidden());
+		// a supplier's OFP team reaches OFP projects only: a sample project does not exist for it
+		call(get("/api/npd/{id}", project), ofpSupplier, null).andExpect(status().isNotFound());
 	}
 
 	@Test
@@ -605,7 +605,9 @@ class SamplePoTests {
 		call(post("/api/npd/{id}/plan/assign", project), ergoNpd, "{}").andExpect(status().isConflict());
 		TestNpd.addSupplierStep(mvc, ergoNpd, project, supplier, "Tooling readiness", true);
 
-		for (Login other : List.of(kamA, ergoQuality, ergoOfp, ergoRfq, npdCustomerA, buyerA, seller, npdSupplier)) {
+		// ERGO OFP owns OFP projects only: on a sample project the action is simply not there
+		call(post("/api/npd/{id}/plan/assign", project), ergoOfp, "{}").andExpect(status().isConflict());
+		for (Login other : List.of(kamA, ergoQuality, ergoRfq, npdCustomerA, buyerA, seller, npdSupplier)) {
 			call(post("/api/npd/{id}/plan/assign", project), other, "{}").andExpect(status().isForbidden());
 		}
 		call(post("/api/npd/{id}/plan/assign", project), kamB, "{}").andExpect(status().isForbidden());

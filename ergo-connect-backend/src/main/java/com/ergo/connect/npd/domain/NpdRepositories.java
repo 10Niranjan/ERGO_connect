@@ -15,6 +15,8 @@ interface NpdProjectRepository extends Repository<NpdProject, Long> {
 
 	Optional<NpdProject> findById(Long id);
 
+	List<NpdProject> findByIdIn(Collection<Long> ids);
+
 	List<NpdProject> findAllByOrderByIdDesc();
 
 	List<NpdProject> findByCustomerCompanyIdInOrderByIdDesc(Collection<Long> customerCompanyIds);
@@ -23,6 +25,10 @@ interface NpdProjectRepository extends Repository<NpdProject, Long> {
 	List<NpdProject> findBySupplierCompanyIdAndPlanStatusNotOrderByIdDesc(Long supplierCompanyId, PlanStatus excluded);
 
 	Optional<NpdProject> findBySamplePoId(Long samplePoId);
+
+	Optional<NpdProject> findByProductionPoId(Long productionPoId);
+
+	List<NpdProject> findByProductionPoIdIn(Collection<Long> productionPoIds);
 
 	/** Parts that already have a project (also those created before Sample POs existed). */
 	List<NpdProject> findBySourceRfqItemIdIn(Collection<Long> rfqItemIds);
@@ -159,5 +165,20 @@ interface NpdValidationDecisionRepository extends Repository<NpdValidationDecisi
 	List<NpdValidationDecision> findByNpdProjectIdOrderById(Long npdProjectId);
 
 	List<NpdValidationDecision> findByNpdProjectIdAndRoundNoOrderById(Long npdProjectId, int roundNo);
+
+}
+
+interface ProductionPoRepository extends Repository<ProductionPo, Long> {
+
+	ProductionPo save(ProductionPo productionPo);
+
+	Optional<ProductionPo> findById(Long id);
+
+	List<ProductionPo> findAllByOrderByIdDesc();
+
+	List<ProductionPo> findByCustomerCompanyIdInOrderByIdDesc(Collection<Long> customerCompanyIds);
+
+	/** Production orders still open (submitted or returned) for these sample projects. */
+	List<ProductionPo> findBySourceProjectIdInAndStatusIn(Collection<Long> sourceProjectIds, Collection<ProductionPoStatus> statuses);
 
 }

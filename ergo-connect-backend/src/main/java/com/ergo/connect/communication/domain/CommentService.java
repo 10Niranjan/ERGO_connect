@@ -215,7 +215,7 @@ public class CommentService {
 		Target target = Target.of(form.linkedModule());
 		RecordParties parties = parties(target, form.linkedRecordId())
 			.orElseThrow(() -> ApiException.notFound("Record"));
-		scope.requireWritable(target.key); // a comment is a change to the record: refused while its module is read-only
+		scope.requireWritable(target.key, form.linkedRecordId()); // a comment is a change to the record: refused while its module is read-only
 
 		Comment parent = null;
 		CommentType type;
@@ -273,7 +273,7 @@ public class CommentService {
 	public CommentView edit(long id, CommentEditForm form) {
 		CurrentUser me = CurrentUser.get();
 		Loaded l = visibleOrThrow(me, id);
-		scope.requireWritable(l.comment.linkedModule); // V: no change to a read-only module's record, NV: unreachable above
+		scope.requireWritable(l.comment.linkedModule, l.comment.linkedRecordId); // V: no change to a read-only module's record, NV: unreachable above
 		Comment c = l.comment;
 		requireEditable(me, c);
 		if (form.query() && c.parentCommentId != null) {
@@ -299,7 +299,7 @@ public class CommentService {
 	public CommentView resolve(long id, ReasonForm form) {
 		CurrentUser me = CurrentUser.get();
 		Loaded l = visibleOrThrow(me, id);
-		scope.requireWritable(l.comment.linkedModule); // V: no change to a read-only module's record, NV: unreachable above
+		scope.requireWritable(l.comment.linkedModule, l.comment.linkedRecordId); // V: no change to a read-only module's record, NV: unreachable above
 		Comment c = l.comment;
 		requireAuthorOrErgo(me, c);
 		if (!c.queryFlag || c.resolvedAt != null) {
@@ -314,7 +314,7 @@ public class CommentService {
 	public CommentView reopen(long id, ReasonForm form) {
 		CurrentUser me = CurrentUser.get();
 		Loaded l = visibleOrThrow(me, id);
-		scope.requireWritable(l.comment.linkedModule); // V: no change to a read-only module's record, NV: unreachable above
+		scope.requireWritable(l.comment.linkedModule, l.comment.linkedRecordId); // V: no change to a read-only module's record, NV: unreachable above
 		Comment c = l.comment;
 		requireAuthorOrErgo(me, c);
 		if (!c.queryFlag || c.resolvedAt == null) {
@@ -329,7 +329,7 @@ public class CommentService {
 	public CommentView escalate(long id, ReasonForm form) {
 		CurrentUser me = CurrentUser.get();
 		Loaded l = visibleOrThrow(me, id);
-		scope.requireWritable(l.comment.linkedModule); // V: no change to a read-only module's record, NV: unreachable above
+		scope.requireWritable(l.comment.linkedModule, l.comment.linkedRecordId); // V: no change to a read-only module's record, NV: unreachable above
 		Comment c = l.comment;
 		requireErgo(me);
 		if (c.parentCommentId != null || c.escalatedFlag) {
@@ -347,7 +347,7 @@ public class CommentService {
 	public CommentView deescalate(long id, ReasonForm form) {
 		CurrentUser me = CurrentUser.get();
 		Loaded l = visibleOrThrow(me, id);
-		scope.requireWritable(l.comment.linkedModule); // V: no change to a read-only module's record, NV: unreachable above
+		scope.requireWritable(l.comment.linkedModule, l.comment.linkedRecordId); // V: no change to a read-only module's record, NV: unreachable above
 		Comment c = l.comment;
 		requireErgo(me);
 		if (!c.escalatedFlag) {
@@ -363,7 +363,7 @@ public class CommentService {
 	public CommentView attach(long id, String fileName, byte[] content) {
 		CurrentUser me = CurrentUser.get();
 		Loaded l = visibleOrThrow(me, id);
-		scope.requireWritable(l.comment.linkedModule); // V: no change to a read-only module's record, NV: unreachable above
+		scope.requireWritable(l.comment.linkedModule, l.comment.linkedRecordId); // V: no change to a read-only module's record, NV: unreachable above
 		Comment c = l.comment;
 		requireEditable(me, c);
 		if (currentAttachments(c.id).size() >= MAX_ATTACHMENTS) {
@@ -376,7 +376,7 @@ public class CommentService {
 	public CommentView removeAttachment(long id, long documentId) {
 		CurrentUser me = CurrentUser.get();
 		Loaded l = visibleOrThrow(me, id);
-		scope.requireWritable(l.comment.linkedModule); // V: no change to a read-only module's record, NV: unreachable above
+		scope.requireWritable(l.comment.linkedModule, l.comment.linkedRecordId); // V: no change to a read-only module's record, NV: unreachable above
 		Comment c = l.comment;
 		requireEditable(me, c);
 		DocumentInfo info = documents.find(ATTACHMENT_MODULE, c.id, documentId)
@@ -398,7 +398,7 @@ public class CommentService {
 	boolean attachmentWindowOpen(long id) {
 		CurrentUser me = CurrentUser.get();
 		Loaded l = load(me, id);
-		return l != null && scope.writable(l.comment.linkedModule) && editable(me, l.comment);
+		return l != null && scope.writable(l.comment.linkedModule, l.comment.linkedRecordId) && editable(me, l.comment);
 	}
 
 	/** The owning module of the record this comment hangs off, for the documents module's switch checks. No caller

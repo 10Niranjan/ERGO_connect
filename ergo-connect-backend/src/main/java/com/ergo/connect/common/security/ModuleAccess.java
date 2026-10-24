@@ -112,6 +112,12 @@ public final class ModuleAccess {
 		return new LiveRoleSet(r -> viewers.contains(r) && !excluded.contains(r));
 	}
 
+	/** The roles in any of the given sets (still live): a record that several modules' role columns govern. */
+	@SafeVarargs
+	public static Set<Role> union(Set<Role>... sets) {
+		return new LiveRoleSet(r -> Arrays.stream(sets).anyMatch(s -> s.contains(r)));
+	}
+
 	private static Set<Role> rolesWhere(Module module, Predicate<Level> test, CompanyType side) {
 		return new LiveRoleSet(r -> (side == null || r.companyType() == side) && test.test(level(r, module)));
 	}

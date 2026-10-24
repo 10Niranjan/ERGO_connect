@@ -1,7 +1,7 @@
 # ERGO Connect — flow-document alignment: handoff for the next Claude
 
 **Read this file first.** It is self-contained: after reading it (and `CLAUDE.md`) you can continue without asking
-the user what happened. Last updated 2026-10-24 (slice 5 done), branch `sprint-3`.
+the user what happened. Last updated 2026-10-24 (**all six slices done**), branch `sprint-3`.
 
 ## 1. Why this work exists
 
@@ -180,12 +180,29 @@ Decisions (defaults to confirm with the client) in `ARCHITECTURE.md` §8, two en
 - **Tests:** `ValidationFlowTests` (12); `TestNpd.validate(...)` / `customerApprove(...)` drive the loop; the helpers that close every stage (NpdTests, OfpTests) use them.
 - **Known gaps:** approvals linked to a reopened step stay approved; Supplier Quality chooses the return stage; the older `ApprovalType` approvals still exist beside this loop.
 
-## 4. What is left — the slices to build (in this order)
+### Slice 6 — production PO and OFP project (V38) ✅
+Decisions (defaults to confirm with the client) in `ARCHITECTURE.md` §8, two entries of 2026-10-24.
+- **Production PO (`ProductionPo`, `ProductionPoStatus`, `ProductionPoService`; `/api/ofp/production-pos`):** Customer OFP (the customer's OFP approver) releases one for an approved sample project (`SUBMITTED`); the ERGO KAM of that account either returns it with a comment (`RETURNED`, Customer OFP corrects and resubmits) or accepts it by creating the OFP project (`ACCEPTED`). Number `PPO-yyyy-nnnn` from `production_po_number_seq`. One open production PO per sample project (partial unique index). History is audited; notifications `PRODUCTION_PO_SUBMITTED` / `PRODUCTION_PO_RETURNED`.
+- **OFP project = an `npd_projects` row with `kind = PRODUCTION`** (`ProjectKind`; `production_po_id`, `source_project_id`; a CHECK ties the three together). The KAM assigns one ERGO OFP and one ERGO Quality user; the supplier and customer teams are the same companies as the sample project. It reuses the whole execution engine of slices 4 and 5 (plan, agreement, step tracking, dual quality gate, customer approval). `NpdStage.skippedBy(kind)` drops *Tooling & Material Release* and *Trial Preparation* for production projects (no tool development, no sample approval).
+- **Per-kind roles (`NpdRights.of(project)`):** replaces the static role sets in `NpdService`. A sample project is worked by the NPD columns as before; a production project is worked by the **OFP** columns (ERGO OFP / Customer OFP / Supplier OFP) unioned with the NPD roles that already have access. Customer OFP is not an approver (the customer's final approval stays with Customer NPD).
+- **Handover is rebased:** `OrderService.handover` is available only for production projects and defaults customer PO number, quantity and required date from the production PO. A sample project can no longer be handed over to an order; an order always comes from a production PO.
+- **Module switches:** an OFP project is bound by both the NPD and the OFP switch (`NpdRights.writable()`, `NpdApi.writableForRecord`, comments via `RecordScope.writable(module, id)`).
+- **KAM A on OFP (V38, was V):** limited to production-order decisions. `OrderService.ERGO_ACTORS` excludes `ERGO_KAM`, so the KAM cannot hold, release or clear orders.
+- **Frontend:** `features/ofp` — `ProductionPoListPage`, `ProductionPoDetailPage`, `ProductionPoDialogs`, `productionPoApi`; sidebar items `production-pos` and `ofp-projects` (migration), `?kind=` filter on `MyNpdProjectsPage`, an OFP chip on the NPD pages, handover button only for production projects.
+- **Tests:** `ProductionFlowTests`; `OfpTests` re-based (an order is created only from a production project); `TestNpd` helpers `raiseProductionPo`, `createOfpProject`, `productionProject`, `approvedSample`, `completeProject`.
+- **Defaults to confirm with the client:** the KAM (not ERGO OFP) creates the OFP project and assigns the ERGO OFP; the customer's final approval is kept for production projects; old sample projects at handover now need a production PO; Customer OFP is not an approver; Supplier Quality chooses the return stage on a rejection; the KAM's A on OFP means production-order decisions only.
+- **Known gaps:** approvals linked to a reopened step stay approved; no browser smoke test of any flow; `pendingApprovalsCount` counts OFP projects even when OFP is hidden; no saved reusable plan template; the responsible-person picker on the supplier's step dialog.
 
-For each slice: ask `srs-analyst`-style questions only where the doc is ambiguous; write migration `V38+` (next free number is **V38**); backend (entities → service/workflow → `<module>.api` facade → controller → tests); frontend; then
-`security-reviewer`; `./mvnw verify` + `npm run build && npm run lint` green; log in `ARCHITECTURE.md` §8; commit.
+## 4. What is left
 
-### Slice 6 — flow step 11: production order and OFP project
+All six slices of the flow document are built. Open items are the "defaults to confirm" and "known gaps" lists above and
+the backlog below. For any further slice: write migration `V39+` (next free number is **V39**); backend (entities →
+service/workflow → `<module>.api` facade → controller → tests); frontend; then `security-reviewer`; `./mvnw verify` +
+`npm run build && npm run lint` green; log in `ARCHITECTURE.md` §8; commit.
+
+(Original plan for slice 6, kept for context.)
+
+### Flow step 11 as planned
 - **Customer OFP releases a production order** and submits it under OFP; the **ERGO KAM is notified** and creates an
   **OFP project** for that production PO. ERGO OFP creates a NPD-like project with **only the relevant steps** (no tool
   development, no sample approval) and the **Customer OFP and Supplier OFP teams** are added. Same execution, step
@@ -215,7 +232,7 @@ For each slice: ask `srs-analyst`-style questions only where the doc is ambiguou
   (`approveWhole`). `ModuleSwitchFacadeTests` forces every new `<module>.api` method to be classified (and
   `QuotationSummary` etc. need an argument in its `arguments()`). `ModuleBoundaryTest` forbids cross-module imports
   except via `<module>.api`.
-- **Flyway:** migrations are immutable once committed (V31–V37 are committed now); add V38+. Raw SQL in tests that
+- **Flyway:** migrations are immutable once committed (V31–V38 are committed now); add V39+. Raw SQL in tests that
   inserts `rfqs`/`npd_projects` must also create an `rfq_items` row and set `source_rfq_item_id`.
 - **Module switches / audit / DTO-per-audience** rules in `CLAUDE.md` still apply to everything above.
 - **Git:** work on `sprint-3`. Commit messages end with the `Co-Authored-By` trailer given in the session reminder.

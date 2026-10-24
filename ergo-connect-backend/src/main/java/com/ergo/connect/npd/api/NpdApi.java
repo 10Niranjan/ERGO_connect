@@ -16,7 +16,7 @@ public interface NpdApi {
 	/** What OFP needs to create an order from an NPD project: the customer/supplier the project itself never
 	 * exposes outside ERGO, its part identity and its own source RFQ (for the order's own linkage). */
 	record HandoverProject(long id, long customerCompanyId, long supplierCompanyId, long sourceRfqId,
-			String partNumber, String revision) {
+			String partNumber, String revision, String customerPoNumber, int quantity, java.time.LocalDate requiredDate) {
 	}
 
 	/**
@@ -34,6 +34,10 @@ public interface NpdApi {
 	 * to derive both companies; a supplier caller uses it only to verify the project is its own, and is rejected
 	 * before the value is ever returned to an HTTP response). Empty if the project doesn't exist. */
 	Optional<ProjectRef> projectRef(long npdProjectId);
+
+	/** Whether changes to this project are accepted right now: NPD, and OFP too for an OFP project. A comment on the project
+	 * is such a change. False while NPD is hidden. */
+	boolean writableForRecord(long npdProjectId);
 
 	/** Both companies of the project if the current caller may see it (NpdService's own record scope); empty
 	 * otherwise. Used by the communication module (ARCHITECTURE.md §8, Phase 6c). */
@@ -62,6 +66,11 @@ public interface NpdApi {
 	/** Management and KAM dashboards: Sample POs submitted by customers that wait for the KAM's decision (the KAM sees
 	 * only its assigned accounts', Management all; 0 for every other role). */
 	int samplePosAwaitingCount();
+
+	/** The customer of a production order if the current caller may see it (ProductionPoService's own record scope); empty
+	 * otherwise. A production order has no supplier, so only the customer side is returned. Used by the communication
+	 * module for notifications. */
+	Optional<com.ergo.connect.common.record.RecordParties> productionPoPartiesVisibleToCaller(long productionPoId);
 
 	/** The customer of a Sample PO if the current caller may see it (SamplePoService's own record scope); empty otherwise.
 	 * A Sample PO has no supplier, so only the customer side is returned. Used by the communication module for notifications. */

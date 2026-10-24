@@ -108,7 +108,7 @@ public class OrderService {
 
 	/** ERGO roles that act ("A" and up). Beyond EDITORS this adds ERGO Quality's part in OFP: hold, release and
 	 * material (inspection) status (SRS §10.7 "E*"), nothing else. */
-	private static final Set<Role> ERGO_ACTORS = ModuleAccess.actors(Module.OFP, CompanyType.ERGO);
+	private static final Set<Role> ERGO_ACTORS = ModuleAccess.actorsExcept(Module.OFP, CompanyType.ERGO, ERGO_KAM);
 
 	/** Supplier roles with OFP access ("A"): edit rights limited to production progress and packaging/dispatch on
 	 * their own assigned order only — never material status, order header fields, or the workflow actions. */
@@ -271,10 +271,11 @@ public class OrderService {
 		order.linkedRfqId = project.sourceRfqId();
 		order.partNumber = project.partNumber();
 		order.revision = project.revision();
-		order.customerPoNo = text(form.customerPoNo());
+		// what the customer's production order says is the default for what the form leaves open
+		order.customerPoNo = text(form.customerPoNo()) != null ? text(form.customerPoNo()) : project.customerPoNumber();
 		order.supplierPoNo = text(form.supplierPoNo());
 		order.orderedQuantity = form.orderedQuantity();
-		order.dueDate = form.dueDate();
+		order.dueDate = form.dueDate() != null ? form.dueDate() : project.requiredDate();
 		order.currentStatus = OrderStatus.ORDER_CREATED;
 		order.ownerUserId = resolveOwner(me, form.ownerUserId());
 		orders.save(order);
