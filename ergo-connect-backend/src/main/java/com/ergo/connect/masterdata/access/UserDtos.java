@@ -7,6 +7,7 @@ import java.util.Set;
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.Role;
 
+import com.ergo.connect.common.validation.NotInvisiblyBlank;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
@@ -43,7 +44,7 @@ public final class UserDtos {
 	}
 
 	/** Why an account is deleted; stored in the audit trail with the deletion. */
-	public record DeleteRequest(@NotBlank @Size(max = 500) String reason) {
+	public record DeleteRequest(@NotInvisiblyBlank @Size(max = 500) String reason) {
 	}
 
 	public record ActiveRequest(@NotNull Boolean active) {

@@ -6,6 +6,7 @@ import java.util.Map;
 
 import com.ergo.connect.common.security.Role;
 
+import com.ergo.connect.common.validation.NotInvisiblyBlank;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
@@ -40,14 +41,14 @@ public final class PermissionAdminDtos {
 	public record Change(@NotNull Role role, @NotBlank String module, @NotBlank String level) {
 	}
 
-	public record SaveRequest(long expectedVersion, @NotBlank @Size(max = 500) String reason,
+	public record SaveRequest(long expectedVersion, @NotInvisiblyBlank @Size(max = 500) String reason,
 			@NotEmpty @Size(max = 200) List<@Valid Change> changes) {
 	}
 
-	public record SwitchRequest(long expectedVersion, @NotBlank @Size(max = 500) String reason, @NotBlank String level) {
+	public record SwitchRequest(long expectedVersion, @NotInvisiblyBlank @Size(max = 500) String reason, @NotBlank String level) {
 	}
 
-	public record ResetRequest(long expectedVersion, @NotBlank @Size(max = 500) String reason) {
+	public record ResetRequest(long expectedVersion, @NotInvisiblyBlank @Size(max = 500) String reason) {
 	}
 
 	/** {@code role} is null for a module-switch change. */

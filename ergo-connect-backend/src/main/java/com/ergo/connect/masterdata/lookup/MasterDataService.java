@@ -158,7 +158,7 @@ public class MasterDataService {
 		Map<String, String> fields = new LinkedHashMap<>();
 		for (Field field : list.fields()) {
 			String value = given.get(field.key());
-			value = value == null || value.isBlank() ? null : value.trim();
+			value = com.ergo.connect.common.validation.Blank.is(value) ? null : value.trim();
 			if (value != null && value.length() > field.maxLength()) {
 				throw ApiException.unprocessable(field.label() + " is too long");
 			}

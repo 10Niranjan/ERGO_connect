@@ -8,6 +8,7 @@ import java.util.Set;
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.common.security.Role;
 
+import com.ergo.connect.common.validation.NotInvisiblyBlank;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
@@ -41,7 +42,7 @@ public final class NpdDtos {
 
 	/** Send the plan back to the supplier: the comment is mandatory and reaches the supplier, so it must not name the
 	 * customer or a price. */
-	public record PlanReturnForm(@NotBlank @Size(max = 2000) String comment) {
+	public record PlanReturnForm(@NotInvisiblyBlank @Size(max = 2000) String comment) {
 	}
 
 	/** One entry of the plan's trail. The comment is ERGO NPD's reason on a send-back, otherwise an optional note. */

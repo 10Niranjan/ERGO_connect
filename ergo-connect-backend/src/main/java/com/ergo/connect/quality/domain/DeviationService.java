@@ -764,7 +764,7 @@ public class DeviationService {
 	}
 
 	private static String text(String value) {
-		return value == null || value.isBlank() ? null : value.trim();
+		return com.ergo.connect.common.validation.Blank.is(value) ? null : value.trim();
 	}
 
 	private static String required(String value, String message) {

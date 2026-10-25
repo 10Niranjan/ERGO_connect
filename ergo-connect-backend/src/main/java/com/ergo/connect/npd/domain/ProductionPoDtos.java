@@ -5,12 +5,12 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
 
+import com.ergo.connect.common.validation.NotInvisiblyBlank;
 import com.ergo.connect.masterdata.api.Directory.UserRef;
 
 import jakarta.validation.constraints.FutureOrPresent;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 
@@ -38,7 +38,7 @@ public final class ProductionPoDtos {
 	}
 
 	/** {@code comment} is required: a returned production order says what the customer must fix. */
-	public record ReturnForm(@NotBlank @Pattern(regexp = ".*[^\\p{Z}\\p{Cf}\\s].*", flags = Pattern.Flag.DOTALL, message = "must not be blank") @Size(max = 2000) String comment) {
+	public record ReturnForm(@NotInvisiblyBlank @Size(max = 2000) String comment) {
 	}
 
 	/** The KAM assigns the OFP project to one ERGO OFP user and one ERGO Quality user. */

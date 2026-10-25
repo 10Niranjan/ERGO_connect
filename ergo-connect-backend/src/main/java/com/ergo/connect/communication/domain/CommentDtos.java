@@ -6,6 +6,7 @@ import java.util.Set;
 
 import com.ergo.connect.communication.api.CommentType;
 
+import com.ergo.connect.common.validation.NotInvisiblyBlank;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -27,12 +28,12 @@ public final class CommentDtos {
 	/** {@code commentType} is optional: an external caller always posts to its own side, an ERGO caller defaults to
 	 * INTERNAL (the narrowest audience). A reply always takes its parent's type. */
 	public record CommentForm(@NotBlank String linkedModule, @NotNull Long linkedRecordId, CommentType commentType,
-			@NotBlank @Size(max = 4000) String text, Long parentCommentId, boolean query,
+			@NotInvisiblyBlank @Size(max = 4000) String text, Long parentCommentId, boolean query,
 			@Size(max = 20) List<Long> mentionedUserIds) {
 	}
 
 	/** Full replace of the editable parts (text, query flag, mentions). */
-	public record CommentEditForm(@NotBlank @Size(max = 4000) String text, boolean query,
+	public record CommentEditForm(@NotInvisiblyBlank @Size(max = 4000) String text, boolean query,
 			@Size(max = 20) List<Long> mentionedUserIds) {
 	}
 

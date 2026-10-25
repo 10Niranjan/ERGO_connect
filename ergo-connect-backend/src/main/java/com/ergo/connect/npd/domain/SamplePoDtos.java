@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Set;
 
+import com.ergo.connect.common.validation.NotInvisiblyBlank;
 import jakarta.validation.constraints.FutureOrPresent;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -34,7 +35,7 @@ public final class SamplePoDtos {
 	}
 
 	/** {@code comment} is required: a returned Sample PO says what the customer must fix. */
-	public record ReturnForm(@NotBlank @Size(max = 2000) String comment) {
+	public record ReturnForm(@NotInvisiblyBlank @Size(max = 2000) String comment) {
 	}
 
 	/** The KAM assigns the project to one ERGO NPD user and one ERGO Quality user. */
