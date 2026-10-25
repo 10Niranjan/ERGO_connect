@@ -1,6 +1,9 @@
 spring:
   application:
     name: ergo-connect
+  jackson:
+    deserialization:
+      accept-float-as-int: false # 1.5 for a whole number is a 400, never a silent 1
   profiles:
     default: dev
   jpa:

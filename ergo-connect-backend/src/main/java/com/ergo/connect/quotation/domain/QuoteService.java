@@ -200,12 +200,13 @@ public class QuoteService {
 		CurrentUser me = CurrentUser.get();
 		// Distributing writes quotations and moves the RFQ: both modules must accept changes before anything is saved.
 		ModuleSwitch.requireWritable(Module.QUOTATION, Module.RFQ);
+		// Two ERGO users distributing at once must not send the same part to two suppliers, and the parts are read only
+		// after the lock: an RFQ edit that held it may have removed one.
+		jdbc.queryForList("SELECT rfq_id FROM rfqs WHERE rfq_id = ? FOR UPDATE", Long.class, rfqId);
 		RfqRef rfq = rfqs.forErgo(rfqId);
 		if (!rfq.acceptsInvitations()) {
 			throw ApiException.conflict("Parts can be sent to suppliers while ERGO reviews the RFQ or once it is out");
 		}
-		// Two ERGO users distributing at once must not send the same part to two suppliers.
-		jdbc.queryForList("SELECT rfq_id FROM rfqs WHERE rfq_id = ? FOR UPDATE", Long.class, rfqId);
 		Set<Long> partIds = rfq.items().stream().map(ItemRef::id).collect(Collectors.toSet());
 		Set<Long> taken = activeByItem(rfqId).keySet();
 		Set<Long> supplierIds = new HashSet<>();
@@ -708,7 +709,7 @@ public class QuoteService {
 		if (q.validityDate == null) {
 			missing.add("validity date");
 		}
-		if (q.productionPiecePrice == null) {
+		if (q.productionPiecePrice == null || q.productionPiecePrice.signum() <= 0) {
 			missing.add("production piece price");
 		}
 		if (q.moq == null) {
@@ -800,9 +801,14 @@ public class QuoteService {
 		int correction = 0;
 		int approved = 0;
 		int rejected = 0;
+		int sentBack = 0;
 		for (Invitation i : invitations.findByRfqIdOrderById(rfqId)) {
 			switch (i.status) {
-				case NOT_STARTED, DRAFT_SAVED, REVISION_REQUIRED -> withSupplier++;
+				case NOT_STARTED, DRAFT_SAVED -> withSupplier++;
+				case REVISION_REQUIRED -> {
+					withSupplier++;
+					sentBack++; // the supplier has answered once: the RFQ can be closed, no longer cancelled
+				}
 				case SUBMITTED, RESUBMITTED -> underReview++;
 				case ACCEPTED -> accepted++;
 				case WITH_CUSTOMER -> withCustomer++;
@@ -816,7 +822,7 @@ public class QuoteService {
 		}
 		ModuleSwitch.requireWritable(Module.QUOTATION, Module.RFQ); // both locked until commit: no switch change mid-operation
 		rfqs.quotationProgress(rfqId, new QuotationSummary(withSupplier, underReview, accepted, withCustomer, onHold,
-				correction, approved, rejected));
+				correction, approved, rejected, sentBack));
 	}
 
 	private QuoteView view(CurrentUser me, Invitation i) {

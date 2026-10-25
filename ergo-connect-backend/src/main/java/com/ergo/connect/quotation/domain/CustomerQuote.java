@@ -6,6 +6,7 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+import com.ergo.connect.common.audit.AuditExclude;
 import com.ergo.connect.quotation.domain.CustomerQuoteDtos.ResponseStatus;
 
 import jakarta.persistence.Column;
@@ -16,6 +17,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 /**
  * A quotation ERGO generated for the customer (SRS §13.3.9, with the §13.3.10 ERGO quote fields; flow doc §4): a line
@@ -61,5 +63,10 @@ class CustomerQuote {
 	Instant responseAt;
 
 	String responseComment;
+
+	/** Optimistic lock: of two customer users answering at once, the later one gets 409 instead of a trigger error. */
+	@Version
+	@AuditExclude
+	long rowVersion;
 
 }

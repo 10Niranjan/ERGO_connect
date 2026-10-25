@@ -21,6 +21,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OrderColumn;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 /**
  * The supplier's working copy of its quote (SRS §13.3.4). Deliberately not audited field by field: drafts are the
@@ -92,6 +93,10 @@ class SupplierQuote {
 	Long reopenedByUserId;
 
 	Instant reopenedAt;
+
+	/** Optimistic lock: two users of one supplier saving or submitting at once cannot both win. */
+	@Version
+	long rowVersion;
 
 	@ElementCollection
 	@CollectionTable(name = "supplier_quote_tooling", joinColumns = @JoinColumn(name = "supplier_quote_id"))

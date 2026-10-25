@@ -125,7 +125,13 @@ public interface RfqApi {
 	 * other parts are unassigned.
 	 */
 	record QuotationSummary(int withSupplier, int underErgoReview, int accepted, int withCustomer, int onHold,
-			int correction, int approved, int rejected) {
+			int correction, int approved, int rejected, int sentBack) {
+
+		/** {@code sentBack}: how many of the {@code withSupplier} parts are back with the supplier after it answered. */
+		public QuotationSummary(int withSupplier, int underErgoReview, int accepted, int withCustomer, int onHold,
+				int correction, int approved, int rejected) {
+			this(withSupplier, underErgoReview, accepted, withCustomer, onHold, correction, approved, rejected, 0);
+		}
 	}
 
 	void quotationProgress(long rfqId, QuotationSummary summary);

@@ -220,8 +220,9 @@ service/workflow → `<module>.api` facade → controller → tests); frontend; 
 ## 5. Working notes for this repo (learned the hard way)
 
 - **Build/test:** backend `cd ergo-connect-backend && ./mvnw -q verify` (Docker Desktop must be running; ~5 min).
-  The `JAVA_HOME` path in `CLAUDE.md` (`jdk-21.0.10`) does not exist on the dev machine; the default JDK 21 works —
-  don't override it. Frontend: `cd ergo-connect-frontend && npm run build && npm run lint`.
+  On this machine `java` on PATH is JDK 21 but the shell's `JAVA_HOME` points to JDK 17, which `mvnw` uses — so
+  prefix with `JAVA_HOME="C:/Program Files/Java/jdk-21.0.10"` (that path exists). Use `clean verify` after switching
+  branches/stashing (stale `target/classes` migrations break every context). Frontend: `cd ergo-connect-frontend && npm run build && npm run lint`.
 - **Windows + CRLF:** `core.autocrlf=true`; many files are CRLF on disk. Multi-line regex edits need `\r?\n`. The
   `Edit` tool needs a fresh `Read` first. Python is not installed; use perl/bash/PowerShell.
 - **Never bulk-overwrite files from a script without checking the output is non-empty** (a perl error once wiped ~20
@@ -236,3 +237,13 @@ service/workflow → `<module>.api` facade → controller → tests); frontend; 
   inserts `rfqs`/`npd_projects` must also create an `rfq_items` row and set `source_rfq_item_id`.
 - **Module switches / audit / DTO-per-audience** rules in `CLAUDE.md` still apply to everything above.
 - **Git:** work on `sprint-3`. Commit messages end with the `Co-Authored-By` trailer given in the session reminder.
+
+## 6. Test campaign status (QA, branch sprint-3, working tree not committed)
+
+- **Step 1 (uncommitted fixes, do not revert):** `V39__quotation_optimistic_lock.sql`, `@Version` on `CustomerQuote` / `SupplierQuote`, `DataIntegrityViolation` -> 409 and `AccessDenied` -> 403 ProblemDetail handlers in `ValidationErrorHandler`, cancel/derive change in `QuoteService`.
+- **Known red tests, pending a business decision:** `QuoteWorkflowAdversarialTests.aQuotationOfZeroPricedPartsIsNotAValidOfferToACustomer` and `zeroOrExpiredQuotesCannotBeSubmitted` (zero price accepted).
+- **Chunk 2a done (production PO lifecycle):** `npd/ProductionPoSupport`, `ProductionPoAdversarialTests`, `ProductionPoConcurrencyTests`. Two open Low findings, left unfixed on purpose (no production changes in the test chunks): **F1** invisible-character return comment accepted; **F2** fractional quantity (1.5) accepted and truncated. Both have red tests (`aCommentOfOnlyInvisibleCharactersDoesNotCountAsAReason`, `aFractionalQuantityIsRefusedNotSilentlyTruncated`). Fixes: strip Unicode whitespace/format chars before the blank check; disable float-to-int coercion (`ACCEPT_FLOAT_AS_INT`) on the quantity DTOs.
+- **Order handover done (chunk 2b, `npd/OfpHandoverAdversarialTests`, 8 tests, all green):** roles, bad forms not burning the one-time handover, PO defaults, race (one 201 + one 409), NPD/OFP at View, visibility, workflow refusals, supplier write scope. Note: bean validation (400) runs before the role check (403) on bad bodies; no data leaks.
+- **Chunk 2c done (production PO switches, `npd/ProductionPoSwitchTests`, 5 tests, 4 green):** OFP View-only and hidden, NPD View-only and hidden, against every PO entry point. Open Low finding **F3** (red test `theEligibleListStillOpens...`): `GET /production-pos/eligible-projects` is guarded by `approve(OFP, CUSTOMER)`, which a View-only OFP module removes, so Customer OFP gets 403 instead of the list with no RAISE button that `ProductionPoService.eligibleProjects` is written to return. Fix: guard the endpoint with view-level (the service already filters by RAISERS).
+- **Still to do:** roles-per-project-kind matrix, shipments/POD for production-born orders, switch matrix for the OFP project/order side, frontend checks (no test runner: buttons only from `actions`, form validation parity). Untestable today: Customer Management (inactive role), customer user with an ERGO role.
+- **Test tips:** extend `AdversarialSupport` (call/send/race/cap/level); Customer Management cannot log in; ERGO_ADMIN login needs 2FA (TestUsers handles it); full run is about 10 minutes, run it in the background and check the exit code.

@@ -1,5 +1,6 @@
 package com.ergo.connect.common.config;
 
+import java.io.IOException;
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -8,6 +9,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -28,6 +31,9 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import com.ergo.connect.common.security.SecurityProperties;
 import com.ergo.connect.common.security.jwt.AccessTokens;
+
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 /**
  * Deny-by-default. Layer 1 (who you are + which role): bearer JWT here and {@code @PreAuthorize} on controllers.
@@ -67,8 +73,18 @@ class SecurityConfig {
 				.jwt(jwt -> jwt.jwtAuthenticationConverter(
 						token -> new JwtAuthenticationToken(token, AccessTokens.authorities(token), token.getSubject())))
 				.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
-			.exceptionHandling(e -> e.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
+			.exceptionHandling(e -> e.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))
+				.accessDeniedHandler(SecurityConfig::forbidden))
 			.build();
+	}
+
+	/** A refusal by the filter chain (e.g. a session that must change its password) is an RFC 9457 document too. */
+	private static void forbidden(HttpServletRequest request, HttpServletResponse response,
+			AccessDeniedException e) throws IOException {
+		response.setStatus(HttpStatus.FORBIDDEN.value());
+		response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+		response.getWriter().write("{\"type\":\"about:blank\",\"title\":\"Forbidden\",\"status\":403,"
+				+ "\"detail\":\"Your role may not do this.\"}");
 	}
 
 	@Bean

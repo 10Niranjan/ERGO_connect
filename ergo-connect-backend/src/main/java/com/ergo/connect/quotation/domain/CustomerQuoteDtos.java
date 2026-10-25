@@ -53,7 +53,7 @@ public final class CustomerQuoteDtos {
 
 	/** ERGO's quotation terms for one part (SRS §13.3.10), usually prefilled from the part's accepted supplier quote. */
 	public record ErgoQuoteForm(@NotNull Long currencyId,
-			@NotNull @PositiveOrZero @Digits(integer = 14, fraction = 4) BigDecimal productionPiecePrice,
+			@NotNull @Positive @Digits(integer = 14, fraction = 4) BigDecimal productionPiecePrice,
 			@PositiveOrZero @Digits(integer = 14, fraction = 4) BigDecimal ppapPiecePrice,
 			@PositiveOrZero @Digits(integer = 14, fraction = 4) BigDecimal toolingCost, Long paymentTermId,
 			Long incotermId, @Positive Integer moq, @PositiveOrZero Integer materialLeadTimeWeeks,

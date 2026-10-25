@@ -82,6 +82,9 @@ class RfqApiService implements RfqApi {
 
 	private final org.springframework.jdbc.core.JdbcTemplate jdbc;
 
+	@jakarta.persistence.PersistenceContext
+	private jakarta.persistence.EntityManager entityManager;
+
 	RfqApiService(RfqRepository rfqs, RfqItemRepository items, RfqService rfqService, MasterDataApi masterData,
 			DocumentStore documents, Directory directory, org.springframework.jdbc.core.JdbcTemplate jdbc) {
 		this.jdbc = jdbc;
@@ -244,6 +247,10 @@ class RfqApiService implements RfqApi {
 		ModuleSwitch.requireWritable(Module.RFQ); // a read-only or hidden RFQ module is not changed by another module either
 		jdbc.queryForList("SELECT rfq_id FROM rfqs WHERE rfq_id = ? FOR UPDATE", Long.class, rfqId); // one summary at a time
 		Rfq rfq = rfqs.findById(rfqId).orElseThrow();
+		// The copy loaded before the lock may predate a status another transaction committed while we waited for it;
+		// unchanged-looking state would then never be written. Push our own changes, then re-read.
+		entityManager.flush();
+		entityManager.refresh(rfq);
 		if (!QUOTING.contains(rfq.status)) {
 			return;
 		}
@@ -267,7 +274,7 @@ class RfqApiService implements RfqApi {
 		if (s.correction() > 0) {
 			return CUSTOMER_REVISION_REQUESTED;
 		}
-		if (s.underErgoReview() + s.accepted() + decided == 0) {
+		if (s.underErgoReview() + s.accepted() + decided + s.sentBack() == 0) {
 			return SENT_TO_SUPPLIERS;
 		}
 		return s.withSupplier() + unassigned == 0 ? QUOTES_COMPLETE : QUOTES_PARTIAL;
