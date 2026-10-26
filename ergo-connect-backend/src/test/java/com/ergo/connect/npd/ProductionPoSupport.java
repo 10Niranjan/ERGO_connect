@@ -105,7 +105,7 @@ abstract class ProductionPoSupport extends AdversarialSupport {
 		return TestNpd.approvedSample(mvc, teamB, approvedPart(buyerB));
 	}
 
-	private long approvedPart(Login owner) throws Exception {
+	protected long approvedPart(Login owner) throws Exception {
 		long rfq = reviewedRfq(owner, "PN-PO-" + PART.incrementAndGet());
 		TestRfq.approveWhole(mvc, owner, ergoRfq, sellerX, supplierX, inr, rfq, "90");
 		return TestRfq.itemIds(mvc, ergoRfq, rfq).getFirst();
