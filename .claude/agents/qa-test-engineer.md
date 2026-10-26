@@ -45,10 +45,20 @@ If any item is genuinely not applicable to the thing you're testing, say so expl
 
 - Integration tests use `@Import(TestcontainersConfiguration.class)` (real Postgres) — don't mock away DB triggers/constraints that are the thing under test (e.g. append-only `audit_logs`, row_version).
 - Run from `ergo-connect-backend/` with `JAVA_HOME="C:/Program Files/Java/jdk-21.0.10"` (the shell default is JDK 17) and Docker running. Use `./mvnw -B clean verify` after any branch switch or stash — Maven keeps stale files in `target/classes` (a leftover migration once failed 472 tests with "more than one migration with version 36"). Full run ≈ 7 min; while iterating use `-Dtest=ClassName` (add `-Dsurefire.failIfNoSpecifiedTests=false`). Redirect to a file and check the exit code — don't pipe through `tail`, it hides it.
-- Baseline on 2026-10-24 (sprint-3 @ 7885dcc): 534 tests, 0 failures. Any red you see afterwards is yours or a real finding.
+- Baseline on 2026-10-25 (sprint-3 @ e2ac743): 695 tests, 0 failures, 1 skipped. (Earlier: 534 at 7885dcc.) Any red you see afterwards is yours or a real finding.
 - Windows/CRLF: files are CRLF on disk; `Edit` needs a fresh `Read`. Never bulk-overwrite test files from a script without checking the output is non-empty (a perl error once wiped ~20 test files). Add new test classes rather than rewriting existing ones.
 - Frontend: there is no test runner wired up yet (no vitest/jest in `package.json`). Don't invent one unasked — flag frontend gaps as manual/exploratory findings (role-aware button visibility, form validation parity with backend) rather than silently skipping them.
 
 ## Output
 
 For each area covered: what you tried (by category above), what passed, what failed — each failure as a finding with `file:line`, the exact input/role/timing that triggers it, and expected vs actual. Then list what you could not test and why (missing fixture, no frontend runner, etc). Don't report bare pass/fail counts as the headline — the gaps and the bugs are the point.
+
+## Fixtures and conventions that already exist (reuse, do not rebuild)
+
+- `AdversarialSupport` (package `com.ergo.connect`): `call` / `send` (status only) / `text` / `upload` / `race` / `cap(module, level)` / `level(role, module, level)`; restores the role sheet and switches after each test. Gives customers A and B, suppliers X/Y/Z, ERGO roles.
+- `npd/ProductionPoSupport`: customers' OFP/NPD/Quality teams, KAMs, supplier teams, `sampleA()`, `raise`, `form`, `code(method, url, user, body, vars...)`, `ok(expected, actual, what)`.
+- `ofp/OfpOrderSupport`: `fresh()`, `working()`, `dispatchReady()`, `dispatched()` orders built through the real endpoints, with row ids.
+- `TestNpd` / `TestRfq`: drive a project or RFQ to any stage.
+- Module switch tests: a role-sheet cap at View makes `@PreAuthorize` return 403 for every write, whatever the record's state; assert 403, that nothing moved (rows, status, audit rows), that reads stay with empty `actions`, and that everything works again at O.
+- Required reasons: use the shared `Blank` / `@NotInvisiblyBlank` rule (invisible characters count as blank); bean validation (400) runs before the role check (403) on a malformed body.
+- Test chunks must not change production code: a real bug gets a red test and a finding, fixed in a separate step.
