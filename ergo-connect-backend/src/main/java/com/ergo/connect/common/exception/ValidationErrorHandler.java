@@ -3,6 +3,7 @@ package com.ergo.connect.common.exception;
 import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
+import org.springframework.beans.TypeMismatchException;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
@@ -40,6 +41,14 @@ class ValidationErrorHandler extends ResponseEntityExceptionHandler {
 			ex.getBody().setDetail("Please correct: " + fields);
 		}
 		return super.handleMethodArgumentNotValid(ex, headers, status, request);
+	}
+
+	/** A malformed id or parameter in the URL: say so, not Spring's "Failed to convert 'id' with value: 'NaN'". */
+	@Override
+	protected ResponseEntity<Object> handleTypeMismatch(TypeMismatchException ex, HttpHeaders headers,
+			HttpStatusCode status, WebRequest request) {
+		ProblemDetail body = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "The address or a value in it is not valid.");
+		return handleExceptionInternal(ex, body, headers, HttpStatus.BAD_REQUEST, request);
 	}
 
 	@ExceptionHandler(OptimisticLockingFailureException.class)

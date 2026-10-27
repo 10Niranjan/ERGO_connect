@@ -611,7 +611,7 @@ public class NpdService {
 			throw ApiException.unprocessable("Use \"Mark Blocked\" to block an activity, with a reason");
 		}
 		activity.status = form.status();
-		activity.actualDate = form.actualDate();
+		activity.actualDate = finishedOn(form.status(), form.actualDate());
 		activity.issueFlag = form.issueFlag();
 		activity.riskFlag = form.riskFlag();
 		activity.remarks = text(form.remarks());
@@ -938,7 +938,8 @@ public class NpdService {
 			case EDIT_PLAN_STEP -> r.supplierEditors.contains(me.role()) && ownCompany
 					&& activity.ownerOrganizationType == CompanyType.SUPPLIER && project.planStatus.openForSupplier();
 			// work on a step starts only once the plan is agreed
-			case MARK_BLOCKED -> executing(project) && !activity.blockedFlag && (editor || ownCompany);
+			case MARK_BLOCKED -> executing(project) && !activity.blockedFlag && activity.status != ActivityStatus.DONE
+					&& (editor || ownCompany);
 			case UNBLOCK -> executing(project) && activity.blockedFlag && (editor || ownCompany);
 			case UPDATE_OWN_ACTIVITY, RESPOND_TO_PROMPT -> executing(project) && (editor || ownCompany);
 			default -> false;
@@ -1104,6 +1105,11 @@ public class NpdService {
 		return requested;
 	}
 
+	/** A finished step always carries the day it finished: today when the caller gave none. */
+	private static LocalDate finishedOn(ActivityStatus status, LocalDate given) {
+		return status == ActivityStatus.DONE && given == null ? LocalDate.now() : given;
+	}
+
 	/** Shared by add and edit. Dates/status/mandatory flow straight from the form: the caller already validated the
 	 * shape; only cross-references (dependency, responsible user) and the BLOCKED guard need checking here. Owner
 	 * fields are set by the caller (resolveOwnerCompanyId), not here. */
@@ -1145,7 +1151,7 @@ public class NpdService {
 		activity.responsibleUserId = form.responsibleUserId();
 		activity.plannedDate = form.plannedDate();
 		activity.baselineDate = form.baselineDate();
-		activity.actualDate = form.actualDate();
+		activity.actualDate = finishedOn(form.status(), form.actualDate());
 		activity.dependencyActivityId = form.dependencyActivityId();
 		activity.status = form.status();
 		activity.mandatoryFlag = form.mandatory();

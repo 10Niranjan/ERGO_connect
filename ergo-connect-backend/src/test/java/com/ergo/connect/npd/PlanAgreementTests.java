@@ -158,6 +158,30 @@ class PlanAgreementTests {
 	}
 
 	@Test
+	void aFinishedStepGetsTodayAsItsActualDateAndCannotBeBlocked() throws Exception {
+		long project = released("PN-DONE");
+		long step = firstActivity(project);
+		call(put("/api/npd/activities/{id}/plan", step), npdSupplier, planStep("2027-03-15", npdSupplier.userId(), "Tool ready"))
+			.andExpect(status().isOk());
+		call(post("/api/npd/{id}/plan/submit", project), npdSupplier, "{}").andExpect(status().isOk());
+		call(post("/api/npd/{id}/plan/agree", project), ergoNpd, "{}").andExpect(status().isOk());
+
+		call(get("/api/npd/{id}", project), npdSupplier, null)
+			.andExpect(jsonPath("$.activities[0].actions", hasItem("MARK_BLOCKED")));
+		call(post("/api/npd/activities/{id}/progress", step), npdSupplier, progress("DONE")).andExpect(status().isOk())
+			.andExpect(jsonPath("$.activities[0].actualDate").value(java.time.LocalDate.now().toString()))
+			.andExpect(jsonPath("$.activities[0].actions", not(hasItem("MARK_BLOCKED"))));
+		call(post("/api/npd/activities/{id}/block", step), npdSupplier, "{\"comment\": \"x\"}").andExpect(status().is4xxClientError());
+		call(post("/api/npd/activities/{id}/block", step), ergoNpd, "{\"comment\": \"x\"}").andExpect(status().is4xxClientError());
+	}
+
+	@Test
+	void aMalformedIdInTheAddressIsAPlain400() throws Exception {
+		call(get("/api/npd/{id}", "NaN"), ergoNpd, null).andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.detail").value("The address or a value in it is not valid."));
+	}
+
+	@Test
 	void sendingThePlanBackNeedsACommentReturnsItToTheSupplierAndEveryRoundIsKept() throws Exception {
 		long project = released("PN-BACK");
 		long step = firstActivity(project);

@@ -1,4 +1,4 @@
-import { Alert, Box, Button, Checkbox, FormControlLabel, MenuItem, Stack, TextField, Typography } from '@mui/material'
+import { Alert, Box, Button, Checkbox, FormControlLabel, ListSubheader, MenuItem, Stack, TextField, Typography } from '@mui/material'
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router'
 import { useAppSelector } from '../../../app/store'
@@ -7,6 +7,9 @@ import { problemMessage } from '../../../shared/problem'
 import { useCompaniesQuery } from '../../companies/companiesApi'
 import { LINKED_MODULE } from '../labels'
 import { useCreateInspectionMutation, type LinkedModule } from '../qualityApi'
+
+const RECORD_LINKED: LinkedModule[] = ['NPD', 'OFP']
+const STAGE_LINKED: LinkedModule[] = ['INCOMING', 'IN_PROCESS', 'FINAL']
 
 /** SRS §12.10.2 create. customerCompanyId/customerVisible only take effect for an ERGO caller - a supplier's own
  * create is always tagged to its own company (InspectionService.create), so those fields are hidden for suppliers. */
@@ -55,8 +58,15 @@ export function InspectionCreatePage() {
         New inspection
       </Typography>
       <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' } }}>
-        <TextField select required label="Linked module" value={s.linkedModule} onChange={set('linkedModule')}>
-          {(Object.keys(LINKED_MODULE) as LinkedModule[]).map((m) => (
+        <TextField select required label="Inspection of" value={s.linkedModule} onChange={set('linkedModule')}>
+          <ListSubheader>A project or order</ListSubheader>
+          {RECORD_LINKED.map((m) => (
+            <MenuItem key={m} value={m}>
+              {LINKED_MODULE[m]}
+            </MenuItem>
+          ))}
+          <ListSubheader>A stage of production</ListSubheader>
+          {STAGE_LINKED.map((m) => (
             <MenuItem key={m} value={m}>
               {LINKED_MODULE[m]}
             </MenuItem>
