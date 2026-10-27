@@ -291,4 +291,19 @@ class ProductionShipmentTests extends ProductionPoSupport {
 		ok(404, code("POST", "/api/ofp/orders/{id}/shipments", ergoOfp, OTHER, 987654321L), "create");
 	}
 
+	@Test
+	void thePodIsStoredInternalAndTheDocumentsModuleNeverShowsItOutsideErgo() throws Exception {
+		Born o = dispatched();
+		long shipment = shipmentOf(o);
+		upload("/api/ofp/shipments/{id}/pod", shipment, ergoOfp, "pod.pdf").andExpect(status().isOk());
+		long doc = jdbc.queryForObject("SELECT pod_document_id FROM shipments WHERE shipment_id = ?", Long.class, shipment);
+		assertThat(jdbc.queryForObject("SELECT visibility FROM documents WHERE document_id = ?", String.class, doc)).isEqualTo("INTERNAL");
+		for (Login external : List.of(ofpA, npdA, qualA, custKamA, ofpSup, npdSup, qualSup)) {
+			ok(404, code("GET", "/api/documents/{id}", external, null, doc), "detail for " + external.userId());
+			ok(404, code("GET", "/api/documents/{id}/content", external, null, doc), "content for " + external.userId());
+			assertThat(text(get("/api/documents"), external, null)).as("library of " + external.userId()).doesNotContain("pod.pdf");
+		}
+		ok(200, code("GET", "/api/documents/{id}/content", ergoOfp, null, doc), "ERGO still downloads it");
+	}
+
 }

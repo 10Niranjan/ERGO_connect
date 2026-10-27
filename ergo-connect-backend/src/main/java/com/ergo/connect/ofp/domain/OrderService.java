@@ -576,7 +576,7 @@ public class OrderService {
 		Shipment shipment = shipments.findById(shipmentId).orElseThrow(() -> ApiException.notFound("Shipment"));
 		Order order = visible(me, shipment.orderId);
 		require(OrderAction.UPDATE_SHIPMENT, me, order);
-		DocumentInfo info = documents.store(POD_MODULE, shipment.id, fileName, content, Visibility.CUSTOMER);
+		DocumentInfo info = documents.store(POD_MODULE, shipment.id, fileName, content, Visibility.INTERNAL);
 		shipment.podDocumentId = info.id();
 		// The POD file is ERGO-only (client decision, ARCHITECTURE.md §8 2026-09-29): only ERGO colleagues are told.
 		notifier.send(NotificationKind.DOCUMENT_UPLOADED, "document", info.id(), order.orderNumber, "Proof of delivery",
@@ -584,8 +584,8 @@ public class OrderService {
 		return view(me, order);
 	}
 
-	/** L5 fix (ARCHITECTURE.md §8 2026-09-29): the POD download the "CUSTOMER" visibility above was granting but
-	 * never had an endpoint for. Record scope only (ERGO's full scope, or the order's own customer); the supplier is
+	/** L5 fix (ARCHITECTURE.md §8 2026-09-29): the POD download the (then) "CUSTOMER" visibility was granting but
+	 * never had an endpoint for. Stored INTERNAL so the Documents module never shows it outside ERGO either; record scope only (ERGO's own scope); the customer and supplier are
 	 * excluded entirely at the controller's role layer, consistent with H1 removing their POD visibility. */
 	@Transactional(readOnly = true)
 	public PodFile downloadPod(long shipmentId) {
