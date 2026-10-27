@@ -8,6 +8,7 @@ import type {
   NpdStage,
   PlanEvent,
   PlanStatus,
+  ProjectKind,
   PromptResponseType,
   RiskLevel,
   ValidationParty,
@@ -54,10 +55,14 @@ export const NPD_STAGE_ORDER: NpdStage[] = [
   'CLOSED',
 ]
 
-/** Position in the fixed 9-stage sequence — "how far along", not the SRS's weighted progress. */
-export function stageProgress(stage: NpdStage): { label: string; percent: number } {
-  const position = NPD_STAGE_ORDER.indexOf(stage) + 1
-  return { label: `${position} of ${NPD_STAGE_ORDER.length}`, percent: Math.round((position / NPD_STAGE_ORDER.length) * 100) }
+/** A production (OFP) project skips these two (NpdStage.skippedBy on the server: no tool development, no sample approval). */
+const PRODUCTION_SKIPPED: NpdStage[] = ['TOOLING_MATERIAL_RELEASE', 'TRIAL_PREPARATION']
+
+/** Position in the project's own stage sequence — "how far along", not the SRS's weighted progress. */
+export function stageProgress(stage: NpdStage, kind: ProjectKind = 'SAMPLE'): { label: string; percent: number } {
+  const order = kind === 'PRODUCTION' ? NPD_STAGE_ORDER.filter((s) => !PRODUCTION_SKIPPED.includes(s)) : NPD_STAGE_ORDER
+  const position = order.indexOf(stage) + 1
+  return { label: `${position} of ${order.length}`, percent: Math.round((position / order.length) * 100) }
 }
 
 export const PROMPT_RESPONSE_TYPE: Record<PromptResponseType, { label: string }> = {

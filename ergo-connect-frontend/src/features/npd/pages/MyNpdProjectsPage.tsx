@@ -28,7 +28,7 @@ export function MyNpdProjectsPage() {
               <TableCell>Project</TableCell>
               <TableCell>Part</TableCell>
               <TableCell>Stage</TableCell>
-              <TableCell>Target sample date</TableCell>
+              <TableCell>{kind === 'PRODUCTION' ? 'Required by' : 'Target sample date'}</TableCell>
               <TableCell>Delay</TableCell>
             </TableRow>
           </TableHead>

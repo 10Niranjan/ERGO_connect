@@ -53,8 +53,15 @@ export const QUOTATION_CUSTOMER_VIEW: Rule[] = [{ module: 'QUOTATION', need: 'vi
 /** ERGO's final-approval roles on Quotation: accept quotes and generate the customer quotation. */
 export const QUOTATION_ERGO_APPROVE: Rule[] = [{ module: 'QUOTATION', need: 'approve', sides: ERGO }]
 export const NPD_ERGO_VIEW: Rule[] = [{ module: 'NPD', need: 'view', sides: ERGO }]
-export const NPD_MINE_VIEW: Rule[] = [{ module: 'NPD', need: 'view', sides: EXTERNAL }]
-export const NPD_VIEW: Rule[] = [{ module: 'NPD', need: 'view' }]
+/** Sample projects (NPD roles) and OFP projects (OFP roles) share the project pages: either module opens them. */
+export const NPD_MINE_VIEW: Rule[] = [
+  { module: 'NPD', need: 'view', sides: EXTERNAL },
+  { module: 'OFP', need: 'view', sides: EXTERNAL },
+]
+export const NPD_VIEW: Rule[] = [
+  { module: 'NPD', need: 'view' },
+  { module: 'OFP', need: 'view' },
+]
 /** Sample POs (flow doc step 6): ERGO roles and the customer; a supplier never sees them. */
 export const SAMPLE_PO_VIEW: Rule[] = [{ module: 'NPD', need: 'view', sides: ERGO_CUSTOMER }]
 /** The customer-side final-approval role of NPD (Customer NPD) raises Sample POs. */

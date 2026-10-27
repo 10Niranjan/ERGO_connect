@@ -121,7 +121,8 @@ function NpdDetail({ npd }: { npd: NpdView }) {
   const isEditor = npd.actions.includes('UPDATE_PROJECT')
   const { data: ergoUsers = [], isLoading: usersLoading } = useUsersQuery(undefined, { skip: !isEditor })
   const stage = NPD_STAGE[npd.stage]
-  const progress = stageProgress(npd.stage)
+  const progress = stageProgress(npd.stage, npd.kind)
+  const production = npd.kind === 'PRODUCTION'
   const ergo = npd.audience === 'ERGO' ? npd : null
   const hasApprovals = npd.audience === 'ERGO' || npd.audience === 'CUSTOMER'
 
@@ -144,7 +145,7 @@ function NpdDetail({ npd }: { npd: NpdView }) {
   }
 
   const projectFacts: [string, ReactNode][] = [
-    ['NPD number', npd.npdNumber],
+    [production ? 'Project number' : 'NPD number', npd.npdNumber],
     ['RFQ', npd.rfqNumber ?? '—'],
   ]
   if (npd.audience !== 'SUPPLIER') projectFacts.push(['Customer', npd.customer.name])
@@ -166,14 +167,14 @@ function NpdDetail({ npd }: { npd: NpdView }) {
   // Risk level is ERGO's own internal project rating (CustomerNpdView/SupplierNpdView carry no such field).
   if (npd.audience === 'ERGO') {
     scheduleFacts.push(
-      ['ERGO NPD owner', npd.owner ?? 'Not assigned'],
+      [production ? 'ERGO OFP owner' : 'ERGO NPD owner', npd.owner ?? 'Not assigned'],
       ['ERGO Quality owner', npd.qualityOwner ?? 'Not assigned'],
       ['Plan', PLAN_STATUS[npd.planStatus].label],
       ['Risk level', npd.riskLevel ? RISK_LEVEL[npd.riskLevel].label : '—'],
     )
   }
   scheduleFacts.push(
-    ['Target sample date', formatDate(npd.targetSampleDate)],
+    [production ? 'Required by' : 'Target sample date', formatDate(npd.targetSampleDate)],
     ['Actual sample submission date', formatDate(npd.actualSampleSubmissionDate)],
   )
 
@@ -207,9 +208,9 @@ function NpdDetail({ npd }: { npd: NpdView }) {
             {npd.revision ? ` rev ${npd.revision}` : ''}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Target sample {formatDate(npd.targetSampleDate)}
+            {production ? 'Required by' : 'Target sample'} {formatDate(npd.targetSampleDate)}
             {delayDays != null && delayDays > 0 && ` · ${delayDays}d delay`}
-            {npd.audience === 'ERGO' && ` · NPD ${npd.owner ?? 'not assigned'} · Quality ${npd.qualityOwner ?? 'not assigned'}`}
+            {npd.audience === 'ERGO' && ` · ${production ? 'OFP' : 'NPD'} ${npd.owner ?? 'not assigned'} · Quality ${npd.qualityOwner ?? 'not assigned'}`}
           </Typography>
         </Stack>
         <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', alignItems: 'flex-start' }}>

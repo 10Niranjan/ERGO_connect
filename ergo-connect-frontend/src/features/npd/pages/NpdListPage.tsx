@@ -89,7 +89,7 @@ export function NpdListPage() {
           </TableHead>
           <TableBody>
             {shown.map((r) => {
-              const progress = stageProgress(r.stage)
+              const progress = stageProgress(r.stage, r.kind)
               return (
                 <TableRow key={r.id} hover sx={{ cursor: 'pointer' }} onClick={() => navigate(`/npd/${r.id}`)}>
                   <TableCell>

@@ -121,6 +121,7 @@ export function ProductionPoListPage() {
                       Correct &amp; resubmit
                     </Button>
                   )}
+                  {r.actions.includes('CREATE_PROJECT') && <Button size="small">Review</Button>}
                 </TableCell>
               </TableRow>
             ))}
