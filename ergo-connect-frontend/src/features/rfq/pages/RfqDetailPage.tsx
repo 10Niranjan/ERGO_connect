@@ -186,7 +186,7 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
             <Facts title="Requirements and remarks" facts={[['', rfq.customerRemarks ?? '—']]} />
             {isErgo && <InternalNotes rfq={rfq} />}
           </Box>
-          {canSeeParts && <PartStatus rfqId={rfq.id} />}
+          {canSeeParts && (isErgo || !NOT_YET_QUOTED.has(rfq.status)) && <PartStatus rfqId={rfq.id} />}
           {rfq.items.map((item) => (
             <ItemOverview key={item.id} item={item} currency={rfq.currency.code} />
           ))}
@@ -262,6 +262,9 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
     </Stack>
   )
 }
+
+/** Before ERGO sends the RFQ out nothing is being quoted, so the customer has no part status to read yet. */
+const NOT_YET_QUOTED = new Set(['DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'CLARIFICATION_REQUIRED'])
 
 /** Where each part stands (flow doc §4): ERGO sees the quote status, the customer where its quotation stands. */
 function PartStatus({ rfqId }: { rfqId: number }) {
