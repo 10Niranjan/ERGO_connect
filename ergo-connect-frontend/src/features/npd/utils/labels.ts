@@ -99,7 +99,7 @@ export const APPROVAL_STATUS: Record<ApprovalStatus, { label: string; color: Chi
 export const PLAN_STATUS: Record<PlanStatus, { label: string; color: ChipColor }> = {
   AWAITING_PLAN: { label: 'Awaiting plan', color: 'warning' },
   ASSIGNED_TO_SUPPLIER: { label: 'Assigned to supplier', color: 'info' },
-  SUBMITTED: { label: 'Submitted, awaiting ERGO NPD', color: 'warning' },
+  SUBMITTED: { label: 'Submitted, awaiting ERGO', color: 'warning' },
   CHANGES_REQUESTED: { label: 'Sent back to supplier', color: 'error' },
   AGREED: { label: 'Agreed', color: 'success' },
 }
@@ -108,7 +108,7 @@ export const PLAN_EVENT: Record<PlanEvent, string> = {
   RELEASED: 'Plan assigned to supplier',
   SUBMITTED: 'Plan submitted by supplier',
   SENT_BACK: 'Plan sent back to supplier',
-  AGREED: 'Plan agreed by ERGO NPD',
+  AGREED: 'Plan agreed by ERGO',
 }
 
 export const VALIDATION_STATUS: Record<ValidationStatus, { label: string; color: ChipColor }> = {

@@ -12,6 +12,7 @@ import {
   Typography,
 } from '@mui/material'
 import type { User } from '../adminApi'
+import { formatDateTime } from '@/utils/date'
 
 interface Props {
   users: User[]
@@ -77,7 +78,7 @@ export function UserTable({
               <TableCell>
                 <Chip size="small" color={user.active ? 'success' : 'default'} label={user.active ? 'Active' : 'Inactive'} />
               </TableCell>
-              <TableCell>{user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : '—'}</TableCell>
+              <TableCell>{user.lastLoginAt ? formatDateTime(user.lastLoginAt) : '—'}</TableCell>
               <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                 <Button size="small" onClick={() => onEdit(user)}>
                   Edit

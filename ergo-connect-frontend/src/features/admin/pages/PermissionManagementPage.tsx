@@ -40,6 +40,7 @@ import {
   type PermissionColumn,
 } from '../services/adminApi'
 import { PermissionMatrixPage } from './PermissionMatrixPage'
+import { formatDateTime } from '@/utils/date'
 
 const SIDES: { side: CompanyType; label: string }[] = [
   { side: 'ERGO', label: 'ERGO' },
@@ -510,7 +511,7 @@ function HistoryDialog({ onClose }: { onClose: () => void }) {
             <TableBody>
               {data.map((e, i) => (
                 <TableRow key={i}>
-                  <TableCell>{new Date(e.at).toLocaleString()}</TableCell>
+                  <TableCell>{formatDateTime(e.at)}</TableCell>
                   <TableCell>{e.changedBy ?? '—'}</TableCell>
                   <TableCell>{e.role ?? 'Module switch'}</TableCell>
                   <TableCell>{e.module}</TableCell>

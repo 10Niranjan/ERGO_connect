@@ -15,6 +15,7 @@ import { DeleteUserDialog } from '../components/DeleteUserDialog'
 import { TemporaryPasswordDialog } from '../components/TemporaryPasswordDialog'
 import { UserDialog } from '../components/UserDialog'
 import { UserTable } from '../components/UserTable'
+import { useConfirm } from '@/components/ui/useConfirm'
 
 const TABS: { type: CompanyType; label: string; param: string }[] = [
   { type: 'ERGO', label: 'ERGO', param: 'ergo' },
@@ -40,6 +41,7 @@ export function UsersPage() {
   const [deleting, setDeleting] = useState<User | null>(null)
   const [issued, setIssued] = useState<{ email: string; password: string } | null>(null)
   const [actionError, setActionError] = useState<unknown>(null)
+  const [confirm, confirmDialog] = useConfirm()
 
   const tab = TABS.find((t) => t.param === params.get('tab')) ?? TABS[0]
   const roleName = (code: string) => roles.find((role) => role.code === code)?.name ?? code
@@ -63,15 +65,14 @@ export function UsersPage() {
     setSelectedId(null)
   }
 
-  // ponytail: native confirm(); switch to an MUI dialog if these need more than a yes/no
   async function toggleActive(user: User) {
-    if (!window.confirm(`${user.active ? 'Deactivate' : 'Activate'} ${user.firstName} ${user.lastName}?`)) return
+    if (!(await confirm(`${user.active ? 'Deactivate' : 'Activate'} ${user.firstName} ${user.lastName}?`, user.active ? 'Deactivate' : 'Activate'))) return
     setActionError(null)
     await setUserActive({ id: user.id, active: !user.active }).unwrap().catch(setActionError)
   }
 
   async function resetPassword(user: User) {
-    if (!window.confirm(`Reset the password of ${user.email}? They will be signed out everywhere.`)) return
+    if (!(await confirm(`Reset the password of ${user.email}? They will be signed out everywhere.`, 'Reset password'))) return
     setActionError(null)
     try {
       const { temporaryPassword } = await resetUserPassword(user.id).unwrap()
@@ -183,6 +184,7 @@ export function UsersPage() {
       )}
       {deleting && <DeleteUserDialog user={deleting} onClose={() => setDeleting(null)} />}
       {issued && <TemporaryPasswordDialog {...issued} onClose={() => setIssued(null)} />}
+      {confirmDialog}
     </Stack>
   )
 }

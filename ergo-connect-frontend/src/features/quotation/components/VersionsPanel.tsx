@@ -18,8 +18,9 @@ import { problemMessage } from '../../../shared/problem'
 import { quoteChanges } from '../labels'
 import { useQuoteVersionsQuery } from '../quoteApi'
 import { QuoteSummary } from './QuoteSummary'
+import { formatDateTime } from '@/utils/date'
 
-const when = (value: string | null) => (value ? new Date(value).toLocaleString() : '—')
+const when = (value: string | null) => (value ? formatDateTime(value) : '—')
 const fileList = (files: string[]) => files.join('\n') || '—'
 
 /** SRS §12.7.3: every submitted version as it was sent, who re-opened it and why, and what changed. */

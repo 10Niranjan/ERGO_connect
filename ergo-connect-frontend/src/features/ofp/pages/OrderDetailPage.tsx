@@ -374,7 +374,7 @@ function ShipmentRow({ s, mode, canEdit, canPod, onEdit }: { s: ShipmentView | E
       <TableCell>{s.awbBlNo ?? '—'}</TableCell>
       <TableCell>{formatDate(s.eta)}</TableCell>
       <TableCell>{formatDate(s.actualDeliveryDate)}</TableCell>
-      <TableCell>{s.receiptConfirmedByCustomerFlag ? `Yes${s.receiptConfirmedAt ? ` (${new Date(s.receiptConfirmedAt).toLocaleDateString()})` : ''}` : 'No'}</TableCell>
+      <TableCell>{s.receiptConfirmedByCustomerFlag ? `Yes${s.receiptConfirmedAt ? ` (${formatDate(s.receiptConfirmedAt)})` : ''}` : 'No'}</TableCell>
       <TableCell>
         <Chip size="small" label={ORDER_STATUS[s.status].label} color={ORDER_STATUS[s.status].color} />
       </TableCell>

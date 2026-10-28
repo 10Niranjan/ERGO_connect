@@ -35,10 +35,7 @@ export const VISIBILITY: Record<Visibility, string> = {
   ALL: 'Customer and suppliers',
 }
 
-/** Date-only values (due dates, validity) are calendar days, not instants: they are read as local midnight. */
-export function formatDate(value: string | null): string {
-  return value ? new Date(value.length === 10 ? `${value}T00:00` : value).toLocaleDateString() : '—'
-}
+export { formatDate } from '@/utils/date'
 
 export function formatNumber(value: number | null, suffix = ''): string {
   return value == null ? '—' : `${value.toLocaleString()}${suffix}`

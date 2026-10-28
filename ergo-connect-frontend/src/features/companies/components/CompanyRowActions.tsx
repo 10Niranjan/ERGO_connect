@@ -5,6 +5,7 @@ import { UserDialog } from '../../admin/components/UserDialog'
 import { useResubmitCompanyMutation, useSetCompanyActiveMutation, type Company } from '../companiesApi'
 import { CompanyDialog } from './CompanyDialog'
 import { ReviewDialog } from './ReviewDialog'
+import { useConfirm } from '@/components/ui/useConfirm'
 
 interface Props {
   company: Company
@@ -23,11 +24,11 @@ export function CompanyRowActions({ company, onError }: Props) {
   const [addingUser, setAddingUser] = useState(false)
   const [reviewing, setReviewing] = useState<'approve' | 'reject' | null>(null)
   const [issued, setIssued] = useState<{ email: string; password: string } | null>(null)
+  const [confirm, confirmDialog] = useConfirm()
   const can = (action: Company['actions'][number]) => company.actions.includes(action)
 
   async function run(action: () => Promise<unknown>, question?: string) {
-    // ponytail: native confirm(); switch to an MUI dialog if these need more than a yes/no
-    if (question && !window.confirm(question)) return
+    if (question && !(await confirm(question))) return
     onError(null)
     await action().catch(onError)
   }
@@ -92,6 +93,7 @@ export function CompanyRowActions({ company, onError }: Props) {
         />
       )}
       {issued && <TemporaryPasswordDialog {...issued} onClose={() => setIssued(null)} />}
+      {confirmDialog}
     </>
   )
 }

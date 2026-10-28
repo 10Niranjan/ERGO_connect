@@ -97,6 +97,7 @@ import {
   type RiskLevel,
   type StageHistoryView,
 } from '../npdApi'
+import { formatDateTime } from '@/utils/date'
 
 export function NpdDetailPage() {
   const id = Number(useParams().id)
@@ -1077,7 +1078,7 @@ function PromptQuestionCard({
         {question.respondedBy && (
           <Typography variant="caption" color="text.secondary">
             Answered by {question.respondedBy}
-            {question.respondedAt && ` · ${new Date(question.respondedAt).toLocaleString()}`}
+            {question.respondedAt && ` · ${formatDateTime(question.respondedAt)}`}
           </Typography>
         )}
         {responding.error != null && <Alert severity="error">{problemMessage(responding.error)}</Alert>}
@@ -1472,7 +1473,7 @@ function ApprovalsTab({ npd }: { npd: ErgoNpdView | CustomerNpdView }) {
                 <TableCell>{APPROVAL_TYPE[a.approvalType].label}</TableCell>
                 <TableCell>{NPD_STAGE[a.stageName].label}</TableCell>
                 <TableCell>{a.requestedBy ?? '—'}</TableCell>
-                <TableCell sx={{ whiteSpace: 'nowrap' }}>{new Date(a.requestedAt).toLocaleString()}</TableCell>
+                <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDateTime(a.requestedAt)}</TableCell>
                 <TableCell>{a.approverRole}</TableCell>
                 <TableCell>
                   <Chip size="small" label={APPROVAL_STATUS[a.approvalStatus].label} color={APPROVAL_STATUS[a.approvalStatus].color} />
@@ -1481,7 +1482,7 @@ function ApprovalsTab({ npd }: { npd: ErgoNpdView | CustomerNpdView }) {
                   {a.approvedBy ?? '—'}
                   {a.approvedAt && (
                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                      {new Date(a.approvedAt).toLocaleString()}
+                      {formatDateTime(a.approvedAt)}
                     </Typography>
                   )}
                 </TableCell>
@@ -1606,7 +1607,7 @@ function StageHistoryTable({ rows }: { rows: StageHistoryView[] }) {
         <TableBody>
           {rows.map((h, index) => (
             <TableRow key={index}>
-              <TableCell sx={{ whiteSpace: 'nowrap' }}>{new Date(h.changedAt).toLocaleString()}</TableCell>
+              <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDateTime(h.changedAt)}</TableCell>
               <TableCell>{h.changedBy ?? 'System'}</TableCell>
               <TableCell>{h.previousStage ? NPD_STAGE[h.previousStage].label : '—'}</TableCell>
               <TableCell>{NPD_STAGE[h.stage].label}</TableCell>
@@ -1643,7 +1644,7 @@ function ExternalStageHistoryTable({ rows }: { rows: ExternalStageHistoryView[] 
         <TableBody>
           {rows.map((h, index) => (
             <TableRow key={index}>
-              <TableCell sx={{ whiteSpace: 'nowrap' }}>{new Date(h.changedAt).toLocaleString()}</TableCell>
+              <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDateTime(h.changedAt)}</TableCell>
               <TableCell>{h.changedBy ?? 'System'}</TableCell>
               <TableCell>{h.previousStage ? NPD_STAGE[h.previousStage].label : '—'}</TableCell>
               <TableCell>{NPD_STAGE[h.stage].label}</TableCell>

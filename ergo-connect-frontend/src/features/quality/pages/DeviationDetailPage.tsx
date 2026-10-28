@@ -19,6 +19,7 @@ import {
   type DeviationDetail,
 } from '../deviationApi'
 import { DEVIATION_DECISION, DEVIATION_STATUS, LINKED_MODULE } from '../labels'
+import { formatDateTime } from '@/utils/date'
 
 export function DeviationDetailPage() {
   const id = Number(useParams().id)
@@ -158,7 +159,7 @@ function DeviationDetailView({ deviation }: { deviation: DeviationDetail }) {
                   </TableCell>
                   {ergo && <TableCell>{'approverName' in row ? (row.approverName ?? '—') : '—'}</TableCell>}
                   <TableCell sx={{ maxWidth: 320, wordBreak: 'break-word' }}>{row.comment ?? '—'}</TableCell>
-                  <TableCell>{row.decidedAt ? new Date(row.decidedAt).toLocaleString() : '—'}</TableCell>
+                  <TableCell>{row.decidedAt ? formatDateTime(row.decidedAt) : '—'}</TableCell>
                 </TableRow>
               )
             })}

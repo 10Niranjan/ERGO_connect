@@ -57,10 +57,4 @@ export const MAX_COMMENT_LENGTH = 4000
 export const MAX_ATTACHMENTS = 5
 export const MAX_MENTIONS = 20
 
-export function formatDateTime(value: string): string {
-  try {
-    return new Date(value).toLocaleString()
-  } catch {
-    return value
-  }
-}
+export { formatDateTime } from '@/utils/date'

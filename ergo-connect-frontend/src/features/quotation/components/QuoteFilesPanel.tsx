@@ -23,6 +23,7 @@ import {
   useUploadQuoteDocumentMutation,
   type QuoteDocument,
 } from '../quoteApi'
+import { useConfirm } from '@/components/ui/useConfirm'
 
 interface Props {
   quoteId: number
@@ -36,6 +37,7 @@ export function QuoteFilesPanel({ quoteId, canUpload, isErgo }: Props) {
   const [upload, uploading] = useUploadQuoteDocumentMutation()
   const [download] = useDownloadQuoteDocumentMutation()
   const [remove] = useDeleteQuoteDocumentMutation()
+  const [confirm, confirmDialog] = useConfirm()
   const [actionError, setActionError] = useState<unknown>(null)
   const fileInput = useRef<HTMLInputElement>(null)
 
@@ -99,7 +101,7 @@ export function QuoteFilesPanel({ quoteId, canUpload, isErgo }: Props) {
                   {d.canDelete && (
                     <IconButton
                       aria-label={`Remove ${d.fileName}`}
-                      onClick={() => window.confirm(`Remove ${d.fileName}?`) && void remove({ id: quoteId, documentId: d.id }).unwrap().catch(setActionError)}
+                      onClick={() => void confirm(`Remove ${d.fileName}?`, 'Remove').then((ok) => (ok ? remove({ id: quoteId, documentId: d.id }).unwrap().catch(setActionError) : undefined))}
                     >
                       ×
                     </IconButton>
@@ -117,6 +119,7 @@ export function QuoteFilesPanel({ quoteId, canUpload, isErgo }: Props) {
           </TableBody>
         </Table>
       </TableContainer>
+      {confirmDialog}
     </Stack>
   )
 }

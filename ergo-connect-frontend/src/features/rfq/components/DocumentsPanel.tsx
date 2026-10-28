@@ -34,6 +34,7 @@ import {
   type ItemView,
   type Visibility,
 } from '../rfqApi'
+import { useConfirm } from '@/components/ui/useConfirm'
 
 interface Props {
   rfqId: number
@@ -53,6 +54,7 @@ export function DocumentsPanel({ rfqId, canUpload, isErgo }: Props) {
   const [download] = useDownloadRfqDocumentMutation()
   const [setVisibility] = useSetRfqDocumentVisibilityMutation()
   const [remove] = useDeleteRfqDocumentMutation()
+  const [confirm, confirmDialog] = useConfirm()
   const [visibility, setNewVisibility] = useState<Visibility>('INTERNAL')
   const [uploadParts, setUploadParts] = useState<ItemView[]>([])
   const [choosing, setChoosing] = useState<{ documentId: number; visibility: Visibility; current: number[] } | null>(null)
@@ -183,7 +185,7 @@ export function DocumentsPanel({ rfqId, canUpload, isErgo }: Props) {
                   {d.canDelete && (
                     <IconButton
                       aria-label={`Remove ${d.fileName}`}
-                      onClick={() => window.confirm(`Remove ${d.fileName}?`) && void remove({ id: rfqId, documentId: d.id }).unwrap().catch(setActionError)}
+                      onClick={() => void confirm(`Remove ${d.fileName}?`, 'Remove').then((ok) => (ok ? remove({ id: rfqId, documentId: d.id }).unwrap().catch(setActionError) : undefined))}
                     >
                       ×
                     </IconButton>
@@ -214,6 +216,7 @@ export function DocumentsPanel({ rfqId, canUpload, isErgo }: Props) {
           }}
         />
       )}
+      {confirmDialog}
     </Stack>
   )
 }

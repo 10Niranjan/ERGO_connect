@@ -26,6 +26,7 @@ import { ProcessFlowTable } from '../../rfq/components/ProcessFlowTable'
 import { formatMoney } from '../../rfq/labels'
 import { toProcessSteps, toStepRows, type StepRow } from '../../rfq/processFlow'
 import { useQuoteCommandMutation, useSaveQuoteMutation, type QuoteForm, type SupplierQuoteView } from '../quoteApi'
+import { useConfirm } from '@/components/ui/useConfirm'
 
 type Field = Exclude<keyof QuoteForm, 'tooling' | 'processSteps'>
 
@@ -109,6 +110,7 @@ export function QuoteEditor({ view }: { view: SupplierQuoteView }) {
   const [pending, setPending] = useState<'save' | 'submit' | null>(null)
   const [save] = useSaveQuoteMutation()
   const [command] = useQuoteCommandMutation()
+  const [confirm, confirmDialog] = useConfirm()
   const lists = [useMasterOptionsQuery('currencies'), useMasterOptionsQuery('incoterms'), useMasterOptionsQuery('payment-terms'), useMasterOptionsQuery('processes')]
   const [currencies, incoterms, paymentTerms, processes] = lists.map((list) => list.data ?? [])
 
@@ -159,7 +161,7 @@ export function QuoteEditor({ view }: { view: SupplierQuoteView }) {
   }
 
   async function submit() {
-    if (!window.confirm('Submit this quote to ERGO? It is locked once submitted; ERGO can re-open it if a revision is needed.')) return
+    if (!(await confirm('Submit this quote to ERGO? It is locked once submitted; ERGO can re-open it if a revision is needed.', 'Submit quote'))) return
     setError(null)
     setPending('submit')
     try {
@@ -287,6 +289,7 @@ export function QuoteEditor({ view }: { view: SupplierQuoteView }) {
           </Button>
         )}
       </Stack>
+      {confirmDialog}
     </Stack>
   )
 }

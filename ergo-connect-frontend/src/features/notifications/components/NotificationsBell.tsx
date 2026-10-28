@@ -9,6 +9,7 @@ import {
   useUnreadCountQuery,
   type NotificationView,
 } from '../services/notificationsApi'
+import { formatDateTime } from '@/utils/date'
 
 /** Header bell + dropdown drawer (SRS §12.12.2). Polls the unread count so the badge stays fresh. */
 export function NotificationsBell() {
@@ -67,7 +68,7 @@ export function NotificationsBell() {
                       {notification.message}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      {new Date(notification.sentAt).toLocaleString()}
+                      {formatDateTime(notification.sentAt)}
                     </Typography>
                   </>
                 }

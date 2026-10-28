@@ -43,6 +43,7 @@ import {
   type RfqCommand,
   type RfqView,
 } from '../rfqApi'
+import { useConfirm } from '@/components/ui/useConfirm'
 
 /** How each workflow action asks for its comment (reasons are required for clarification, cancel and close). */
 const COMMANDS: Record<Exclude<RfqCommand, 'start-review'>, { title: string; label: string; confirm: string; required: boolean; danger?: boolean }> = {
@@ -66,6 +67,7 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
   const [dialog, setDialog] = useState<Exclude<RfqCommand, 'start-review'> | null>(null)
   const [run, running] = useRfqCommandMutation()
   const [cloneRfq] = useCloneRfqMutation()
+  const [confirm, confirmDialog] = useConfirm()
   const [actionError, setActionError] = useState<unknown>(null)
   const isErgo = rfq.audience === 'ERGO'
   // The role sheet: a customer role with RFQ access but none on Quotation (e.g. Customer NPD) never sees the quotations ERGO sends.
@@ -85,7 +87,7 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
   }
 
   async function clone() {
-    if (!window.confirm(`Create a new draft RFQ from ${rfq.number}?`)) return
+    if (!(await confirm(`Create a new draft RFQ from ${rfq.number}?`, 'Create draft'))) return
     try {
       const copy = await cloneRfq(rfq.id).unwrap()
       navigate(`/rfqs/${copy.id}`)
@@ -259,6 +261,7 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
           onClose={() => setDialog(null)}
         />
       )}
+      {confirmDialog}
     </Stack>
   )
 }

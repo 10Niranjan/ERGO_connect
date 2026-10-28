@@ -1,4 +1,5 @@
 import { Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow } from '@mui/material'
+import { formatDateTime } from '@/utils/date'
 
 export interface AuditRow {
   at: string
@@ -31,7 +32,7 @@ export function AuditTrail({ rows }: { rows: AuditRow[] }) {
         <TableBody>
           {rows.map((row, index) => (
             <TableRow key={index}>
-              <TableCell sx={{ whiteSpace: 'nowrap' }}>{new Date(row.at).toLocaleString()}</TableCell>
+              <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDateTime(row.at)}</TableCell>
               <TableCell>
                 {row.user ?? 'System'}
                 {row.role && <div style={{ fontSize: 12, opacity: 0.7 }}>{row.role}</div>}

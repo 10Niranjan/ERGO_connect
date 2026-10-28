@@ -77,18 +77,18 @@ export function PlanPanel({ npd }: { npd: ErgoNpdView | SupplierNpdView }) {
         <Typography variant="body2" color="text.secondary">
           {hint(npd)}
         </Typography>
-        {npd.planStatus === 'CHANGES_REQUESTED' && returned?.comment && <Alert severity="warning">ERGO NPD asked for changes: {returned.comment}</Alert>}
+        {npd.planStatus === 'CHANGES_REQUESTED' && returned?.comment && <Alert severity="warning">ERGO asked for changes: {returned.comment}</Alert>}
 
         {npd.planHistory.length > 0 && <PlanHistory history={npd.planHistory} />}
       </Stack>
 
       {action === 'submit' && (
         <CommentDialog
-          title="Submit plan to ERGO NPD"
-          label="Note for ERGO NPD (optional)"
+          title="Submit plan to ERGO"
+          label="Note for ERGO (optional)"
           required={false}
           confirmLabel="Submit plan"
-          intro="Every step needs a planned date. Once submitted you cannot change the plan until ERGO NPD agrees it or sends it back."
+          intro="Every step needs a planned date. Once submitted you cannot change the plan until ERGO agrees it or sends it back."
           busy={submitting.isLoading}
           error={submitting.error}
           onConfirm={(c) => void run('submit', c)}
@@ -132,11 +132,11 @@ function hint(npd: ErgoNpdView | SupplierNpdView): string {
     case 'AWAITING_PLAN':
       return 'Build the plan: add the steps the supplier has to plan, then assign the plan to the supplier.'
     case 'ASSIGNED_TO_SUPPLIER':
-      return ergo ? 'With the supplier: waiting for them to fill in their steps and submit the plan.' : 'Give each of your steps a planned date, then submit the plan to ERGO NPD.'
+      return ergo ? 'With the supplier: waiting for them to fill in their steps and submit the plan.' : 'Give each of your steps a planned date, then submit the plan to ERGO.'
     case 'CHANGES_REQUESTED':
       return ergo ? 'Sent back to the supplier: waiting for a corrected plan.' : 'Update the steps as asked, then submit the plan again.'
     case 'SUBMITTED':
-      return ergo ? "Review the supplier's dates, then agree the plan or send it back with a comment." : 'With ERGO NPD for agreement. The plan cannot be changed meanwhile.'
+      return ergo ? "Review the supplier's dates, then agree the plan or send it back with a comment." : 'With ERGO for agreement. The plan cannot be changed meanwhile.'
     case 'AGREED':
       return 'The plan is agreed. Execution is under way.'
   }

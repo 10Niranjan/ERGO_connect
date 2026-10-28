@@ -13,6 +13,7 @@ import { QuoteSummary } from '../components/QuoteSummary'
 import { VersionsPanel } from '../components/VersionsPanel'
 import { QUOTE_STATUS } from '../labels'
 import { useQuoteCommandMutation, useQuoteQuery, type QuoteView, type SupplierAssignedRfqView, type SupplierRfqItem } from '../quoteApi'
+import { formatDateTime } from '@/utils/date'
 
 type DialogCommand = 'revision' | 'recall'
 
@@ -89,7 +90,7 @@ function Quote({ view }: { view: Exclude<QuoteView, SupplierAssignedRfqView> }) 
           )}
           <Typography variant="body2" color="text.secondary">
             Quote due {formatDate(view.responseDueDate)}
-            {view.submittedAt && ` · last submitted ${new Date(view.submittedAt).toLocaleString()}`}
+            {view.submittedAt && ` · last submitted ${formatDateTime(view.submittedAt)}`}
             {!isSupplier && ` · sub-RFQ ${view.subRfqNo} · sent by ${view.invitedBy ?? '—'} on ${formatDate(view.invitedAt)}`}
           </Typography>
         </Stack>

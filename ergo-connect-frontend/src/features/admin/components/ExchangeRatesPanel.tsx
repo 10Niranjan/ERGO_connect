@@ -24,11 +24,13 @@ import { useMasterOptionsQuery } from '../../../shared/masterData'
 import { problemMessage } from '../../../shared/problem'
 import { formatDate } from '../../rfq/labels'
 import { useCreateExchangeRateMutation, useDeleteExchangeRateMutation, useExchangeRatesQuery } from '../adminApi'
+import { useConfirm } from '@/components/ui/useConfirm'
 
 /** SRS §13.2.7. ERGO-internal only: rates convert quotes for comparison and never reach customers or suppliers. */
 export function ExchangeRatesPanel({ canEdit }: { canEdit: boolean }) {
   const { data: rates = [], isFetching, error } = useExchangeRatesQuery()
   const [remove] = useDeleteExchangeRateMutation()
+  const [confirm, confirmDialog] = useConfirm()
   const [adding, setAdding] = useState(false)
   const [actionError, setActionError] = useState<unknown>(null)
 
@@ -68,7 +70,7 @@ export function ExchangeRatesPanel({ canEdit }: { canEdit: boolean }) {
                   <TableCell align="right">
                     <IconButton
                       aria-label={`Delete the ${r.from.code}/${r.to.code} rate of ${r.rateDate}`}
-                      onClick={() => window.confirm('Delete this rate?') && void remove(r.id).unwrap().catch(setActionError)}
+                      onClick={() => void confirm('Delete this rate?', 'Delete').then((ok) => (ok ? remove(r.id).unwrap().catch(setActionError) : undefined))}
                     >
                       ×
                     </IconButton>
@@ -87,6 +89,7 @@ export function ExchangeRatesPanel({ canEdit }: { canEdit: boolean }) {
         </Table>
       </TableContainer>
       {adding && <RateDialog onClose={() => setAdding(false)} />}
+      {confirmDialog}
     </Stack>
   )
 }
