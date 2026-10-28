@@ -17,6 +17,20 @@ server {
     server_tokens off;
     root /usr/share/nginx/html;
 
+    # Compression (Phase 8o). The dashboard and list endpoints return up to a megabyte of JSON and the bundle is the
+    # other big download; text compresses 10-20x, which is most of the page-load time on a real connection.
+    # BREACH (a secret and attacker-chosen text in one compressed response): API calls carry a bearer header another site
+    # cannot make a browser send, and the one cookie-authenticated call, /api/auth/refresh (SameSite=Strict, Path=/api/auth),
+    # echoes nothing from its request next to the token it returns. The variant where an outsider plants text that this app
+    # later returns beside data they cannot see needs a network observer and thousands of audited writes; judged impractical.
+    # Revisit if a response is ever added that reflects request input next to a token or code.
+    # gzip_proxied any: without it nginx skips responses to requests that carry a Via header, as proxies in front add.
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_min_length 1024;
+    gzip_types application/json application/javascript text/css text/plain image/svg+xml;
+
     location /api {
         # Matches the app's own 50MB upload cap (UploadController); off so the backend's
         # rate limiter sees the request before nginx finishes buffering the whole body to
