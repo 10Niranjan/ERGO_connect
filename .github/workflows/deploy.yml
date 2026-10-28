@@ -155,7 +155,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           # The apps are created by infra/main.bicep (phase 2), which needs secrets this pipeline does not hold.
           if ! az containerapp show --name backend --resource-group "$RG" --output none 2>/dev/null; then
-            echo "::error::The Container Apps do not exist yet. The images are pushed; run infra phase 2 with backendImage=$BACKEND_REF frontendImage=$FRONTEND_REF (infra/README.md), then re-run this workflow."
+            echo "::error::The Container Apps do not exist yet. The images are pushed; run infra phase 2 with BACKEND_IMAGE=$BACKEND_REF FRONTEND_IMAGE=$FRONTEND_REF exported (infra/README.md), then re-run this workflow."
             exit 1
           fi
 

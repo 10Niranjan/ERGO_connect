@@ -50,12 +50,32 @@ param clamavImage string = 'clamav/clamav:1.4'
 
 param postgresVersion string = '17'
 
+@description('Leave empty. After a point-in-time restore the data lives on a NEW server (Azure cannot restore over the old one); pass its name here from then on, or the next infra deploy would create a fresh empty server under the old name and point the backend at it. See docs/BACKUP_AND_RECOVERY.md.')
+param postgresServerName string = ''
+
+@minValue(7)
+@maxValue(35)
+@description('Days of Postgres point-in-time restore (8n). 7 is the minimum; use 35 (the maximum) for anything holding real data.')
+param postgresBackupRetentionDays int = 7
+
+@minValue(7)
+@maxValue(365)
+@description('Days a deleted document file (or container) can be undeleted (8n). Keep it at least as long as postgresBackupRetentionDays: restoring the database further back than the file retention brings back document rows whose files are already purged.')
+param documentRetentionDays int = 7
+
+@description('Copy Postgres backups to the paired region (8n). Can ONLY be chosen when the server is created: changing it later means restoring into a new server. Needs a region with a pair; costs about double backup storage.')
+param postgresGeoRedundantBackup bool = false
+
+@description('CanNotDelete locks on Postgres and the documents storage account (8n). The backups of a dropped Flexible Server are only kept for 5 days and reviving is best effort, so a lock is the main protection against losing the data and its backups with one command. Before tearing a staging environment down run: az lock delete (see docs/BACKUP_AND_RECOVERY.md).')
+param lockDataStores bool = true
+
 // ---------- names ----------
 
 var suffix = uniqueString(resourceGroup().id)
 var deployApps = !empty(backendImage) && !empty(frontendImage)
 var bootstrapEnabled = !empty(bootstrapAdminEmail) && !empty(bootstrapAdminPassword)
 var databaseName = 'ergo_connect'
+var postgresName = empty(postgresServerName) ? 'psql-${namePrefix}-${suffix}' : postgresServerName
 var documentsContainer = 'documents'
 
 // ---------- observability (8m) ----------
@@ -130,8 +150,8 @@ resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01'
   name: 'default'
   // The account is key-authenticated and internet-reachable; this is the only undo for a leaked key used to delete.
   properties: {
-    deleteRetentionPolicy: { enabled: true, days: 7 }
-    containerDeleteRetentionPolicy: { enabled: true, days: 7 }
+    deleteRetentionPolicy: { enabled: true, days: documentRetentionDays }
+    containerDeleteRetentionPolicy: { enabled: true, days: documentRetentionDays }
   }
 }
 
@@ -144,7 +164,7 @@ resource documents 'Microsoft.Storage/storageAccounts/blobServices/containers@20
 // ---------- postgres ----------
 
 resource postgres 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = {
-  name: 'psql-${namePrefix}-${suffix}'
+  name: postgresName
   location: location
   sku: { name: 'Standard_B1ms', tier: 'Burstable' }
   properties: {
@@ -152,11 +172,28 @@ resource postgres 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = {
     administratorLogin: postgresAdminLogin
     administratorLoginPassword: postgresAdminPassword
     storage: { storageSizeGB: 32 }
-    backup: { backupRetentionDays: 7, geoRedundantBackup: 'Disabled' }
+    backup: { backupRetentionDays: postgresBackupRetentionDays, geoRedundantBackup: postgresGeoRedundantBackup ? 'Enabled' : 'Disabled' }
     highAvailability: { mode: 'Disabled' }
     network: { publicNetworkAccess: 'Enabled' }
     authConfig: { activeDirectoryAuth: 'Disabled', passwordAuth: 'Enabled' }
   }
+}
+
+// CanNotDelete, not ReadOnly: ReadOnly would also block listKeys and every write the template itself makes.
+// A lock is a management-plane guard against deleting the resource (and, for Postgres, its backups with it). It does NOT
+// stop anyone with Contributor from switching soft-delete off, reading the account keys and deleting blobs, or lowering
+// the backup retention. Whoever deploys this template (Owner, or Contributor + User Access Administrator) can also
+// remove the locks. The CI identity (Contributor on the resource group) cannot create or remove them.
+resource postgresLock 'Microsoft.Authorization/locks@2020-05-01' = if (lockDataStores) {
+  scope: postgres
+  name: 'no-delete'
+  properties: { level: 'CanNotDelete', notes: 'A dropped server keeps its backups only 5 days. See docs/BACKUP_AND_RECOVERY.md.' }
+}
+
+resource storageLock 'Microsoft.Authorization/locks@2020-05-01' = if (lockDataStores) {
+  scope: storage
+  name: 'no-delete'
+  properties: { level: 'CanNotDelete', notes: 'Holds every uploaded document. See docs/BACKUP_AND_RECOVERY.md.' }
 }
 
 resource db 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2024-08-01' = {

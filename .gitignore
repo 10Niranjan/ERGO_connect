@@ -19,3 +19,13 @@ Thumbs.db
 .idea/
 .vscode/
 *.log
+
+# Git Bash crash dumps
+*.stackdump
+
+# Never commit database dumps, or the compiled form of a .bicepparam (az bicep build-params writes infra/staging.json
+# with every secret read from the environment in plain text)
+*.gpg
+*.dump
+*.part
+/infra/*.json

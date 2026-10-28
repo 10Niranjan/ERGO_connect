@@ -19,19 +19,21 @@ needs **Owner** (or Contributor + User Access Administrator) on the resource gro
 ```bash
 az group create -n rg-ergo-staging -l <region>   # a region where Azure Managed Redis is available
 
-# Secrets come from your shell / a secret store — never from a file in this repo.
-az deployment group what-if -g rg-ergo-staging -f infra/main.bicep \
-  -p namePrefix=ergo-staging mailHost=<smtp-host> mailUsername=<user> mailFrom=<from@domain> alertEmail=<ops@domain> \
-  -p postgresAdminPassword="$PG_PASSWORD" jwtSecret="$JWT_SECRET" mailPassword="$MAIL_PASSWORD"
+# Everything that is not a secret is in infra/staging.bicepparam (in git, so it cannot be forgotten on a command line).
+# Secrets and per-run values come from the environment; the build fails if a required one is unset.
+read -rsp 'Postgres admin password: ' PG_PASSWORD; export PG_PASSWORD; echo   # same for JWT_SECRET and MAIL_PASSWORD (no secret on a command line)
+export MAIL_HOST=… MAIL_USERNAME=… MAIL_FROM=… ALERT_EMAIL=…
+unset BACKEND_IMAGE FRONTEND_IMAGE BOOTSTRAP_ADMIN_EMAIL BOOTSTRAP_ADMIN_PASSWORD   # infra-only unless you set them on purpose
+az deployment group what-if -g rg-ergo-staging --parameters infra/staging.bicepparam
 # then the same command with `create` instead of `what-if`
 ```
 
-Phase 1 (no image params) creates everything except the two Container Apps. After 8l — or by hand with `az acr login`
+Phase 1 (no image variables) creates everything except the two Container Apps. After 8l — or by hand with `az acr login`
 + `docker push` of the two 8j images to the `registryLoginServer` output — re-run with
-`-p backendImage=<acr>/ergo-backend:<tag> frontendImage=<acr>/ergo-frontend:<tag>` to create the apps.
+`BACKEND_IMAGE=<acr>/ergo-backend@sha256:… FRONTEND_IMAGE=<acr>/ergo-frontend@sha256:…` exported to create the apps.
 
 - `postgresAdminPassword` ≥ 24 chars (`openssl rand -base64 32`); `jwtSecret` ≥ 32 random bytes (`openssl rand -base64 48`).
-- First deploy against an empty database may also pass `bootstrapAdminEmail` / `bootstrapAdminPassword` (8e). **Drop both
+- First deploy against an empty database may also export `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` (8e). **Drop both
   from every later deploy, and after the first admin login run `az keyvault secret delete` + `az keyvault secret purge`
   for `bootstrap-admin-password`** — an incremental deploy never removes it.
 
@@ -76,7 +78,7 @@ Optional hardening that moves the protection into code: customise the repository
 obtain a token.
 
 **First run:** the apps don't exist until infra phase 2, so the first run pushes the images, then stops with an error
-that prints the exact `backendImage=… frontendImage=…` digests to pass to `az deployment group create`. Run that, then
+that prints the exact `BACKEND_IMAGE=… FRONTEND_IMAGE=…` digests to export before `az deployment group create --parameters infra/staging.bicepparam`. Run that, then
 re-run the workflow. From then on the pipeline owns the image versions; an infra-only change should be deployed
 *without* image parameters (the apps are then left untouched), otherwise it would revert them.
 
@@ -149,6 +151,19 @@ emails and IPs and live in Log Analytics.
 - The blob HTTPS path to a real storage account (8h carry-forward), Spring parsing the percent-encoded `REDIS_URL`, and
   JVM heap (`-XX:MaxRAMPercentage=60` against 2Gi) are all untested.
 
+## Backup and recovery (Phase 8n)
+
+Full runbook, drill, dump-handling rules and open decisions: **`docs/BACKUP_AND_RECOVERY.md`**. In the template (set in
+`infra/staging.bicepparam`): `postgresBackupRetentionDays` (7 default, use 35 for real data), `documentRetentionDays` (keep it
+at least that long), `postgresGeoRedundantBackup` (**create-time only**), `postgresServerName` (empty; set it after a
+point-in-time restore, which lands on a new server, and **commit it**: a deploy without it points the backend back at the
+old, stale server), and `CanNotDelete` locks on Postgres and the documents storage account (`lockDataStores`; remove them
+with `az lock delete` before tearing a staging environment down). The locks guard against accidental deletion only: they do
+not stop a Contributor from disabling soft-delete, using the storage keys or lowering retention. `infra/ops/` holds the
+restore drill / encrypted dump and the orphan-blob cleanup used after a restore.
+Unverified: that the locks coexist with the template's own incremental redeploys; that a template deploy onto a
+point-in-time-restored server updates it cleanly (the restore runbook's cutover step); every Azure command in the runbook.
+
 ## Monitoring (Phase 8m)
 
 - **Telemetry:** the Application Insights Java agent (3.7.10, sha256-checked in `ergo-connect-backend/Dockerfile`) is in the
@@ -200,7 +215,7 @@ emails and IPs and live in Log Analytics.
 |---|---|
 | More than one backend replica (single-run scheduled jobs first, e.g. ShedLock) | before scaling out |
 | Postgres diagnostic logs, a freshclam-staleness alert, dashboards, telemetry sampling tuned to real traffic | after first deploy (8m shipped the rest) |
-| Backup retention / geo-redundancy decisions, restore runbook | 8n |
+| Scheduled off-Azure logical dumps, RPO/RTO sign-off, geo-redundancy decision, blob versioning (`docs/BACKUP_AND_RECOVERY.md`, open decisions) | before go-live (8n shipped the runbook and drill) |
 | Pin the ClamAV image by digest in `main.bicep` (it is now scanned on every deploy) | after first deploy |
 | Narrow `server.tomcat.remoteip.internal-proxies`; confirm `X-Forwarded-For` format. Any app later added to the environment can spoof audit-log IPs until then | after first deploy |
 | Upload byte-quota sizing (8d-bis) | with real traffic |
