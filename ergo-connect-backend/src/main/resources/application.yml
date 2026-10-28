@@ -1,6 +1,13 @@
 spring:
   application:
     name: ergo-connect
+  datasource:
+    hikari:
+      data-source-properties:
+        # pgjdbc puts the whole failing row ("Failing row contains (<price>, <hidden margin>...)") into constraint-violation
+        # messages, and those reach logs and monitoring. ValidationErrorHandler only ever uses the constraint name, which
+        # stays in the message's first line. (Phase 8m security review, M3)
+        logServerErrorDetail: false
   jackson:
     deserialization:
       accept-float-as-int: false # 1.5 for a whole number is a 400, never a silent 1

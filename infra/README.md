@@ -4,7 +4,8 @@
 Log Analytics, Key Vault (RBAC), Storage (private `documents` container, 7-day blob soft-delete), Postgres Flexible
 Server (Burstable B1ms), Azure Managed Redis (`Balanced_B0` — classic Azure Cache for Redis creation was blocked from
 2026-10-01), Container Registry (Basic), two user-assigned identities, and a Container Apps environment running
-`backend` (with a ClamAV sidecar) and `frontend`.
+`backend` (with a ClamAV sidecar) and `frontend`. Monitoring (8m): Application Insights on the Log Analytics workspace, an
+email action group, four alert rules and Key Vault audit logging.
 
 **Status: authored; `az bicep build` compiles (two harmless BCP334 warnings); never deployed, never `what-if`'d.**
 Treat the first deploy as a verification step. **Staging only: do not put real client data in it until the
@@ -20,7 +21,7 @@ az group create -n rg-ergo-staging -l <region>   # a region where Azure Managed 
 
 # Secrets come from your shell / a secret store — never from a file in this repo.
 az deployment group what-if -g rg-ergo-staging -f infra/main.bicep \
-  -p namePrefix=ergo-staging mailHost=<smtp-host> mailUsername=<user> mailFrom=<from@domain> \
+  -p namePrefix=ergo-staging mailHost=<smtp-host> mailUsername=<user> mailFrom=<from@domain> alertEmail=<ops@domain> \
   -p postgresAdminPassword="$PG_PASSWORD" jwtSecret="$JWT_SECRET" mailPassword="$MAIL_PASSWORD"
 # then the same command with `create` instead of `what-if`
 ```
@@ -133,12 +134,12 @@ emails and IPs and live in Log Analytics.
   deploy fails loudly at secret resolution). Then confirm from inside a container that `$IDENTITY_ENDPOINT` yields no token.
 - **Rate limiters fail open silently.** If `REDIS_URL` (percent-encoded key, port 10000, access-key auth, EVAL on an
   EnterpriseCluster database) is wrong, the app still boots healthy with the login, change-password and upload limiters
-  off. Check: 21 bad logins from one IP return 429, and the logs contain no `Redis unavailable for rate limiting`.
+  off. Check: 21 bad logins from one IP return 429, and the logs contain no `Redis unavailable` warning.
   Also: `redisDb.listKeys()` is untested, and an open Bicep issue reports repeat-deploy failures when a `redisEnterprise`
   cluster and its database share one file (reported on a preview API; this uses `2025-04-01`).
 - **ClamAV:** 2Gi is a starting point, not a measurement. Uploads return 503 until clamd has loaded its signatures
   (the liveness probe waits 60s). Confirm freshclam can reach its mirrors from Container Apps egress (silent staleness
-  otherwise, until 8m), run an EICAR upload end to end, and confirm clamd listens only where intended — whether other
+  otherwise: no alert watches freshclam), run an EICAR upload end to end, and confirm clamd listens only where intended — whether other
   replicas in the environment can reach it is not something the template controls (`CLAMD_CONF_TCPAddr=127.0.0.1` was
   not tried; the image may add rather than replace the listener).
 - **Forwarded headers:** `X-Forwarded-Proto: https` from the public ingress through two hops (check `Strict-Transport-Security`
@@ -147,6 +148,40 @@ emails and IPs and live in Log Analytics.
   resolution, re-run it. The frontend's nginx resolves `backend` once at startup (ordered after it via `dependsOn`).
 - The blob HTTPS path to a real storage account (8h carry-forward), Spring parsing the percent-encoded `REDIS_URL`, and
   JVM heap (`-XX:MaxRAMPercentage=60` against 2Gi) are all untested.
+
+## Monitoring (Phase 8m)
+
+- **Telemetry:** the Application Insights Java agent (3.7.10, sha256-checked in `ergo-connect-backend/Dockerfile`) is in the
+  image but only switched on by the Bicep (`JAVA_TOOL_OPTIONS=-javaagent:...` plus the connection string from Key Vault), so
+  local `docker run` and CI are unaffected. It sends requests (with status codes), exceptions, database and Redis calls
+  and WARN-or-higher logs (of requests that are not sampled out) to the workspace tables `AppRequests`, `AppDependencies`, `AppExceptions`, `AppTraces`.
+  `ergo-connect-backend/applicationinsights.json` sets the role name and drops the health probes and the 10-second
+  `AccessPolicy.refreshIfChanged` job (they would otherwise be most of the volume). A sampled-out request takes its logs
+  with it, so the job's "Access policy refresh failed; keeping the last good snapshot" warning (tightened roles and module
+  switches stop taking effect) is in the container console logs only: query `ContainerAppConsoleLogs_CL` for it. Bump the agent version and its sha256
+  together; Dependabot and Trivy do not see this JAR.
+- **Alerts** (email to `alertEmail`, checked every 5 min over 15 min): more than 4 5xx responses; Redis unreachable so the
+  rate limiters (login included) fail open (`Redis unavailable`); the upload malware scan failing closed (`Malware scan
+  failed`); the backend replica restarting more than twice in its life; and no telemetry at all for 30 minutes (the agent
+  fails open, so without this a broken connection string silences every other alert). Thresholds are starting points for staging.
+- **Key Vault audit logs** go to the workspace (`AzureDiagnostics`, who read which secret).
+- **Privacy:** telemetry goes to your own workspace (the agent's optional usage statistics to Microsoft are switched off).
+  Request URLs, client IPs and WARN log text (which can contain user emails) are recorded, and so are Redis calls with
+  their keys, which embed IPs and, for forgot-password, the email address. INFO logs are not sent. No endpoint puts a
+  secret in a query string (checked 8m). The Postgres driver is set to `logServerErrorDetail=false` so constraint errors
+  no longer carry the failing row (prices, hidden margins) into logs; the same text was already reaching the console logs
+  before 8m. Anyone with Reader on the workspace sees all of this.
+- **Cost:** sampling is 100% and the workspace has no daily cap, so an unauthenticated login flood creates billable rows
+  even when it only gets 429s. Decide on sampling or a cap before real traffic; a cap lets an attacker blind the alerts,
+  and sampling needs the alert queries changed to `sum(ItemCount)`.
+- **Verified locally (8m):** the image builds with the checksum check; with the agent on, the backend boots on Spring Boot
+  4.1 and sends request, database and log telemetry to a stand-in ingestion endpoint; the sampling overrides drop the
+  health probes and the job; the Postgres driver, with `logServerErrorDetail=false`, no longer puts row values in errors. The agent also fails open: a bad config file logs an error and the app still starts.
+- **Unverified (needs Azure):** that the connection string reaches the agent through the Key Vault secret ref; that the
+  telemetry arrives in the workspace; that the alert queries match real rows (`AppTraces.Message`); that
+  `RestartCount` is the right metric name for Container Apps and `Maximum` the right aggregation; that the
+  no-telemetry query finds rows on a healthy backend; the extra heap the agent needs inside the 2Gi limit
+  (watch `WorkingSetBytes` in 8o).
 
 ## Required before real data
 
@@ -164,7 +199,7 @@ emails and IPs and live in Log Analytics.
 | What | Where |
 |---|---|
 | More than one backend replica (single-run scheduled jobs first, e.g. ShedLock) | before scaling out |
-| Application Insights, diagnostic settings, alerts (incl. a Redis fail-open counter) | 8m |
+| Postgres diagnostic logs, a freshclam-staleness alert, dashboards, telemetry sampling tuned to real traffic | after first deploy (8m shipped the rest) |
 | Backup retention / geo-redundancy decisions, restore runbook | 8n |
 | Pin the ClamAV image by digest in `main.bicep` (it is now scanned on every deploy) | after first deploy |
 | Narrow `server.tomcat.remoteip.internal-proxies`; confirm `X-Forwarded-For` format. Any app later added to the environment can spoof audit-log IPs until then | after first deploy |

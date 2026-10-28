@@ -32,6 +32,10 @@ param mailPassword string
 @description('From: address - must pass the sending domain SPF/DMARC.')
 param mailFrom string
 
+@description('Who is emailed when a monitoring alert fires (8m). Required: an alert nobody receives is the silent failure 8m exists to remove. Use a shared mailbox or distribution list.')
+@minLength(5)
+param alertEmail string
+
 @description('One-time first-admin bootstrap (8e). Leave both empty after the first successful deploy.')
 param bootstrapAdminEmail string = ''
 @secure()
@@ -54,7 +58,7 @@ var bootstrapEnabled = !empty(bootstrapAdminEmail) && !empty(bootstrapAdminPassw
 var databaseName = 'ergo_connect'
 var documentsContainer = 'documents'
 
-// ---------- observability sink (Container Apps requires one; Application Insights is 8m) ----------
+// ---------- observability (8m) ----------
 
 resource logs 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: 'log-${namePrefix}'
@@ -62,6 +66,20 @@ resource logs 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   properties: {
     sku: { name: 'PerGB2018' }
     retentionInDays: 30
+  }
+}
+
+// Workspace-based: requests, exceptions and WARN+ logs land in the AppRequests / AppExceptions / AppTraces tables of the
+// workspace above, next to the container console logs. The backend ships telemetry with the Java agent baked into its image.
+resource insights 'Microsoft.Insights/components@2020-02-02' = {
+  name: 'appi-${namePrefix}'
+  location: location
+  kind: 'web'
+  properties: {
+    Application_Type: 'web'
+    WorkspaceResourceId: logs.id
+    // The agent authenticates with the connection string (ingestion-only; it cannot read telemetry back).
+    DisableIpMasking: false
   }
 }
 
@@ -201,6 +219,13 @@ resource secretJwt 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   properties: { value: jwtSecret }
 }
 
+// The connection string only allows sending telemetry, but anyone holding it can inject fake alerts and noise.
+resource secretInsights 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: vault
+  name: 'appinsights-connection-string'
+  properties: { value: insights.properties.ConnectionString }
+}
+
 resource secretMail 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   parent: vault
   name: 'mail-password'
@@ -294,6 +319,7 @@ var backendSecretRefs = concat(
     { name: 'mail-password', keyVaultUrl: secretMail.properties.secretUri, identity: backendIdentity.id }
     { name: 'redis-url', keyVaultUrl: secretRedisUrl.properties.secretUri, identity: backendIdentity.id }
     { name: 'storage-connection-string', keyVaultUrl: secretStorage.properties.secretUri, identity: backendIdentity.id }
+    { name: 'appinsights-connection-string', keyVaultUrl: secretInsights.properties.secretUri, identity: backendIdentity.id }
   ],
   bootstrapEnabled
     ? [{ name: 'bootstrap-admin-password', keyVaultUrl: secretBootstrap!.properties.secretUri, identity: backendIdentity.id }]
@@ -316,6 +342,11 @@ var backendEnv = concat(
     { name: 'MAIL_FROM', value: mailFrom }
     { name: 'AZURE_STORAGE_CONNECTION_STRING', secretRef: 'storage-connection-string' }
     { name: 'AZURE_STORAGE_CONTAINER', value: documentsContainer }
+    // Telemetry (8m): the agent JAR and its config are baked into the image and switched on by JAVA_TOOL_OPTIONS below.
+    { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', secretRef: 'appinsights-connection-string' }
+    { name: 'APPLICATIONINSIGHTS_CONFIGURATION_FILE', value: '/app/applicationinsights.json' }
+    // The agent otherwise also reports usage statistics to Microsoft; this turns off the optional part.
+    { name: 'APPLICATIONINSIGHTS_STATSBEAT_DISABLED', value: 'true' }
     // CLAMAV_HOST/PORT left unset: the sidecar below shares the replica's network namespace, so the app's own
     // default (localhost:3310) is the right answer, and clamd is reachable by nothing else (8i carry-forward).
   ],
@@ -353,7 +384,7 @@ resource backend 'Microsoft.App/containerApps@2025-01-01' = if (deployApps) {
           image: backendImage
           resources: { cpu: json('1.0'), memory: '2Gi' }
           // JVM default heap is 25% of the limit, too small beside in-memory uploads up to 50MB. Starting point; tune in 8o.
-          env: concat(backendEnv, [{ name: 'JAVA_TOOL_OPTIONS', value: '-XX:MaxRAMPercentage=60' }])
+          env: concat(backendEnv, [{ name: 'JAVA_TOOL_OPTIONS', value: '-XX:MaxRAMPercentage=60 -javaagent:/app/applicationinsights-agent.jar' }])
           probes: [
             { type: 'Startup', httpGet: { path: '/actuator/health', port: 8080 }, periodSeconds: 10, failureThreshold: 18 }
             { type: 'Liveness', httpGet: { path: '/actuator/health', port: 8080 }, periodSeconds: 30, failureThreshold: 3 }
@@ -424,6 +455,150 @@ resource frontend 'Microsoft.App/containerApps@2025-01-01' = if (deployApps) {
       ]
       scale: { minReplicas: 1, maxReplicas: 2 }
     }
+  }
+}
+
+// ---------- alerts + audit logging (8m) ----------
+
+resource alertsGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
+  name: 'ag-${namePrefix}'
+  location: 'global'
+  properties: {
+    groupShortName: take(replace(namePrefix, '-', ''), 12)
+    enabled: true
+    emailReceivers: [{ name: 'ops', emailAddress: alertEmail, useCommonAlertSchema: true }]
+  }
+}
+
+// Log alerts over the workspace. Thresholds are starting points for staging; tune them against real traffic.
+var logAlerts = [
+  {
+    name: 'server-errors'
+    title: 'Backend returning 5xx'
+    description: 'More than 4 requests answered with a 5xx in 15 minutes.'
+    severity: 2
+    threshold: 4
+    query: 'AppRequests | where toint(ResultCode) >= 500'
+  }
+  {
+    // Every limiter logs a "Redis unavailable ..." warning on each request it lets through because Redis is unreachable
+    // (8d carry-forward). The login limiter words it differently ("... for login rate limiting"), so match the common start.
+    name: 'rate-limiter-failing-open'
+    title: 'Rate limiters are failing open'
+    description: 'Redis is unreachable or misconfigured: the login, change-password, upload and forgot-password limiters are letting everything through.'
+    severity: 2
+    threshold: 0
+    query: 'AppTraces | where Message has "Redis unavailable"'
+  }
+  {
+    // DocumentStore rejects the upload (fail closed) when clamd cannot scan: ClamAV down, out of memory or still loading.
+    name: 'malware-scan-failing'
+    title: 'Upload malware scan is failing'
+    description: 'Uploads are being rejected because the ClamAV sidecar could not scan them.'
+    severity: 2
+    threshold: 0
+    query: 'AppTraces | where Message has "Malware scan failed"'
+  }
+]
+
+resource queryAlerts 'Microsoft.Insights/scheduledQueryRules@2022-06-15' = [
+  for rule in logAlerts: {
+    name: 'alert-${namePrefix}-${rule.name}'
+    location: location
+    dependsOn: [insights]
+    properties: {
+      displayName: '${namePrefix}: ${rule.title}'
+      description: rule.description
+      severity: rule.severity
+      enabled: true
+      scopes: [logs.id]
+      evaluationFrequency: 'PT5M'
+      windowSize: 'PT15M'
+      criteria: {
+        allOf: [
+          {
+            query: rule.query
+            timeAggregation: 'Count'
+            operator: 'GreaterThan'
+            threshold: rule.threshold
+            failingPeriods: { numberOfEvaluationPeriods: 1, minFailingPeriodsToAlert: 1 }
+          }
+        ]
+      }
+      actions: { actionGroups: [alertsGroup.id] }
+    }
+  }
+]
+
+// The log alerts above only work while the agent is sending. It fails open by design (a wrong connection string or a
+// blocked ingestion endpoint just means silence), so alert when nothing at all has arrived for 30 minutes. The agent
+// reports JVM metrics every minute, so a healthy backend never trips this. Only meaningful once the apps exist.
+resource telemetryMissingAlert 'Microsoft.Insights/scheduledQueryRules@2022-06-15' = if (deployApps) {
+  name: 'alert-${namePrefix}-telemetry-missing'
+  location: location
+  dependsOn: [insights]
+  properties: {
+    displayName: '${namePrefix}: No backend telemetry'
+    description: 'Nothing has reached Application Insights for 30 minutes: the other alerts are blind until this is fixed (connection string, ingestion, agent) or the backend is down.'
+    severity: 2
+    enabled: true
+    scopes: [logs.id]
+    evaluationFrequency: 'PT10M'
+    windowSize: 'PT30M'
+    criteria: {
+      allOf: [
+        {
+          query: 'union isfuzzy=true AppMetrics, AppPerformanceCounters, AppRequests, AppTraces, AppDependencies'
+          timeAggregation: 'Count'
+          operator: 'LessThan'
+          threshold: 1
+          failingPeriods: { numberOfEvaluationPeriods: 1, minFailingPeriodsToAlert: 1 }
+        }
+      ]
+    }
+    actions: { actionGroups: [alertsGroup.id] }
+  }
+}
+
+// A crash-looping backend sends no telemetry at all, so it needs a platform metric rather than a log query.
+// RestartCount is cumulative over the replica's life (one data point a minute), so a Total over a window would add the
+// running totals together and fire on the first restart ever. Maximum > 2 means "restarted more than twice since this
+// replica was created"; with the single-replica pin that is the signal we want. A new replica resets it.
+resource restartAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = if (deployApps) {
+  name: 'alert-${namePrefix}-backend-restarts'
+  location: 'global'
+  properties: {
+    description: 'The backend replica has restarted more than twice since it was created (crash loop, repeated OOM).'
+    severity: 2
+    enabled: true
+    scopes: [backend!.id]
+    evaluationFrequency: 'PT5M'
+    windowSize: 'PT15M'
+    criteria: {
+      'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
+      allOf: [
+        {
+          name: 'restarts'
+          metricNamespace: 'microsoft.app/containerapps'
+          metricName: 'RestartCount'
+          operator: 'GreaterThan'
+          threshold: 2
+          timeAggregation: 'Maximum'
+          criterionType: 'StaticThresholdCriterion'
+        }
+      ]
+    }
+    actions: [{ actionGroupId: alertsGroup.id }]
+  }
+}
+
+// Who read which secret, and when. Key Vault keeps no history of reads on its own.
+resource vaultAudit 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  scope: vault
+  name: 'audit-to-log-analytics'
+  properties: {
+    workspaceId: logs.id
+    logs: [{ categoryGroup: 'audit', enabled: true }]
   }
 }
 
