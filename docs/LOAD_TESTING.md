@@ -88,9 +88,9 @@ Response sizes: dashboard **1.47 MB** (customer), 541 KB (KAM); RFQ list **1.16 
   `hikaricp_connections_pending` (actuator metrics are off) and look at it on the next run.
 - Re-run after finding 1 is fixed: the thresholds should then hold with room to spare, and that is the real acceptance test.
 
-## Fix in progress (built 2026-10-29, uncommitted, full test suite not yet run)
+## The fix (commit c958e0e, 2026-10-29)
 
-Built in the working tree after the first run, at the user's request (the product decision in finding 1 was delegated):
+Built after the first run, at the user's request (the product decision in finding 1 was delegated):
 
 - **Dashboard.** Every list section returns at most `ergo.dashboard.max-rows` (default 25) rows, ranked by `AttentionOrder`:
   already overdue / at risk first, then waiting on the viewer's own side, then soonest due date, then newest. Each carries its true
@@ -101,11 +101,24 @@ Built in the working tree after the first run, at the user's request (the produc
   filter in the caller's own vocabulary (a customer sending an internal status gets 422), search over RFQ number, part number and, for
   ERGO only, customer name (via `Directory.companyIdsByName`), `%` `_` `\` treated literally, size capped at 100. The list screen has
   a page selector, a debounced search box and the status filter.
-- **Tests added:** `AttentionOrderTest` (3), `DashboardCapTests` (3), `RfqListPagingTests` (9). Passing with the existing dashboard and
-  RFQ suites (14 and 53 tests). Seven old assertions that parsed the array shape were updated to `$.items`.
+- **Tests added:** `AttentionOrderTest` (3), `DashboardCapTests` (3), `RfqListPagingTests` (12). Full `./mvnw verify`: 755 tests, 0 failures. `security-reviewer`: no High/Medium; four Low items fixed.
 
-**Still to do:** (1) the full `./mvnw verify` (killed once for low memory; run it alone), `security-reviewer`, commit; (2) re-run
-`loadtest/hot-paths.js` against the same 5,020-RFQ database and record the numbers here (expect the 50-user thresholds to hold; if
-not, look at `hikaricp_connections_pending` first); (3) the lists that are **still unbounded**, in the order they are likely to hurt:
-the supplier quote list `/api/quotes` (one row per part per RFQ sent), OFP orders, NPD projects, sample and production POs, NCRs,
-deviations, inspections. Use the RFQ list as the pattern; none has been measured with volume yet.
+## Re-run after the fix (2026-10-29)
+
+Same machine, same 5,020-RFQ database, same script, 50 users at peak, default login limiter. Backend jar built from the working tree.
+
+| p95 | Before (50 users) | After (50 users) | Threshold |
+|---|---|---|---|
+| Dashboard | 2.3 s | **818 ms** | 1 s ok |
+| Work list | 2.1 s | **318 ms** | 1 s ok |
+| Unread-count poll | 1.35 s | **375 ms** | 300 ms **crossed** |
+| Whole browse scenario | 1.8 s | **543 ms** | 800 ms ok |
+| Login, 5 a second | 0.74-1.0 s | **256 ms**, 225 of 225 ok | 1.5 s ok |
+| Errors | 0% | 0.01% (2 of 11,875) | 1% ok |
+
+- The dashboard and list findings are fixed: the 50-user run now passes every threshold but one, with room to spare on the others.
+- **Unread-count 375 ms vs 300 ms.** It is a tiny query (6.9 ms median), so the p95 is queueing on a laptop that is also running k6, Postgres, Redis and the JVM; it fell from 1.35 s. Not a code finding. Judge it on the staging run, not here.
+- **Two failures** were `dial: i/o timeout` on the supplier's `/api/quotes` (connection level, none in the backend log). That list is still unbounded; watch it on the staging run.
+- Still unmeasured: real hardware (see above) and the other unbounded lists.
+
+**Still to do:** (1) the staging run; (2) the lists that are **still unbounded**, in the order they are likely to hurt: the supplier quote list `/api/quotes` (one row per part per RFQ sent), OFP orders, NPD projects, sample and production POs, NCRs, deviations, inspections. Use the RFQ list as the pattern (declare only `findAll(Specification, Pageable)` on the repository).
