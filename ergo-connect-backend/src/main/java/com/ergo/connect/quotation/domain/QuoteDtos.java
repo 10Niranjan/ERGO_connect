@@ -111,6 +111,10 @@ public final class QuoteDtos {
 			boolean quotingOpen) {
 	}
 
+	/** One page of the supplier's list; {@code total} counts every match, not just this page. */
+	public record SupplierPage<T>(List<T> items, long total, int page, int size) {
+	}
+
 	/** The "Assigned RFQs" row for a supplier role without Quotation access: no quote status, version or submit time. */
 	public record SupplierAssignedRfqRow(long id, String rfqNumber, int subRfqNo, String partNumber, String revision,
 			String description, LocalDate responseDueDate, boolean quotingOpen) {

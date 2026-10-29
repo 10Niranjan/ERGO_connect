@@ -99,6 +99,33 @@ class QuoteTests {
 	}
 
 	@Test
+	void theSuppliersListIsPagedFilteredAndSearchedInTheQueryAndStaysOwnCompanyOnly() throws Exception {
+		call(post("/api/rfqs/{id}/quotes", rfqId), ergoRfq,
+				TestRfq.distribution(supplierX, List.of(p1, p2), supplierY, List.of(p3))).andExpect(status().isOk());
+
+		// pages: total counts every match, newest first, size is clamped
+		call(get("/api/quotes?size=1&page=0"), sellerX, null).andExpect(jsonPath("$.total").value(2))
+			.andExpect(jsonPath("$.items", hasSize(1))).andExpect(jsonPath("$.items[0].partNumber").value("PN-Q2"));
+		call(get("/api/quotes?size=1&page=1"), sellerX, null).andExpect(jsonPath("$.items[0].partNumber").value("PN-Q1"));
+		call(get("/api/quotes?size=1&page=5"), sellerX, null).andExpect(jsonPath("$.items", hasSize(0)))
+			.andExpect(jsonPath("$.total").value(2));
+		call(get("/api/quotes?size=100000&page=-3"), sellerX, null).andExpect(jsonPath("$.size").value(100))
+			.andExpect(jsonPath("$.page").value(0));
+		call(get("/api/quotes?page=2147483647&size=100"), sellerX, null).andExpect(status().isOk());
+
+		// search: the part number, the RFQ number; wildcards and control characters are literal / stripped
+		call(get("/api/quotes?q=pn-q1"), sellerX, null).andExpect(jsonPath("$.total").value(1));
+		call(get("/api/quotes?q=PN-Q3"), sellerX, null).andExpect(jsonPath("$.total").value(0)); // Y's part, never X's
+		call(get("/api/quotes").param("q", "%"), sellerX, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/quotes").param("q", "PN-Q1\u0000"), sellerX, null).andExpect(jsonPath("$.total").value(1));
+
+		// status uses the supplier's own vocabulary; an unknown one is refused
+		call(get("/api/quotes?status=NOT_STARTED"), sellerX, null).andExpect(jsonPath("$.total").value(2));
+		call(get("/api/quotes?status=SUBMITTED"), sellerX, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/quotes?status=NOPE"), sellerX, null).andExpect(status().isUnprocessableEntity());
+	}
+
+	@Test
 	void anRfqSplitsIntoSubRfqsAndSuppliersSeeOnlyTheirOwnParts() throws Exception {
 		long draft = idOf(call(post("/api/rfqs"), buyer, rfqForm()).andReturn());
 		long draftPart = TestRfq.itemIds(mvc, ergoRfq, draft).get(0);
@@ -116,10 +143,10 @@ class QuoteTests {
 		call(get("/api/rfqs/{id}", rfqId), ergoRfq, null).andExpect(jsonPath("$.status").value("SENT_TO_SUPPLIERS"));
 		call(get("/api/rfqs/{id}", rfqId), buyer, null).andExpect(jsonPath("$.status").value("IN_PROGRESS"));
 
-		call(get("/api/quotes"), sellerX, null).andExpect(jsonPath("$", hasSize(2)))
-			.andExpect(jsonPath("$[*].partNumber", containsInAnyOrder("PN-Q1", "PN-Q2")));
-		call(get("/api/quotes"), sellerY, null).andExpect(jsonPath("$", hasSize(1)))
-			.andExpect(jsonPath("$[0].partNumber").value("PN-Q3"));
+		call(get("/api/quotes"), sellerX, null).andExpect(jsonPath("$.items", hasSize(2)))
+			.andExpect(jsonPath("$.items[*].partNumber", containsInAnyOrder("PN-Q1", "PN-Q2")));
+		call(get("/api/quotes"), sellerY, null).andExpect(jsonPath("$.items", hasSize(1)))
+			.andExpect(jsonPath("$.items[0].partNumber").value("PN-Q3"));
 
 		long x1 = quoteOf(sellerX, "PN-Q1");
 		call(get("/api/quotes/{id}", x1), sellerX, null)
@@ -266,7 +293,7 @@ class QuoteTests {
 		call(post("/api/quotes/{id}/recall", x1), ergoRfq, "{\"comment\": \"Supplier lacks forging capacity\"}")
 			.andExpect(jsonPath("$.status").value("RECALLED"));
 		call(get("/api/quotes/{id}", x1), sellerX, null).andExpect(status().isNotFound());
-		call(get("/api/quotes"), sellerX, null).andExpect(jsonPath("$", hasSize(1)));
+		call(get("/api/quotes"), sellerX, null).andExpect(jsonPath("$.items", hasSize(1)));
 		call(get("/api/rfqs/{id}/quotes", rfqId), ergoRfq, null)
 			.andExpect(jsonPath("$.parts[0].quoteId").doesNotExist())
 			.andExpect(jsonPath("$.canDistribute").value(true));
@@ -275,7 +302,7 @@ class QuoteTests {
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.parts[0].supplier.id").value(supplierY))
 			.andExpect(jsonPath("$.parts[0].subRfqNo").value(3));
-		call(get("/api/quotes"), sellerY, null).andExpect(jsonPath("$", hasSize(2)));
+		call(get("/api/quotes"), sellerY, null).andExpect(jsonPath("$.items", hasSize(2)));
 	}
 
 	@Test

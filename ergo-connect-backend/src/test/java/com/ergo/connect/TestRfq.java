@@ -87,7 +87,7 @@ public final class TestRfq {
 			.getResponse()
 			.getContentAsString();
 		List<Number> ids = JsonPath.read(json,
-				"$[?(@.rfqNumber == '" + rfqNumber + "' && @.partNumber == '" + partNumber + "')].id");
+				"$.items[?(@.rfqNumber == '" + rfqNumber + "' && @.partNumber == '" + partNumber + "')].id");
 		return ids.get(0).longValue();
 	}
 

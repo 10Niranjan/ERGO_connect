@@ -65,7 +65,7 @@ class ModuleSwitchFacadeTests {
 		rules(RfqApi.class, Rule.NOT_FOUND, "forErgo(long)", "forCustomer(long)", "numberOf(long)",
 				"forSupplierItem(long)");
 		rules(RfqApi.class, Rule.HIDDEN_EMPTY, "visibleToCaller(long)", "partiesVisibleToCaller(long)",
-				"forSupplierItems(Collection)", "supplierDocuments(long,Collection)", "itemForErgo(long)", "customerParts()",
+				"forSupplierItems(Collection)", "matchingItems(Collection,String)", "supplierDocuments(long,Collection)", "itemForErgo(long)", "customerParts()",
 				"dashboardItems()");
 		rules(RfqApi.class, Rule.WRITE, "distributing(long)", "quotationProgress(long,QuotationSummary)");
 		rules(RfqApi.class, Rule.FROZEN_EMPTY, "replaceOpenForCaller(long)");
@@ -208,6 +208,9 @@ class ModuleSwitchFacadeTests {
 			}
 			if (Collection.class.isAssignableFrom(type)) {
 				return List.of(1L);
+			}
+			if (type == String.class) {
+				return "x";
 			}
 			if (type.isEnum()) {
 				return type.getEnumConstants()[0];

@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import com.ergo.connect.common.record.Awaiting;
 import com.ergo.connect.documents.api.DocumentStore.DocumentInfo;
@@ -105,6 +106,9 @@ public interface RfqApi {
 
 	/** The parts as {@link #forSupplierItem}, by item id; parts that do not exist (or while the RFQ module is hidden) are absent. */
 	Map<Long, SupplierRfqItem> forSupplierItems(Collection<Long> itemIds);
+
+	/** Which of these parts match a search (RFQ number, part number or description, case-insensitive); empty while the RFQ module is hidden. The caller passes only the parts its supplier holds; no record scope is checked here. */
+	Set<Long> matchingItems(Collection<Long> itemIds, String needle);
 
 	/**
 	 * RFQ files ERGO has shared with suppliers (visibility SUPPLIER or ALL) for at least one of the given parts: the

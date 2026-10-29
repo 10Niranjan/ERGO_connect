@@ -171,6 +171,14 @@ export interface PartRow {
   actions: QuoteAction[]
 }
 
+export interface SupplierQuotePage {
+  items: SupplierQuoteRow[]
+  /** Every part that matches the filter, not just this page. */
+  total: number
+  page: number
+  size: number
+}
+
 export interface RfqQuotes {
   canDistribute: boolean
   parts: PartRow[]
@@ -255,7 +263,11 @@ const quoteApi = api.enhanceEndpoints({ addTagTypes: ['Quote', 'QuoteDocuments',
       query: ({ rfqId, ...body }) => ({ url: `/rfqs/${rfqId}/quotes`, method: 'POST', body }),
       invalidatesTags: ['Quote', 'Rfq'],
     }),
-    myQuotes: build.query<SupplierQuoteRow[], void>({ query: () => '/quotes', providesTags: ['Quote'] }),
+    // One page, newest first; filtered (supplier status vocabulary) and searched by the server.
+    myQuotes: build.query<SupplierQuotePage, { page: number; size: number; status?: string; q?: string }>({
+      query: ({ page, size, status, q }) => ({ url: '/quotes', params: { page, size, ...(status ? { status } : {}), ...(q ? { q } : {}) } }),
+      providesTags: ['Quote'],
+    }),
     quote: build.query<QuoteView, number>({ query: (id) => `/quotes/${id}`, providesTags: ['Quote'] }),
     quoteVersions: build.query<VersionView[], number>({ query: (id) => `/quotes/${id}/versions`, providesTags: ['Quote'] }),
     saveQuote: build.mutation<QuoteView, { id: number; form: QuoteForm }>({

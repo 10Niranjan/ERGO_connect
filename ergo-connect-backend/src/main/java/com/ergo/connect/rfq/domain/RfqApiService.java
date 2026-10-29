@@ -211,6 +211,19 @@ class RfqApiService implements RfqApi {
 
 	@Override
 	@Transactional(readOnly = true)
+	public Set<Long> matchingItems(Collection<Long> itemIds, String needle) {
+		if (itemIds.isEmpty() || !ModuleSwitch.readable(Module.RFQ)) {
+			return Set.of();
+		}
+		String pattern = "%" + needle.toLowerCase(java.util.Locale.ROOT).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+		return new java.util.HashSet<>(jdbc.queryForList("""
+				SELECT i.rfq_item_id FROM rfq_items i JOIN rfqs r ON r.rfq_id = i.rfq_id
+				WHERE i.rfq_item_id = ANY (?) AND (lower(r.rfq_number) LIKE ? OR lower(i.part_number) LIKE ?
+				OR lower(i.description) LIKE ?)""", Long.class, (Object) itemIds.toArray(Long[]::new), pattern, pattern, pattern));
+	}
+
+	@Override
+	@Transactional(readOnly = true)
 	public List<DocumentInfo> supplierDocuments(long rfqId, Collection<Long> itemIds) {
 		if (itemIds.isEmpty() || !ModuleSwitch.readable(Module.RFQ)) {
 			return List.of();

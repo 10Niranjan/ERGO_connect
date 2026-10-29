@@ -212,7 +212,7 @@ class QuoteWorkflowAdversarialTests extends AdversarialSupport {
 		call(get("/api/rfqs/{id}/parts", rfq), buyer, null)
 			.andExpect(jsonPath("$[*].status", contains("APPROVED", "IN_PROGRESS", "APPROVED")));
 		call(get("/api/quotes/{id}", q2), sellerX, null).andExpect(status().isNotFound());
-		call(get("/api/quotes"), sellerX, null).andExpect(jsonPath("$", hasSize(1)));
+		call(get("/api/quotes"), sellerX, null).andExpect(jsonPath("$.items", hasSize(1)));
 
 		// sent again, to the other supplier: its own sub-RFQ numbering, ERGO's global one
 		distribute(rfq, supplierY, List.of(p.get(1)));
@@ -301,7 +301,7 @@ class QuoteWorkflowAdversarialTests extends AdversarialSupport {
 		call(post("/api/quotes/{id}/recall", quote), ergoRfq, "{\"comment\": \"x\"}").andExpect(status().isConflict());
 		call(post("/api/rfqs/{id}/quotes", rfq), ergoRfq, TestRfq.distribution(supplierY, parts(rfq)))
 			.andExpect(status().isConflict());
-		call(get("/api/quotes"), sellerX, null).andExpect(jsonPath("$[0].quotingOpen").value(false));
+		call(get("/api/quotes"), sellerX, null).andExpect(jsonPath("$.items[0].quotingOpen").value(false));
 		assertThat(statusOf(quote)).isEqualTo("DRAFT_SAVED");
 		// the customer cannot revive it
 		call(post("/api/rfqs/{id}/submit", rfq), buyer, "{}").andExpect(status().isConflict());

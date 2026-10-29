@@ -616,7 +616,7 @@ class CommentsTests {
 				call(get("/api/rfqs/{id}", rfqId), ergoRfq, null).andReturn().getResponse().getContentAsString(),
 				"$.number");
 		List<Number> ids = JsonPath.read(call(get("/api/quotes"), supplier, null).andReturn().getResponse()
-			.getContentAsString(), "$[?(@.rfqNumber == '" + number + "')].id");
+			.getContentAsString(), "$.items[?(@.rfqNumber == '" + number + "')].id");
 		return ids.get(0).longValue();
 	}
 

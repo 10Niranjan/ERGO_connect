@@ -139,6 +139,10 @@ class QuoteSwitchTests extends AdversarialSupport {
 		// a supplier keeps the assigned part (an RFQ fact) but sees no quote, status, version or file of the module
 		String list = text(get("/api/quotes"), sellerX, null);
 		assertThat(list).doesNotContain("\"status\"", "\"version\"", "submittedAt");
+		// the status filter is ignored here, so the total cannot reveal the quote states
+		String total = text(get("/api/quotes"), sellerX, null).replaceAll(".*\"total\":(\\d+).*", "$1");
+		assertThat(text(get("/api/quotes?status=SUBMITTED"), sellerX, null)).contains("\"total\":" + total);
+		assertThat(text(get("/api/quotes?status=NOT_STARTED"), sellerX, null)).contains("\"total\":" + total);
 		String one = text(get("/api/quotes/{id}", f.submitted), sellerX, null);
 		assertThat(one).doesNotContain("\"quote\"", "\"status\"", "productionPiecePrice", "revisionReason");
 		call(get("/api/quotes/{id}/versions", f.submitted), sellerX, null).andExpect(status().isForbidden());

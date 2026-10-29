@@ -24,6 +24,10 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -89,6 +93,8 @@ public class QuoteService {
 
 	/** linked_module of files attached to a quote. */
 	static final String MODULE = "quotation";
+	private static final int MAX_PAGE_SIZE = 100;
+	private static final int MAX_SEARCH_LENGTH = 100;
 
 	/** The role sheet (ModuleAccess), Quotation column. View (ERGO KAM/NPD are scoped by the RFQ module). */
 	private static final Set<Role> ERGO_VIEWERS = ModuleAccess.viewers(Module.QUOTATION, CompanyType.ERGO);
@@ -291,13 +297,43 @@ public class QuoteService {
 
 	// ---------------------------------------------------------------- supplier: the parts sent to me
 
+	/**
+	 * One page of the supplier's parts, newest first. Filtered by the supplier's own status vocabulary and searched by
+	 * RFQ number, part number or description (the RFQ module answers that last part, over this supplier's parts only).
+	 */
 	@Transactional(readOnly = true)
-	public List<?> mine() {
-		if (!quoteVisible(CurrentUser.get())) {
-			// no Quotation access: the quote is never loaded, only the assigned part is listed
-			return assignedRfqs();
+	public QuoteDtos.SupplierPage<?> mine(int page, int size, String status, String q) {
+		CurrentUser me = CurrentUser.get();
+		boolean withQuotes = quoteVisible(me); // without Quotation access only the assigned part is listed, never its quote
+		int pageSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+		int pageNo = Math.min(Math.max(page, 0), Integer.MAX_VALUE / pageSize - 1); // the offset must fit an int, else a 500
+		long supplier = me.companyId();
+		Specification<Invitation> spec = (root, query, cb) -> cb.and(cb.equal(root.get("supplierCompanyId"), supplier),
+				cb.notEqual(root.get("status"), RECALLED));
+		if (withQuotes && status != null && !status.isBlank()) {
+			QuoteStatus wanted;
+			try {
+				wanted = QuoteStatus.valueOf(status);
+			}
+			catch (IllegalArgumentException e) {
+				throw ApiException.unprocessable("That status is not one you can filter by");
+			}
+			Set<QuoteStatus> in = Arrays.stream(QuoteStatus.values()).filter(s -> s.forSupplier() == wanted)
+				.collect(Collectors.toCollection(() -> EnumSet.noneOf(QuoteStatus.class)));
+			spec = spec.and((root, query, cb) -> root.get("status").in(in));
 		}
-		return quoteRows();
+		String needle = q == null ? "" : q.replaceAll("\\p{Cntrl}", "").strip(); // a NUL makes Postgres reject the query
+		if (!needle.isEmpty()) {
+			Set<Long> hits = rfqs.matchingItems(invitations.itemIdsOf(supplier),
+					needle.length() > MAX_SEARCH_LENGTH ? needle.substring(0, MAX_SEARCH_LENGTH) : needle);
+			if (hits.isEmpty()) {
+				return new QuoteDtos.SupplierPage<>(List.of(), 0, pageNo, pageSize);
+			}
+			spec = spec.and((root, query, cb) -> root.get("rfqItemId").in(hits));
+		}
+		Page<Invitation> found = invitations.findAll(spec, PageRequest.of(pageNo, pageSize, Sort.by(Sort.Direction.DESC, "id")));
+		List<?> rows = withQuotes ? quoteRows(found.getContent()) : assignedRfqs(found.getContent());
+		return new QuoteDtos.SupplierPage<>(rows, found.getTotalElements(), pageNo, pageSize);
 	}
 
 	private List<Invitation> myInvitations() {
@@ -311,8 +347,7 @@ public class QuoteService {
 			.collect(Collectors.toMap(s -> s.id, Function.identity()));
 	}
 
-	private List<SupplierAssignedRfqRow> assignedRfqs() {
-		List<Invitation> mine = myInvitations();
+	private List<SupplierAssignedRfqRow> assignedRfqs(List<Invitation> mine) {
 		Map<Long, SupplierRfqItem> parts = rfqs.forSupplierItems(mine.stream().map(i -> i.rfqItemId).toList());
 		Map<Long, SubRfq> subs = subsOf(mine);
 		return mine.stream().filter(i -> parts.containsKey(i.rfqItemId)).map(i -> { // none while the RFQ module is hidden
@@ -325,7 +360,10 @@ public class QuoteService {
 	/** The supplier's parts with their quote status; only for roles that may see quotes. */
 	@Transactional(readOnly = true)
 	List<SupplierQuoteRow> quoteRows() {
-		List<Invitation> mine = myInvitations();
+		return quoteRows(myInvitations());
+	}
+
+	private List<SupplierQuoteRow> quoteRows(List<Invitation> mine) {
 		Map<Long, SupplierRfqItem> parts = rfqs.forSupplierItems(mine.stream().map(i -> i.rfqItemId).toList());
 		Map<Long, SubRfq> subs = subsOf(mine);
 		Map<Long, SupplierQuote> byInvitation = reader.byInvitation(mine);

@@ -237,7 +237,7 @@ class QuoteLeakageIsolationTests extends AdversarialSupport {
 					"SECRET", "71.7171", "82.8282", "123.4321", "130.5555", "77.7777", "CUSTOMER-COMMENT-SENTINEL",
 					"shared-drawing.pdf", "customer-drawing.pdf", "costing-internal.xlsx", "x-process-sheet.pdf", "marginAmount");
 		}
-		call(get("/api/quotes"), sellerZ, null).andExpect(jsonPath("$", hasSize(0)));
+		call(get("/api/quotes"), sellerZ, null).andExpect(jsonPath("$.items", hasSize(0)));
 		call(get("/api/rfqs"), buyerB, null).andExpect(jsonPath("$.items[*].id", not(hasItem((int) s.rfq))));
 		call(get("/api/rfqs"), kam, null).andExpect(jsonPath("$.items", hasSize(0)));
 		call(get("/api/rfqs"), npd, null).andExpect(jsonPath("$.items[*].id", not(hasItem((int) s.rfq))));

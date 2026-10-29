@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.ergo.connect.quotation.domain.QuoteDtos;
 import com.ergo.connect.quotation.domain.QuoteDtos.CommentForm;
 import com.ergo.connect.quotation.domain.QuoteDtos.DistributeForm;
 import com.ergo.connect.quotation.domain.QuoteDtos.DocumentView;
@@ -92,8 +93,9 @@ class QuoteController {
 	/** The supplier's "Assigned RFQs" (SRS §12.15). */
 	@GetMapping("/api/quotes")
 	@PreAuthorize(SUPPLIER_RFQ_VIEWERS)
-	List<?> mine() {
-		return quotes.mine();
+	QuoteDtos.SupplierPage<?> mine(@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "25") int size,
+			@RequestParam(required = false) String status, @RequestParam(required = false) String q) {
+		return quotes.mine(page, size, status, q);
 	}
 
 	@GetMapping("/api/quotes/{id}")

@@ -25,6 +25,14 @@ interface InvitationRepository extends Repository<Invitation, Long> {
 
 	List<Invitation> findBySupplierCompanyIdOrderByIdDesc(Long supplierCompanyId);
 
+	/** The supplier's list page. The only Specification method on purpose (see RfqRepository). */
+	org.springframework.data.domain.Page<Invitation> findAll(org.springframework.data.jpa.domain.Specification<Invitation> spec,
+			org.springframework.data.domain.Pageable pageable);
+
+	/** Ids only, to ask the RFQ module which of this supplier's parts match a search. */
+	@org.springframework.data.jpa.repository.Query("select i.rfqItemId from Invitation i where i.supplierCompanyId = :supplier and i.status <> com.ergo.connect.quotation.domain.QuoteStatus.RECALLED")
+	List<Long> itemIdsOf(@org.springframework.data.repository.query.Param("supplier") Long supplier);
+
 	/** Dashboard "Quotes pending submission" widget (ERGO Admin/Management/RFQ only; {@code QuoteService} filters
 	 * by each invitation's own RFQ still being open for quotes). */
 	List<Invitation> findByStatusIn(java.util.Collection<QuoteStatus> statuses);
