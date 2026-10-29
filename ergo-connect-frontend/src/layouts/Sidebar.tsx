@@ -15,6 +15,7 @@ import RequestQuoteIcon from '@mui/icons-material/RequestQuote'
 import SecurityIcon from '@mui/icons-material/Security'
 import TuneIcon from '@mui/icons-material/Tune'
 import {
+  alpha,
   Avatar,
   Box,
   Divider,
@@ -64,7 +65,7 @@ export function Sidebar({ session, mobileOpen, onCloseMobile }: SidebarProps) {
   const initials = `${session.user.firstName[0] ?? ''}${session.user.lastName[0] ?? ''}`
 
   const drawerContent = (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', bgcolor: 'chrome.navBg', color: 'chrome.navText' }}>
       {/* Brand header */}
       <Box
         sx={{
@@ -79,7 +80,7 @@ export function Sidebar({ session, mobileOpen, onCloseMobile }: SidebarProps) {
         <BrandLogo height={40} />
       </Box>
 
-      <Divider />
+      <Divider sx={{ borderColor: 'currentColor', opacity: 0.15 }} />
 
       {/* Navigation items list */}
       <Box sx={{ flexGrow: 1, overflowY: 'auto', py: 1 }}>
@@ -105,7 +106,8 @@ export function Sidebar({ session, mobileOpen, onCloseMobile }: SidebarProps) {
                       fontWeight: 700,
                       letterSpacing: '0.08em',
                       textTransform: 'uppercase',
-                      color: 'text.secondary',
+                      color: 'inherit',
+                      opacity: 0.7,
                       bgcolor: 'transparent',
                       lineHeight: 'initial',
                     }}
@@ -129,13 +131,13 @@ export function Sidebar({ session, mobileOpen, onCloseMobile }: SidebarProps) {
                       borderRadius: 1.5,
                       py: 0.8,
                       px: 1.5,
-                      color: 'text.secondary',
+                      color: 'chrome.navText',
                       transition: 'all 100ms linear',
-                      '&:hover': { bgcolor: 'grey.50', color: 'text.primary' },
+                      '&:hover': { bgcolor: (t) => alpha(t.palette.chrome.navText, 0.1) },
                       '&.active': {
-                        bgcolor: 'primary.light',
-                        color: 'primary.main',
-                        '& .MuiListItemIcon-root': { color: 'primary.main' },
+                        bgcolor: 'chrome.navActiveBg',
+                        color: 'chrome.navActiveText',
+                        '& .MuiListItemIcon-root': { color: 'chrome.navActiveText' },
                         '& .MuiTypography-root': { fontWeight: 600 },
                       },
                     }}
@@ -159,17 +161,17 @@ export function Sidebar({ session, mobileOpen, onCloseMobile }: SidebarProps) {
         })}
       </Box>
 
-      <Divider />
+      <Divider sx={{ borderColor: 'currentColor', opacity: 0.15 }} />
 
       {/* User / Company card at sidebar bottom */}
-      <Box sx={{ p: 2, bgcolor: 'grey.50' }}>
+      <Box sx={{ p: 2, bgcolor: (t) => alpha(t.palette.chrome.navText, 0.08) }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
           <Avatar sx={{ width: 34, height: 34, fontSize: 13, fontWeight: 600, bgcolor: 'primary.light', color: 'primary.main' }}>{initials}</Avatar>
           <Box sx={{ minWidth: 0, flexGrow: 1 }}>
-            <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
+            <Typography variant="body2" sx={{ fontWeight: 600, color: 'inherit' }} noWrap>
               {session.user.firstName} {session.user.lastName}
             </Typography>
-            <Typography variant="caption" sx={{ color: 'text.secondary' }} noWrap component="div">
+            <Typography variant="caption" sx={{ color: 'inherit', opacity: 0.75 }} noWrap component="div">
               {session.user.companyName}
             </Typography>
           </Box>

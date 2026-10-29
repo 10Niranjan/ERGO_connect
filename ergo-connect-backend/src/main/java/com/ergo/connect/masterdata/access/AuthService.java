@@ -99,6 +99,25 @@ public class AuthService {
 	/** Checked for unknown emails so they take as long as wrong passwords (no account enumeration by timing). */
 	private final String dummyHash;
 
+	/** Dev profile only (application-dev.yml): skips the 2FA challenge. Never set outside dev. */
+	@org.springframework.beans.factory.annotation.Value("${ergo.security.skip-otp:false}")
+	private boolean skipOtp;
+
+	@org.springframework.beans.factory.annotation.Autowired
+	private org.springframework.core.env.Environment env;
+
+	/** Fail closed: the flag disables mandatory Super Admin 2FA, so it may only ever be on in the dev profile. */
+	@jakarta.annotation.PostConstruct
+	void guardSkipOtp() {
+		if (!skipOtp) {
+			return;
+		}
+		if (!env.acceptsProfiles(org.springframework.core.env.Profiles.of("dev"))) {
+			throw new IllegalStateException("ergo.security.skip-otp disables 2FA and is only allowed in the dev profile");
+		}
+		log.warn("ergo.security.skip-otp is ON: 2FA login codes are skipped. Dev only.");
+	}
+
 	AuthService(UserRepository users, CompanyRepository companies, SessionStore sessions, RoleCatalog roleCatalog,
 			PasswordEncoder passwordEncoder, AccessTokens accessTokens, LoginRateLimiter rateLimiter,
 			ChangePasswordRateLimiter changePasswordRateLimiter, PasswordResetTokenStore resetTokens,
@@ -156,7 +175,7 @@ public class AuthService {
 			user.twoFactorEnabled = true;
 			audit.record(User.class, user.id, "TWO_FACTOR_ENABLED", null, null, null);
 		}
-		if (user.twoFactorEnabled) {
+		if (user.twoFactorEnabled && !skipOtp) {
 			// no session yet - credentials proved identity, but the login isn't complete until verifyOtp(). The IP
 			// slot is deliberately NOT released here (security review finding L4): a password holder could
 			// otherwise call /login over and over at no cost, each time emailing the victim's inbox a fresh code.

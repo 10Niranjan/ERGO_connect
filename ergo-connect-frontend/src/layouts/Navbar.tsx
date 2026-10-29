@@ -1,3 +1,5 @@
+import DarkModeIcon from '@mui/icons-material/DarkMode'
+import LightModeIcon from '@mui/icons-material/LightMode'
 import MenuIcon from '@mui/icons-material/Menu'
 import {
   AppBar,
@@ -15,6 +17,7 @@ import {
 } from '@mui/material'
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
+import { useColorMode } from '@/app/providers'
 import { useLogoutMutation, useSwitchRoleMutation } from '@/features/auth/services/authApi'
 import type { Role, Session } from '@/features/auth/store/authSlice'
 import { NotificationsBell } from '@/features/notifications/components/NotificationsBell'
@@ -29,6 +32,7 @@ export function Navbar({ session, onToggleMobile }: NavbarProps) {
   const [logout] = useLogoutMutation()
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
   const navigate = useNavigate()
+  const { mode, toggle } = useColorMode()
 
   const changeRole = async (role: Role) => {
     try {
@@ -54,6 +58,7 @@ export function Navbar({ session, onToggleMobile }: NavbarProps) {
             aria-label="open navigation menu"
             edge="start"
             onClick={onToggleMobile}
+            color="inherit"
             sx={{ mr: 1, display: { md: 'none' } }}
           >
             <MenuIcon />
@@ -73,7 +78,12 @@ export function Navbar({ session, onToggleMobile }: NavbarProps) {
               disabled={switching.isLoading}
               onChange={(event) => void changeRole(event.target.value as Role)}
               inputProps={{ 'aria-label': 'Active role' }}
-              sx={{ minWidth: 180 }}
+              sx={{
+                minWidth: 180,
+                color: 'inherit',
+                '& .MuiSelect-icon': { color: 'inherit' },
+                '& .MuiOutlinedInput-notchedOutline': { borderColor: 'currentColor', opacity: 0.4 },
+              }}
             >
               {session.roles.map((role) => (
                 <MenuItem key={role.code} value={role.code}>
@@ -87,6 +97,14 @@ export function Navbar({ session, onToggleMobile }: NavbarProps) {
 
           <NotificationsBell />
 
+          <IconButton
+            aria-label={mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            color="inherit"
+            onClick={toggle}
+          >
+            {mode === 'dark' ? <LightModeIcon /> : <DarkModeIcon />}
+          </IconButton>
+
           <IconButton aria-label="Account menu" onClick={(event) => setMenuAnchor(event.currentTarget)}>
             <Avatar sx={{ width: 32, height: 32, fontSize: 13, fontWeight: 600, bgcolor: 'primary.light', color: 'primary.main' }}>{initials}</Avatar>
           </IconButton>
@@ -98,6 +116,9 @@ export function Navbar({ session, onToggleMobile }: NavbarProps) {
               />
             </MenuItem>
             <Divider />
+            {session.activeRole === 'ERGO_ADMIN' && (
+              <MenuItem onClick={() => { setMenuAnchor(null); navigate('/admin/appearance') }}>Appearance</MenuItem>
+            )}
             <MenuItem onClick={() => navigate('/change-password')}>Change password</MenuItem>
             <MenuItem onClick={handleSignOut}>Sign out</MenuItem>
           </Menu>

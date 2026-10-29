@@ -34,6 +34,8 @@ import {
   USERS_VIEW,
 } from '@/features/permissions'
 import { MasterDataPage } from '@/features/admin/pages/MasterDataPage'
+import { RequireRole } from '@/features/auth/components/RequireRole'
+import { AppearancePage } from '@/features/admin/pages/AppearancePage'
 import { PermissionManagementPage } from '@/features/admin/pages/PermissionManagementPage'
 import { UsersPage } from '@/features/admin/pages/UsersPage'
 import { CompaniesPage } from '@/features/companies/pages/CompaniesPage'
@@ -196,7 +198,13 @@ export const router = createBrowserRouter([
           { element: <RequirePermission rules={USERS_VIEW} />, children: [{ path: '/admin/users', element: <UsersPage /> }] },
           {
             element: <RequirePermission rules={PERMISSIONS_VIEW} />,
-            children: [{ path: '/admin/permissions', element: <PermissionManagementPage /> }],
+            children: [
+              { path: '/admin/permissions', element: <PermissionManagementPage /> },
+            ],
+          },
+          {
+            element: <RequireRole roles={['ERGO_ADMIN']} />,
+            children: [{ path: '/admin/appearance', element: <AppearancePage /> }],
           },
           {
             element: <RequirePermission rules={MASTER_DATA_VIEW} />,
