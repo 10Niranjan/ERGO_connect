@@ -1,11 +1,13 @@
 package com.ergo.connect.dashboard.service;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.function.Function;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +31,8 @@ import com.ergo.connect.quality.api.QualityApi.DeviationDashboardItem;
 import com.ergo.connect.quality.api.QualityApi.NcrDashboardItem;
 import com.ergo.connect.quality.api.QualityApi.SupplierNcrCount;
 import com.ergo.connect.quotation.api.QuotationApi;
+import com.ergo.connect.quotation.api.QuotationApi.PartStatusItem;
+import com.ergo.connect.quotation.api.QuotationApi.SupplierQuoteItem;
 import com.ergo.connect.rfq.api.RfqApi;
 import com.ergo.connect.rfq.api.RfqApi.RfqDashboardItem;
 
@@ -50,8 +54,11 @@ public class DashboardService {
 
 	private final Directory directory;
 
+	private final int maxRows;
+
 	public DashboardService(RfqApi rfqApi, QuotationApi quotationApi, NpdApi npdApi, OfpApi ofpApi,
-			QualityApi qualityApi, Directory directory) {
+			QualityApi qualityApi, Directory directory, @Value("${ergo.dashboard.max-rows:25}") int maxRows) {
+		this.maxRows = maxRows;
 		this.rfqApi = rfqApi;
 		this.quotationApi = quotationApi;
 		this.npdApi = npdApi;
@@ -84,6 +91,55 @@ public class DashboardService {
 		return ModuleAccess.canView(CurrentUser.get().role(), module) ? source.getAsInt() : 0;
 	}
 
+	/** The viewer's own side, for "waiting on me" in {@link AttentionOrder}. */
+	private static Awaiting mine() {
+		return switch (CurrentUser.get().companyType()) {
+			case ERGO -> Awaiting.ERGO;
+			case CUSTOMER -> Awaiting.CUSTOMER;
+			case SUPPLIER -> Awaiting.SUPPLIER;
+		};
+	}
+
+	/** The rows a section keeps: what needs attention first, at most {@code ergo.dashboard.max-rows} of them. */
+	private <T> List<T> top(List<T> all, Comparator<T> order) {
+		return all.size() <= maxRows ? all.stream().sorted(order).toList() : all.stream().sorted(order).limit(maxRows).toList();
+	}
+
+	private List<RfqDashboardItem> topRfq(List<RfqDashboardItem> all) {
+		return top(all, AttentionOrder.of(RfqDashboardItem::overdue, RfqDashboardItem::awaiting,
+				RfqDashboardItem::targetQuoteDate, RfqDashboardItem::id, mine()));
+	}
+
+	private List<NpdDashboardItem> topNpd(List<NpdDashboardItem> all) {
+		return top(all, AttentionOrder.of(p -> p.delayDays() != null && p.delayDays() > 0, NpdDashboardItem::awaiting,
+				NpdDashboardItem::targetSampleDate, NpdDashboardItem::id, mine()));
+	}
+
+	private List<OrderDashboardItem> topOrders(List<OrderDashboardItem> all) {
+		return top(all, AttentionOrder.of(OrderDashboardItem::atRisk, OrderDashboardItem::awaiting,
+				OrderDashboardItem::committedDispatchDate, OrderDashboardItem::id, mine()));
+	}
+
+	private List<NcrDashboardItem> topNcrs(List<NcrDashboardItem> all) {
+		return top(all, AttentionOrder.of(NcrDashboardItem::overdue, NcrDashboardItem::awaiting,
+				NcrDashboardItem::targetClosureDate, NcrDashboardItem::id, mine()));
+	}
+
+	private List<DeviationDashboardItem> topDeviations(List<DeviationDashboardItem> all) {
+		return top(all, AttentionOrder.of(d -> false, DeviationDashboardItem::awaiting,
+				DeviationDashboardItem::validityEndDate, DeviationDashboardItem::id, mine()));
+	}
+
+	private List<SupplierQuoteItem> topQuotes(List<SupplierQuoteItem> all) {
+		return top(all, AttentionOrder.of(SupplierQuoteItem::overdue, q -> Awaiting.SUPPLIER,
+				SupplierQuoteItem::responseDueDate, SupplierQuoteItem::invitationId, mine()));
+	}
+
+	/** Parts carry no due date or owner: newest RFQ first, parts in their own order. */
+	private List<PartStatusItem> topParts(List<PartStatusItem> all) {
+		return top(all, Comparator.comparingLong(PartStatusItem::rfqId).reversed().thenComparingLong(PartStatusItem::rfqItemId));
+	}
+
 	private ManagementDashboard management() {
 		List<RfqDashboardItem> rfq = items(Module.RFQ, rfqApi::dashboardItems);
 		List<NpdDashboardItem> npd = items(Module.NPD, npdApi::dashboardItems);
@@ -105,10 +161,11 @@ public class DashboardService {
 					.filter(d -> "UNDER_REVIEW".equals(d.status()) || "CUSTOMER_APPROVAL_PENDING".equals(d.status()))
 					.count();
 
+		List<PartStatusItem> parts = items(Module.QUOTATION, quotationApi::partStatusItems);
 		return new ManagementDashboard(rfq.size(), count(Module.QUOTATION, quotationApi::pendingSubmissionCount), awaitingCustomerApproval,
-				count(Module.NPD, npdApi::samplePosAwaitingCount), npd.size(), delayed, highRisk, atRisk, ncrs.size(),
-				deviations.size(), supplierPerformance(), pendingApprovals,
-				items(Module.QUOTATION, quotationApi::partStatusItems));
+				count(Module.NPD, npdApi::samplePosAwaitingCount), npd.size(), topNpd(delayed), delayed.size(),
+				topNpd(highRisk), highRisk.size(), topOrders(atRisk), atRisk.size(), ncrs.size(), deviations.size(),
+				supplierPerformance(), pendingApprovals, topParts(parts), parts.size());
 	}
 
 	/** Combines OFP's per-supplier dispatch timeliness with Quality's per-supplier open-NCR count. Both facade
@@ -149,19 +206,29 @@ public class DashboardService {
 			.filter(a -> a == Awaiting.CUSTOMER || a == Awaiting.SUPPLIER)
 			.count();
 
-		return new FunctionalDashboard(rfq, npd, orders, ncrs, deviations, overdue, awaitingMe, awaitingExternal,
-				items(Module.QUOTATION, quotationApi::partStatusItems));
+		List<PartStatusItem> parts = items(Module.QUOTATION, quotationApi::partStatusItems);
+		return new FunctionalDashboard(topRfq(rfq), rfq.size(), topNpd(npd), npd.size(), topOrders(orders), orders.size(),
+				topNcrs(ncrs), ncrs.size(), topDeviations(deviations), deviations.size(), overdue, awaitingMe,
+				awaitingExternal, topParts(parts), parts.size());
 	}
 
 	private CustomerDashboard customer() {
-		return new CustomerDashboard(items(Module.RFQ, rfqApi::dashboardItems), items(Module.NPD, npdApi::dashboardItems), items(Module.OFP, ofpApi::dashboardItems),
-				items(Module.QUALITY, qualityApi::ncrDashboardItems),
-				items(Module.QUOTATION, quotationApi::partStatusItems));
+		List<RfqDashboardItem> rfq = items(Module.RFQ, rfqApi::dashboardItems);
+		List<NpdDashboardItem> npd = items(Module.NPD, npdApi::dashboardItems);
+		List<OrderDashboardItem> orders = items(Module.OFP, ofpApi::dashboardItems);
+		List<NcrDashboardItem> ncrs = items(Module.QUALITY, qualityApi::ncrDashboardItems);
+		List<PartStatusItem> parts = items(Module.QUOTATION, quotationApi::partStatusItems);
+		return new CustomerDashboard(topRfq(rfq), rfq.size(), topNpd(npd), npd.size(), topOrders(orders), orders.size(),
+				topNcrs(ncrs), ncrs.size(), topParts(parts), parts.size());
 	}
 
 	private SupplierDashboard supplier() {
-		return new SupplierDashboard(items(Module.QUOTATION, quotationApi::dashboardItems), items(Module.NPD, npdApi::dashboardItems), items(Module.OFP, ofpApi::dashboardItems),
-				items(Module.QUALITY, qualityApi::ncrDashboardItems));
+		List<SupplierQuoteItem> quotes = items(Module.QUOTATION, quotationApi::dashboardItems);
+		List<NpdDashboardItem> npd = items(Module.NPD, npdApi::dashboardItems);
+		List<OrderDashboardItem> orders = items(Module.OFP, ofpApi::dashboardItems);
+		List<NcrDashboardItem> ncrs = items(Module.QUALITY, qualityApi::ncrDashboardItems);
+		return new SupplierDashboard(topQuotes(quotes), quotes.size(), topNpd(npd), npd.size(), topOrders(orders),
+				orders.size(), topNcrs(ncrs), ncrs.size());
 	}
 
 }

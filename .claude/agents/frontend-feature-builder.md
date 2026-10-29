@@ -29,3 +29,10 @@ You build the ERGO Connect web UI: a clean, professional, desktop-first B2B inte
 
 ## Verify
 From `ergo-connect-frontend/`: `npm run lint && npm run build` must pass. Report the results honestly. If the backend is running, check the screen in the browser at http://localhost:5173.
+
+## Conventions added 2026-10-29 (Phase 8 follow-ups)
+- **Confirm dialogs:** `useConfirm()` from `@/components/ui/useConfirm` (`if (!(await confirm('...'))) return`, render the returned `dialog` once). Never `window.confirm`: it is inconsistent with the MUI dialogs and freezes browser automation.
+- **Dates:** `formatDate` / `formatDateTime` from `@/utils/date` (dd/mm/yyyy, en-GB, matches the date inputs). Never call `toLocaleString()` / `toLocaleDateString()` directly.
+- **Lists are server-paged:** `RfqListPage` is the pattern (TablePagination, 300 ms debounced search, status filter from a static per-audience list, fall back to the last page when the current one empties). Never fetch a whole list. Dashboard sections take `items`, `total` and `viewAll` and show "Showing the N that need attention first, of M" with a View all link.
+- Wording shared between sample projects and OFP production projects says "ERGO", not "ERGO NPD".
+- Checks: `npx tsc -b`, `npm run lint` and `npm run build` must all pass. nginx now gzips API JSON and the bundle.

@@ -88,6 +88,10 @@ export interface SupplierPerformanceRow {
   onTimeDispatchedCount: number
 }
 
+/**
+ * Every list below is capped to the rows that need attention first; its sibling `...Total` is the true size, so a screen can
+ * say "25 of 2,513" and link to the module's own list (Phase 8o). KPI counts are never capped.
+ */
 export interface ManagementDashboard {
   audience: 'MANAGEMENT'
   openRfqCount: number
@@ -96,43 +100,62 @@ export interface ManagementDashboard {
   samplePosAwaitingCount: number
   activeNpdCount: number
   delayedNpdProjects: NpdDashboardItem[]
+  delayedNpdTotal: number
   highRiskNpdProjects: NpdDashboardItem[]
+  highRiskNpdTotal: number
   ordersAtRisk: OrderDashboardItem[]
+  ordersAtRiskTotal: number
   openNcrCount: number
   openDeviationCount: number
   supplierPerformance: SupplierPerformanceRow[]
   pendingApprovalsCount: number
   partItems: PartStatusItem[]
+  partTotal: number
 }
 
 export interface FunctionalDashboard {
   audience: 'FUNCTIONAL'
   rfqItems: RfqDashboardItem[]
+  rfqTotal: number
   npdItems: NpdDashboardItem[]
+  npdTotal: number
   orderItems: OrderDashboardItem[]
+  orderTotal: number
   ncrItems: NcrDashboardItem[]
+  ncrTotal: number
   deviationItems: DeviationDashboardItem[]
+  deviationTotal: number
   overdueCount: number
   awaitingMeCount: number
   awaitingExternalCount: number
   partItems: PartStatusItem[]
+  partTotal: number
 }
 
 export interface CustomerDashboard {
   audience: 'CUSTOMER'
   rfqItems: RfqDashboardItem[]
+  rfqTotal: number
   npdItems: NpdDashboardItem[]
+  npdTotal: number
   orderItems: OrderDashboardItem[]
+  orderTotal: number
   ncrItems: NcrDashboardItem[]
+  ncrTotal: number
   partItems: PartStatusItem[]
+  partTotal: number
 }
 
 export interface SupplierDashboard {
   audience: 'SUPPLIER'
   quoteItems: SupplierQuoteItem[]
+  quoteTotal: number
   npdItems: NpdDashboardItem[]
+  npdTotal: number
   orderItems: OrderDashboardItem[]
+  orderTotal: number
   ncrItems: NcrDashboardItem[]
+  ncrTotal: number
 }
 
 export type DashboardView = ManagementDashboard | FunctionalDashboard | CustomerDashboard | SupplierDashboard

@@ -245,7 +245,7 @@ class PermissionAdminTests {
 				.andExpect(result -> {
 					if (result.getResponse().getStatus() == 200) {
 						org.assertj.core.api.Assertions
-							.assertThat(JsonPath.<List<Number>>read(result.getResponse().getContentAsString(), "$[*].id"))
+							.assertThat(JsonPath.<List<Number>>read(result.getResponse().getContentAsString(), "$.items[*].id"))
 							.as("level %s list", level)
 							.doesNotContain((Number) (int) rfqId, (Number) rfqId);
 					}

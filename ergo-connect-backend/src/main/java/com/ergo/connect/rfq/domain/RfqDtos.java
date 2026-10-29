@@ -105,6 +105,10 @@ public final class RfqDtos {
 	public sealed interface RfqRow permits ErgoRfqRow, CustomerRfqRow {
 	}
 
+	/** One page of the RFQ list, newest first. {@code total} counts every RFQ the caller can see that matches the filter. */
+	public record RfqPage(List<RfqRow> items, long total, int page, int size) {
+	}
+
 	/** {@code parts}: the part numbers of the RFQ's items, in order. */
 	public record ErgoRfqRow(long id, String number, RfqStatus status, String customer, List<String> parts,
 			LocalDate targetQuoteDate, Priority priority, String owner, Instant createdAt) implements RfqRow {

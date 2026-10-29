@@ -33,6 +33,14 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import jakarta.persistence.criteria.Predicate;
+import jakarta.persistence.criteria.Root;
+import jakarta.persistence.criteria.Subquery;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -66,9 +74,11 @@ import com.ergo.connect.rfq.domain.RfqDtos.ItemView;
 import com.ergo.connect.rfq.domain.RfqDtos.Named;
 import com.ergo.connect.rfq.domain.RfqDtos.RfqAction;
 import com.ergo.connect.rfq.domain.RfqDtos.RfqForm;
+import com.ergo.connect.rfq.domain.RfqDtos.RfqPage;
 import com.ergo.connect.rfq.domain.RfqDtos.RfqRow;
 import com.ergo.connect.rfq.domain.RfqDtos.RfqView;
 import com.ergo.connect.rfq.domain.RfqDtos.StepView;
+import com.ergo.connect.rfq.domain.RfqStatus.CustomerStatus;
 import com.ergo.connect.rfq.domain.RfqDtos.TargetsView;
 
 /**
@@ -147,35 +157,116 @@ public class RfqService {
 
 	// ---------------------------------------------------------------- reads
 
+	/** The most rows one page may carry; the list is paged, filtered and searched in the database (Phase 8o). */
+	static final int MAX_PAGE_SIZE = 100;
+
+	/** Longest search text used; anything past it is ignored. */
+	private static final int MAX_SEARCH_LENGTH = 100;
+
+	/**
+	 * One page of the caller's RFQs, newest first. Record scope is the same as ever (own company / assigned accounts /
+	 * approved ones for NPD) but applied in the query, then narrowed by {@code status} (an ERGO user's internal status, a
+	 * customer's collapsed status, so an internal status name is never accepted from a customer) and {@code q}, which
+	 * matches the RFQ number, a part number, and for ERGO also the customer's name.
+	 */
 	@Transactional(readOnly = true)
-	public List<RfqRow> list() {
+	public RfqPage list(int page, int size, String status, String q) {
 		CurrentUser me = CurrentUser.get();
-		List<Rfq> visible = !ModuleAccess.canView(me.role(), Module.RFQ) ? List.of() : switch (me.companyType()) {
-			case ERGO -> switch (me.role()) {
-				case ERGO_KAM -> {
-					Set<Long> accounts = directory.accountsOf(me.userId());
-					yield accounts.isEmpty() ? List.of() : rfqs.findByCustomerCompanyIdInOrderByIdDesc(accounts);
-				}
-				case ERGO_NPD -> rfqs.findByStatusInOrderByIdDesc(NPD_VISIBLE);
-				default -> rfqs.findAllByOrderByIdDesc();
-			};
-			case CUSTOMER -> rfqs.findByCustomerCompanyIdOrderByIdDesc(me.companyId());
-			case SUPPLIER -> List.of(); // suppliers see RFQs only as the part quotes ERGO asks them for (QuoteService)
-		};
+		int pageSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+		int pageNo = Math.min(Math.max(page, 0), Integer.MAX_VALUE / pageSize - 1); // the offset must fit an int, else a 500
+		Set<RfqStatus> wanted = statusFilter(me, status);
+		Specification<Rfq> scope = scopeOf(me);
+		if (scope == null) {
+			return new RfqPage(List.of(), 0, pageNo, pageSize);
+		}
+		Specification<Rfq> spec = scope;
+		if (wanted != null) {
+			spec = spec.and((root, query, cb) -> root.get("status").in(wanted));
+		}
+		Specification<Rfq> search = searchOf(me, q);
+		if (search != null) {
+			spec = spec.and(search);
+		}
+		Page<Rfq> found = rfqs.findAll(spec, PageRequest.of(pageNo, pageSize, Sort.by(Sort.Direction.DESC, "id")));
+		List<Rfq> visible = found.getContent();
 		Map<Long, List<String>> parts = partNumbers(visible);
 		if (!isErgo(me)) {
-			return visible.stream()
+			return new RfqPage(visible.stream()
 				.<RfqRow>map(r -> new CustomerRfqRow(r.id, r.number, r.status.forCustomer(),
 						parts.getOrDefault(r.id, List.of()), r.targetQuoteDate, r.priority, r.createdAt))
-				.toList();
+				.toList(), found.getTotalElements(), pageNo, pageSize);
 		}
 		Map<Long, CompanyRef> customers = directory.companies(ids(visible, r -> r.customerCompanyId));
 		Map<Long, UserRef> owners = directory.users(ids(visible, r -> r.ownerUserId));
-		return visible.stream()
+		return new RfqPage(visible.stream()
 			.<RfqRow>map(r -> new ErgoRfqRow(r.id, r.number, r.status, customers.get(r.customerCompanyId).name(),
 					parts.getOrDefault(r.id, List.of()), r.targetQuoteDate, r.priority,
 					userName(owners, r.ownerUserId), r.createdAt))
-			.toList();
+			.toList(), found.getTotalElements(), pageNo, pageSize);
+	}
+
+	/** Which RFQs the caller may see at all; {@code null} = none (and no query is made). */
+	private Specification<Rfq> scopeOf(CurrentUser me) {
+		if (!ModuleAccess.canView(me.role(), Module.RFQ)) {
+			return null;
+		}
+		return switch (me.companyType()) {
+			case ERGO -> switch (me.role()) {
+				case ERGO_KAM -> {
+					Set<Long> accounts = directory.accountsOf(me.userId());
+					yield accounts.isEmpty() ? null : (root, query, cb) -> root.get("customerCompanyId").in(accounts);
+				}
+				case ERGO_NPD -> (root, query, cb) -> root.get("status").in(NPD_VISIBLE);
+				default -> (root, query, cb) -> cb.conjunction();
+			};
+			case CUSTOMER -> (root, query, cb) -> cb.equal(root.get("customerCompanyId"), me.companyId());
+			case SUPPLIER -> null; // suppliers see RFQs only as the part quotes ERGO asks them for (QuoteService)
+		};
+	}
+
+	/** The internal statuses a filter value stands for; {@code null} = no filter. */
+	private static Set<RfqStatus> statusFilter(CurrentUser me, String status) {
+		if (status == null || status.isBlank()) {
+			return null;
+		}
+		try {
+			if (isErgo(me)) {
+				return EnumSet.of(RfqStatus.valueOf(status));
+			}
+			CustomerStatus wanted = CustomerStatus.valueOf(status);
+			return Arrays.stream(RfqStatus.values()).filter(s -> s.forCustomer() == wanted)
+				.collect(Collectors.toCollection(() -> EnumSet.noneOf(RfqStatus.class)));
+		}
+		catch (IllegalArgumentException e) {
+			throw ApiException.unprocessable("That status is not one you can filter by");
+		}
+	}
+
+	private Specification<Rfq> searchOf(CurrentUser me, String q) {
+		String needle = q == null ? "" : q.replaceAll("\\p{Cntrl}", "").strip(); // a NUL makes Postgres reject the query
+		if (needle.isEmpty()) {
+			return null;
+		}
+		if (needle.length() > MAX_SEARCH_LENGTH) {
+			needle = needle.substring(0, MAX_SEARCH_LENGTH);
+		}
+		String pattern = "%" + needle.toLowerCase().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+		// A customer's name is for ERGO's search only; a customer searches its own RFQs by number and part.
+		Set<Long> customerIds = isErgo(me) ? directory.companyIdsByName(needle) : Set.of();
+		return (root, query, cb) -> {
+			Subquery<Long> byPart = query.subquery(Long.class);
+			Root<RfqItem> item = byPart.from(RfqItem.class);
+			byPart.select(item.<Long>get("id"))
+				.where(cb.equal(item.get("rfqId"), root.get("id")),
+						cb.like(cb.lower(item.<String>get("partNumber")), pattern, '\\'));
+			List<Predicate> any = new ArrayList<>();
+			any.add(cb.like(cb.lower(root.<String>get("number")), pattern, '\\'));
+			any.add(cb.exists(byPart));
+			if (!customerIds.isEmpty()) {
+				any.add(root.get("customerCompanyId").in(customerIds));
+			}
+			return cb.or(any.toArray(new Predicate[0]));
+		};
 	}
 
 	@Transactional(readOnly = true)

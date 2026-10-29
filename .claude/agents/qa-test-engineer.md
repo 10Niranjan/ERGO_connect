@@ -62,3 +62,12 @@ For each area covered: what you tried (by category above), what passed, what fai
 - Module switch tests: a role-sheet cap at View makes `@PreAuthorize` return 403 for every write, whatever the record's state; assert 403, that nothing moved (rows, status, audit rows), that reads stay with empty `actions`, and that everything works again at O.
 - Required reasons: use the shared `Blank` / `@NotInvisiblyBlank` rule (invisible characters count as blank); bean validation (400) runs before the role check (403) on a malformed body.
 - Test chunks must not change production code: a real bug gets a red test and a finding, fixed in a separate step.
+
+## Lessons added 2026-10-29 (Phase 8 follow-ups)
+- MockMvc `get("/path?q=...")` URL-encodes the template itself: pass raw characters (`q=100%`), not `%25`, or you search for the literal text "%25".
+- `assertThat(sqlException)` is ambiguous (Throwable and Iterable): use `assertThatThrownBy(...)`.
+- All integration test classes share one database. Tag the data a test creates with a unique token (`System.nanoTime()` in base 36) and search for the tag; never assume a list is otherwise empty. A different `@TestPropertySource` builds another Spring context (slow; fine for one class).
+- A check that compares two query results must fail on a query error or an empty result: `diff <(q1) <(q2)` of two failed queries passes. Test a script's failure paths (wrong password, bad name, failed dump) as well as the happy one.
+- **Prove a guard test can fail:** flip the setting it guards and watch it go red (e.g. `-Dspring.datasource.hikari.data-source-properties.logServerErrorDetail=true`).
+- Load tests live in `loadtest/` (k6 by digest) with results in `docs/LOAD_TESTING.md`. A first run once blamed the app for a 30% error rate that was the script's mistake (suppliers are 403 on /api/rfqs by design): read the status codes before concluding.
+- Full `./mvnw verify` is memory-hungry. The harness may kill a background run when the machine is short of memory; do not restart it on your own, report it and ask.

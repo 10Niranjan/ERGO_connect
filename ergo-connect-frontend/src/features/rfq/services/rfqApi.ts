@@ -194,12 +194,32 @@ export interface AuditEntry {
   channel: string
 }
 
+export interface RfqPage {
+  items: RfqRow[]
+  /** Every RFQ the caller can see that matches the filter, not just this page. */
+  total: number
+  page: number
+  size: number
+}
+
+/** `status` is the caller's own vocabulary (an internal status for ERGO, the collapsed one for a customer). */
+export interface RfqListArgs {
+  page: number
+  size: number
+  status?: string
+  q?: string
+}
+
 /** Workflow endpoints that take an optional/required comment. */
 export type RfqCommand = 'submit' | 'start-review' | 'request-clarification' | 'cancel' | 'close'
 
 export const rfqApi = api.enhanceEndpoints({ addTagTypes: ['Rfq', 'RfqDocuments'] }).injectEndpoints({
   endpoints: (build) => ({
-    rfqs: build.query<RfqRow[], void>({ query: () => '/rfqs', providesTags: ['Rfq'] }),
+    // One page, newest first; filtered and searched by the server (Phase 8o).
+    rfqs: build.query<RfqPage, RfqListArgs>({
+      query: ({ page, size, status, q }) => ({ url: '/rfqs', params: { page, size, ...(status ? { status } : {}), ...(q ? { q } : {}) } }),
+      providesTags: ['Rfq'],
+    }),
     rfq: build.query<RfqView, number>({ query: (id) => `/rfqs/${id}`, providesTags: (_r, _e, id) => [{ type: 'Rfq', id }] }),
     rfqHistory: build.query<AuditEntry[], number>({
       query: (id) => `/rfqs/${id}/history`,

@@ -24,6 +24,8 @@ interface CompanyRepository extends Repository<Company, Long> {
 
 	List<Company> findAllByOrderByNameAsc();
 
+	List<Company> findByNameContainingIgnoreCase(String fragment);
+
 	boolean existsByCodeIgnoreCase(String code);
 
 	/** Dev seeding only: re-resolve the demo companies when the database already has them. */

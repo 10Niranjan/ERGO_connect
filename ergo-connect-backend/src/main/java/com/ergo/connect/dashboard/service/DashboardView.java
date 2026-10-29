@@ -14,6 +14,11 @@ import com.ergo.connect.rfq.api.RfqApi.RfqDashboardItem;
  * SRS §12.5/§12.10.1: one response shape per dashboard audience, assembled purely by calling each owning module's
  * {@code .api} facade (ARCHITECTURE.md §2: "no business logic here"). No module of its own: every field is a count
  * or a list another module already computed and scoped for the caller.
+ *
+ * <p>Every list is capped to the rows that need attention first ({@link AttentionOrder}, {@code ergo.dashboard.max-rows}),
+ * and each carries its true size in a sibling {@code ...Total} field, so a screen can say "25 of 2,513" and link to the
+ * module's own list instead of shipping and drawing thousands of rows (Phase 8o load test: 1.47 MB per page load).
+ * The KPI counts are computed from the full, uncapped lists before capping, so they never change with the cap.
  */
 public sealed interface DashboardView {
 
@@ -35,20 +40,22 @@ public sealed interface DashboardView {
 	/** §12.5.1 ERGO Management Dashboard. ERGO Admin and ERGO Management only (§10.11 unrestricted "V"). */
 	record ManagementDashboard(Audience audience, int openRfqCount, int quotesPendingSubmissionCount,
 			int quotesAwaitingCustomerApprovalCount, int samplePosAwaitingCount, int activeNpdCount,
-			List<NpdDashboardItem> delayedNpdProjects, List<NpdDashboardItem> highRiskNpdProjects,
-			List<OrderDashboardItem> ordersAtRisk, int openNcrCount, int openDeviationCount,
-			List<SupplierPerformanceRow> supplierPerformance, int pendingApprovalsCount,
-			List<PartStatusItem> partItems) implements DashboardView {
+			List<NpdDashboardItem> delayedNpdProjects, int delayedNpdTotal, List<NpdDashboardItem> highRiskNpdProjects,
+			int highRiskNpdTotal, List<OrderDashboardItem> ordersAtRisk, int ordersAtRiskTotal, int openNcrCount,
+			int openDeviationCount, List<SupplierPerformanceRow> supplierPerformance, int pendingApprovalsCount,
+			List<PartStatusItem> partItems, int partTotal) implements DashboardView {
 
 		public ManagementDashboard(int openRfqCount, int quotesPendingSubmissionCount,
 				int quotesAwaitingCustomerApprovalCount, int samplePosAwaitingCount, int activeNpdCount,
-				List<NpdDashboardItem> delayedNpdProjects, List<NpdDashboardItem> highRiskNpdProjects,
-				List<OrderDashboardItem> ordersAtRisk, int openNcrCount, int openDeviationCount,
+				List<NpdDashboardItem> delayedNpdProjects, int delayedNpdTotal,
+				List<NpdDashboardItem> highRiskNpdProjects, int highRiskNpdTotal, List<OrderDashboardItem> ordersAtRisk,
+				int ordersAtRiskTotal, int openNcrCount, int openDeviationCount,
 				List<SupplierPerformanceRow> supplierPerformance, int pendingApprovalsCount,
-				List<PartStatusItem> partItems) {
+				List<PartStatusItem> partItems, int partTotal) {
 			this(Audience.MANAGEMENT, openRfqCount, quotesPendingSubmissionCount, quotesAwaitingCustomerApprovalCount,
-					samplePosAwaitingCount, activeNpdCount, delayedNpdProjects, highRiskNpdProjects, ordersAtRisk,
-					openNcrCount, openDeviationCount, supplierPerformance, pendingApprovalsCount, partItems);
+					samplePosAwaitingCount, activeNpdCount, delayedNpdProjects, delayedNpdTotal, highRiskNpdProjects,
+					highRiskNpdTotal, ordersAtRisk, ordersAtRiskTotal, openNcrCount, openDeviationCount,
+					supplierPerformance, pendingApprovalsCount, partItems, partTotal);
 		}
 	}
 
@@ -60,17 +67,19 @@ public sealed interface DashboardView {
 	 * split "own pending actions" from "items waiting for external response" (§12.5.2) - this module's own judgment
 	 * call (ARCHITECTURE.md §8, 2026-10-05), computed from each item's own {@code Awaiting} field.
 	 */
-	record FunctionalDashboard(Audience audience, List<RfqDashboardItem> rfqItems, List<NpdDashboardItem> npdItems,
-			List<OrderDashboardItem> orderItems, List<NcrDashboardItem> ncrItems,
-			List<DeviationDashboardItem> deviationItems, int overdueCount, int awaitingMeCount,
-			int awaitingExternalCount, List<PartStatusItem> partItems) implements DashboardView {
+	record FunctionalDashboard(Audience audience, List<RfqDashboardItem> rfqItems, int rfqTotal,
+			List<NpdDashboardItem> npdItems, int npdTotal, List<OrderDashboardItem> orderItems, int orderTotal,
+			List<NcrDashboardItem> ncrItems, int ncrTotal, List<DeviationDashboardItem> deviationItems,
+			int deviationTotal, int overdueCount, int awaitingMeCount, int awaitingExternalCount,
+			List<PartStatusItem> partItems, int partTotal) implements DashboardView {
 
-		public FunctionalDashboard(List<RfqDashboardItem> rfqItems, List<NpdDashboardItem> npdItems,
-				List<OrderDashboardItem> orderItems, List<NcrDashboardItem> ncrItems,
-				List<DeviationDashboardItem> deviationItems, int overdueCount, int awaitingMeCount,
-				int awaitingExternalCount, List<PartStatusItem> partItems) {
-			this(Audience.FUNCTIONAL, rfqItems, npdItems, orderItems, ncrItems, deviationItems, overdueCount,
-					awaitingMeCount, awaitingExternalCount, partItems);
+		public FunctionalDashboard(List<RfqDashboardItem> rfqItems, int rfqTotal, List<NpdDashboardItem> npdItems,
+				int npdTotal, List<OrderDashboardItem> orderItems, int orderTotal, List<NcrDashboardItem> ncrItems,
+				int ncrTotal, List<DeviationDashboardItem> deviationItems, int deviationTotal, int overdueCount,
+				int awaitingMeCount, int awaitingExternalCount, List<PartStatusItem> partItems, int partTotal) {
+			this(Audience.FUNCTIONAL, rfqItems, rfqTotal, npdItems, npdTotal, orderItems, orderTotal, ncrItems,
+					ncrTotal, deviationItems, deviationTotal, overdueCount, awaitingMeCount, awaitingExternalCount,
+					partItems, partTotal);
 		}
 	}
 
@@ -79,24 +88,30 @@ public sealed interface DashboardView {
 	 * Documents facade method exists yet); "Shipment status" is approximated by order status rather than a
 	 * separate per-shipment widget (ARCHITECTURE.md §8, 2026-10-05: both are this module's own simplification, not
 	 * an SRS-given field). */
-	record CustomerDashboard(Audience audience, List<RfqDashboardItem> rfqItems, List<NpdDashboardItem> npdItems,
-			List<OrderDashboardItem> orderItems, List<NcrDashboardItem> ncrItems, List<PartStatusItem> partItems)
+	record CustomerDashboard(Audience audience, List<RfqDashboardItem> rfqItems, int rfqTotal,
+			List<NpdDashboardItem> npdItems, int npdTotal, List<OrderDashboardItem> orderItems, int orderTotal,
+			List<NcrDashboardItem> ncrItems, int ncrTotal, List<PartStatusItem> partItems, int partTotal)
 			implements DashboardView {
 
-		public CustomerDashboard(List<RfqDashboardItem> rfqItems, List<NpdDashboardItem> npdItems,
-				List<OrderDashboardItem> orderItems, List<NcrDashboardItem> ncrItems, List<PartStatusItem> partItems) {
-			this(Audience.CUSTOMER, rfqItems, npdItems, orderItems, ncrItems, partItems);
+		public CustomerDashboard(List<RfqDashboardItem> rfqItems, int rfqTotal, List<NpdDashboardItem> npdItems,
+				int npdTotal, List<OrderDashboardItem> orderItems, int orderTotal, List<NcrDashboardItem> ncrItems,
+				int ncrTotal, List<PartStatusItem> partItems, int partTotal) {
+			this(Audience.CUSTOMER, rfqItems, rfqTotal, npdItems, npdTotal, orderItems, orderTotal, ncrItems, ncrTotal,
+					partItems, partTotal);
 		}
 	}
 
 	/** §12.5.4 Supplier Dashboard. {@code quoteItems} covers "Assigned RFQs"/"Quote due items" (quotation module,
 	 * not RFQ - suppliers have no RFQ-module scope of their own). */
-	record SupplierDashboard(Audience audience, List<SupplierQuoteItem> quoteItems, List<NpdDashboardItem> npdItems,
-			List<OrderDashboardItem> orderItems, List<NcrDashboardItem> ncrItems) implements DashboardView {
+	record SupplierDashboard(Audience audience, List<SupplierQuoteItem> quoteItems, int quoteTotal,
+			List<NpdDashboardItem> npdItems, int npdTotal, List<OrderDashboardItem> orderItems, int orderTotal,
+			List<NcrDashboardItem> ncrItems, int ncrTotal) implements DashboardView {
 
-		public SupplierDashboard(List<SupplierQuoteItem> quoteItems, List<NpdDashboardItem> npdItems,
-				List<OrderDashboardItem> orderItems, List<NcrDashboardItem> ncrItems) {
-			this(Audience.SUPPLIER, quoteItems, npdItems, orderItems, ncrItems);
+		public SupplierDashboard(List<SupplierQuoteItem> quoteItems, int quoteTotal, List<NpdDashboardItem> npdItems,
+				int npdTotal, List<OrderDashboardItem> orderItems, int orderTotal, List<NcrDashboardItem> ncrItems,
+				int ncrTotal) {
+			this(Audience.SUPPLIER, quoteItems, quoteTotal, npdItems, npdTotal, orderItems, orderTotal, ncrItems,
+					ncrTotal);
 		}
 	}
 

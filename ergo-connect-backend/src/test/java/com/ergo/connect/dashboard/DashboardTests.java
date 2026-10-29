@@ -21,6 +21,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
@@ -39,6 +40,7 @@ import com.jayway.jsonpath.JsonPath;
  * a new module.
  */
 @IntegrationTest
+@TestPropertySource(properties = "ergo.dashboard.max-rows=1000") // these tests check visibility, not the cap (DashboardCapTests does)
 class DashboardTests {
 
 	@Autowired
@@ -174,7 +176,11 @@ class DashboardTests {
 			.andExpect(jsonPath("$.rfqItems", empty()))
 			.andExpect(jsonPath("$.npdItems", empty()))
 			.andExpect(jsonPath("$.orderItems", empty()))
-			.andExpect(jsonPath("$.ncrItems", empty())); // no assigned accounts: empty everywhere, not an error
+			.andExpect(jsonPath("$.ncrItems", empty())) // no assigned accounts: empty everywhere, not an error
+			.andExpect(jsonPath("$.rfqTotal").value(0))
+			.andExpect(jsonPath("$.npdTotal").value(0))
+			.andExpect(jsonPath("$.orderTotal").value(0))
+			.andExpect(jsonPath("$.ncrTotal").value(0)); // and the totals do not count what the caller cannot see
 	}
 
 	@Test
@@ -280,7 +286,11 @@ class DashboardTests {
 			.andExpect(jsonPath("$.quoteItems", empty()))
 			.andExpect(jsonPath("$.npdItems", empty()))
 			.andExpect(jsonPath("$.orderItems", empty()))
-			.andExpect(jsonPath("$.ncrItems", empty()));
+			.andExpect(jsonPath("$.ncrItems", empty()))
+			.andExpect(jsonPath("$.quoteTotal").value(0))
+			.andExpect(jsonPath("$.npdTotal").value(0))
+			.andExpect(jsonPath("$.orderTotal").value(0))
+			.andExpect(jsonPath("$.ncrTotal").value(0));
 	}
 
 	private static MockHttpServletRequestBuilder json(MockHttpServletRequestBuilder request, String body,

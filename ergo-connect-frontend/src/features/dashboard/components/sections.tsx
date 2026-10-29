@@ -1,5 +1,6 @@
-import { Chip, Stack, Typography } from '@mui/material'
+import { Button, Chip, Stack, Typography } from '@mui/material'
 import type { ReactNode } from 'react'
+import { Link as RouterLink } from 'react-router'
 import { PRIORITIES, formatDate } from '../../rfq/labels'
 import type { Priority } from '../../rfq/rfqApi'
 import { RISK_LEVEL } from '../../npd/labels'
@@ -27,19 +28,59 @@ function AwaitingChip({ value }: { value: Awaiting }) {
 /** A titled section that disappears entirely when empty (Functional dashboard - SRS §12.5: most single-module
  * roles only ever populate one of the five lists). Other audiences pass hideWhenEmpty=false and get the
  * ItemsTable's own "No items" row instead (point 7 of the dashboard spec). */
-function Section({ title, hidden, children }: { title: string; hidden: boolean; children: ReactNode }) {
+function Section({
+  title,
+  hidden,
+  shown,
+  total,
+  viewAll,
+  children,
+}: {
+  title: string
+  hidden: boolean
+  shown: number
+  total: number
+  viewAll?: string
+  children: ReactNode
+}) {
   if (hidden) return null
+  // The server keeps the rows that need attention first and says how many there are in all (Phase 8o).
+  const capped = total > shown
   return (
     <Stack spacing={1}>
-      <Typography variant="h6" component="h2">
-        {title}
-      </Typography>
+      <Stack direction="row" spacing={2} sx={{ alignItems: 'baseline' }}>
+        <Typography variant="h6" component="h2">
+          {title}
+        </Typography>
+        {capped && (
+          <Typography variant="body2" color="text.secondary">
+            Showing the {shown} that need attention first, of {total.toLocaleString()}
+          </Typography>
+        )}
+        {capped && viewAll && (
+          <Button component={RouterLink} to={viewAll} size="small">
+            View all
+          </Button>
+        )}
+      </Stack>
       {children}
     </Stack>
   )
 }
 
-export function RfqSection({ title = 'RFQs', items, hideWhenEmpty = false }: { title?: string; items: RfqDashboardItem[]; hideWhenEmpty?: boolean }) {
+export function RfqSection({
+  title = 'RFQs',
+  items,
+  total,
+  viewAll,
+  hideWhenEmpty = false,
+}: {
+  title?: string
+  items: RfqDashboardItem[]
+  total: number
+  viewAll?: string
+  hideWhenEmpty?: boolean
+}) {
   const columns: Column<RfqDashboardItem>[] = [
     { header: 'RFQ no.', render: (r) => r.number },
     { header: 'Customer', render: (r) => r.customerName },
@@ -54,7 +95,7 @@ export function RfqSection({ title = 'RFQs', items, hideWhenEmpty = false }: { t
     { header: 'Priority', render: (r) => PRIORITIES[r.priority as Priority] ?? r.priority },
   ]
   return (
-    <Section title={title} hidden={hideWhenEmpty && items.length === 0}>
+    <Section title={title} hidden={hideWhenEmpty && items.length === 0} shown={items.length} total={total} viewAll={viewAll}>
       <ItemsTable rows={items} columns={columns} getKey={(r) => r.id} emptyMessage="No RFQs." />
     </Section>
   )
@@ -64,11 +105,15 @@ export function RfqSection({ title = 'RFQs', items, hideWhenEmpty = false }: { t
 export function PartStatusSection({
   title = 'Status of each part',
   items,
+  total,
+  viewAll,
   showSupplier = false,
   hideWhenEmpty = false,
 }: {
   title?: string
   items: PartStatusItem[]
+  total: number
+  viewAll?: string
   showSupplier?: boolean
   hideWhenEmpty?: boolean
 }) {
@@ -85,7 +130,7 @@ export function PartStatusSection({
     },
   ]
   return (
-    <Section title={title} hidden={hideWhenEmpty && items.length === 0}>
+    <Section title={title} hidden={hideWhenEmpty && items.length === 0} shown={items.length} total={total} viewAll={viewAll}>
       <ItemsTable rows={items} columns={columns} getKey={(r) => r.rfqItemId} emptyMessage="No parts yet." />
     </Section>
   )
@@ -94,11 +139,15 @@ export function PartStatusSection({
 export function NpdSection({
   title = 'NPD projects',
   items,
+  total,
+  viewAll,
   showSupplier = false,
   hideWhenEmpty = false,
 }: {
   title?: string
   items: NpdDashboardItem[]
+  total: number
+  viewAll?: string
   showSupplier?: boolean
   hideWhenEmpty?: boolean
 }) {
@@ -120,7 +169,7 @@ export function NpdSection({
     },
   ]
   return (
-    <Section title={title} hidden={hideWhenEmpty && items.length === 0}>
+    <Section title={title} hidden={hideWhenEmpty && items.length === 0} shown={items.length} total={total} viewAll={viewAll}>
       <ItemsTable rows={items} columns={columns} getKey={(r) => r.id} emptyMessage="No NPD projects." />
     </Section>
   )
@@ -129,11 +178,15 @@ export function NpdSection({
 export function OrderSection({
   title = 'Orders',
   items,
+  total,
+  viewAll,
   showSupplier = false,
   hideWhenEmpty = false,
 }: {
   title?: string
   items: OrderDashboardItem[]
+  total: number
+  viewAll?: string
   showSupplier?: boolean
   hideWhenEmpty?: boolean
 }) {
@@ -150,7 +203,7 @@ export function OrderSection({
     },
   ]
   return (
-    <Section title={title} hidden={hideWhenEmpty && items.length === 0}>
+    <Section title={title} hidden={hideWhenEmpty && items.length === 0} shown={items.length} total={total} viewAll={viewAll}>
       <ItemsTable rows={items} columns={columns} getKey={(r) => r.id} emptyMessage="No orders." />
     </Section>
   )
@@ -159,11 +212,15 @@ export function OrderSection({
 export function NcrSection({
   title = 'NCRs',
   items,
+  total,
+  viewAll,
   showSupplier = false,
   hideWhenEmpty = false,
 }: {
   title?: string
   items: NcrDashboardItem[]
+  total: number
+  viewAll?: string
   showSupplier?: boolean
   hideWhenEmpty?: boolean
 }) {
@@ -180,7 +237,7 @@ export function NcrSection({
     },
   ]
   return (
-    <Section title={title} hidden={hideWhenEmpty && items.length === 0}>
+    <Section title={title} hidden={hideWhenEmpty && items.length === 0} shown={items.length} total={total} viewAll={viewAll}>
       <ItemsTable rows={items} columns={columns} getKey={(r) => r.id} emptyMessage="No NCRs." />
     </Section>
   )
@@ -189,11 +246,15 @@ export function NcrSection({
 export function DeviationSection({
   title = 'Deviations',
   items,
+  total,
+  viewAll,
   showSupplier = false,
   hideWhenEmpty = false,
 }: {
   title?: string
   items: DeviationDashboardItem[]
+  total: number
+  viewAll?: string
   showSupplier?: boolean
   hideWhenEmpty?: boolean
 }) {
@@ -206,13 +267,13 @@ export function DeviationSection({
     { header: 'Validity end date', render: (r) => formatDate(r.validityEndDate) },
   ]
   return (
-    <Section title={title} hidden={hideWhenEmpty && items.length === 0}>
+    <Section title={title} hidden={hideWhenEmpty && items.length === 0} shown={items.length} total={total} viewAll={viewAll}>
       <ItemsTable rows={items} columns={columns} getKey={(r) => r.id} emptyMessage="No deviations." />
     </Section>
   )
 }
 
-export function QuoteSection({ title = 'Assigned RFQs', items }: { title?: string; items: SupplierQuoteItem[] }) {
+export function QuoteSection({ title = 'Assigned RFQs', items, total, viewAll }: { title?: string; items: SupplierQuoteItem[]; total: number; viewAll?: string }) {
   const columns: Column<SupplierQuoteItem>[] = [
     { header: 'RFQ no.', render: (r) => r.rfqNumber },
     { header: 'Part no.', render: (r) => r.partNumber },
@@ -224,7 +285,7 @@ export function QuoteSection({ title = 'Assigned RFQs', items }: { title?: strin
     },
   ]
   return (
-    <Section title={title} hidden={false}>
+    <Section title={title} hidden={false} shown={items.length} total={total} viewAll={viewAll}>
       <ItemsTable rows={items} columns={columns} getKey={(r) => r.invitationId} emptyMessage="No RFQs assigned." />
     </Section>
   )
@@ -244,7 +305,7 @@ export function SupplierPerformanceSection({ title = 'Supplier performance', row
     },
   ]
   return (
-    <Section title={title} hidden={false}>
+    <Section title={title} hidden={false} shown={rows.length} total={rows.length}>
       <ItemsTable rows={rows} columns={columns} getKey={(r) => r.supplierCompanyId} emptyMessage="No supplier activity yet." />
     </Section>
   )

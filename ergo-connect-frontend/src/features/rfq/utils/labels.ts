@@ -26,6 +26,16 @@ export const STATUS: Record<RfqStatus | CustomerRfqStatus, { label: string; colo
   DECLINED: { label: 'Rejected', color: 'error' },
 }
 
+/** What the list's status filter offers, in workflow order: the internal statuses for ERGO, the collapsed ones for a customer. */
+export const ERGO_STATUS_FILTER: RfqStatus[] = [
+  'DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'CLARIFICATION_REQUIRED', 'SENT_TO_SUPPLIERS', 'QUOTES_PARTIAL', 'QUOTES_COMPLETE',
+  'SENT_TO_CUSTOMER', 'CUSTOMER_ON_HOLD', 'CUSTOMER_REVISION_REQUESTED', 'CUSTOMER_APPROVED', 'CUSTOMER_DECLINED', 'CLOSED', 'CANCELLED',
+]
+export const CUSTOMER_STATUS_FILTER: CustomerRfqStatus[] = [
+  'DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'CLARIFICATION_REQUIRED', 'IN_PROGRESS', 'QUOTE_RECEIVED', 'ON_HOLD', 'REVISION_REQUESTED',
+  'APPROVED', 'DECLINED', 'CLOSED', 'CANCELLED',
+]
+
 export const PRIORITIES: Record<Priority, string> = { LOW: 'Low', NORMAL: 'Normal', HIGH: 'High', URGENT: 'Urgent' }
 
 export const VISIBILITY: Record<Visibility, string> = {

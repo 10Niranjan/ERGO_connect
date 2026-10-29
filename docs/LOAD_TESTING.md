@@ -1,8 +1,8 @@
 # Load testing (Phase 8o)
 
-Tooling, a first local run, and what it found. **Status: the local run is done; the staging run is not (nothing is deployed).
-The thresholds below are NOT met by the dashboard and the list endpoints, for a reason that needs a product decision
-(finding 1). Do not loosen the thresholds to make them pass.**
+Tooling, a first local run, and what it found. **Status (2026-10-29): the first local run is done; the staging run is not (nothing is deployed). The thresholds below were
+NOT met by the dashboard and the RFQ list (finding 1). A fix is built but UNCOMMITTED and not yet re-measured (see "Fix in
+progress"). Do not loosen the thresholds to make them pass.**
 
 ## Tooling
 
@@ -87,3 +87,25 @@ Response sizes: dashboard **1.47 MB** (customer), 541 KB (KAM); RFQ list **1.16 
   for its whole read-only transaction, so the unread-count slowdown may be pool starvation rather than CPU: expose
   `hikaricp_connections_pending` (actuator metrics are off) and look at it on the next run.
 - Re-run after finding 1 is fixed: the thresholds should then hold with room to spare, and that is the real acceptance test.
+
+## Fix in progress (built 2026-10-29, uncommitted, full test suite not yet run)
+
+Built in the working tree after the first run, at the user's request (the product decision in finding 1 was delegated):
+
+- **Dashboard.** Every list section returns at most `ergo.dashboard.max-rows` (default 25) rows, ranked by `AttentionOrder`:
+  already overdue / at risk first, then waiting on the viewer's own side, then soonest due date, then newest. Each carries its true
+  size in a sibling `...Total` field (`rfqTotal`, `partTotal`, `quoteTotal`, `delayedNpdTotal`, ...). KPI counts are computed from the
+  full lists before capping, so they do not change. The screen says "Showing the N that need attention first, of M" and links "View
+  all" to the module's list. The fields keep their names, so the JSON paths used by existing tests still hold.
+- **RFQ list.** `GET /api/rfqs?page=&size=&status=&q=` returns `{ items, total, page, size }`: record scope in the query, status
+  filter in the caller's own vocabulary (a customer sending an internal status gets 422), search over RFQ number, part number and, for
+  ERGO only, customer name (via `Directory.companyIdsByName`), `%` `_` `\` treated literally, size capped at 100. The list screen has
+  a page selector, a debounced search box and the status filter.
+- **Tests added:** `AttentionOrderTest` (3), `DashboardCapTests` (3), `RfqListPagingTests` (9). Passing with the existing dashboard and
+  RFQ suites (14 and 53 tests). Seven old assertions that parsed the array shape were updated to `$.items`.
+
+**Still to do:** (1) the full `./mvnw verify` (killed once for low memory; run it alone), `security-reviewer`, commit; (2) re-run
+`loadtest/hot-paths.js` against the same 5,020-RFQ database and record the numbers here (expect the 50-user thresholds to hold; if
+not, look at `hikaricp_connections_pending` first); (3) the lists that are **still unbounded**, in the order they are likely to hurt:
+the supplier quote list `/api/quotes` (one row per part per RFQ sent), OFP orders, NPD projects, sample and production POs, NCRs,
+deviations, inspections. Use the RFQ list as the pattern; none has been measured with volume yet.

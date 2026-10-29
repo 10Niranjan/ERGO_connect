@@ -7,11 +7,11 @@ import { NcrSection, NpdSection, OrderSection, PartStatusSection, RfqSection } f
 export function CustomerDashboardView({ view }: { view: CustomerDashboard }) {
   return (
     <Stack spacing={3}>
-      <RfqSection items={view.rfqItems} />
-      <PartStatusSection items={view.partItems} />
-      <NpdSection items={view.npdItems} />
-      <OrderSection items={view.orderItems} />
-      <NcrSection items={view.ncrItems} />
+      <RfqSection items={view.rfqItems} total={view.rfqTotal} viewAll="/rfqs" />
+      <PartStatusSection items={view.partItems} total={view.partTotal} viewAll="/rfqs" />
+      <NpdSection items={view.npdItems} total={view.npdTotal} viewAll="/npd/mine" />
+      <OrderSection items={view.orderItems} total={view.orderTotal} viewAll="/ofp" />
+      <NcrSection items={view.ncrItems} total={view.ncrTotal} viewAll="/quality/ncrs" />
     </Stack>
   )
 }

@@ -17,10 +17,10 @@ export function ManagementDashboardView({ view }: { view: ManagementDashboard })
         <KpiTile label="Open deviations" value={view.openDeviationCount} flagged />
         <KpiTile label="Pending approvals" value={view.pendingApprovalsCount} flagged />
       </Stack>
-      <PartStatusSection items={view.partItems} showSupplier hideWhenEmpty />
-      <NpdSection title="Delayed NPD projects" items={view.delayedNpdProjects} showSupplier />
-      <NpdSection title="High-risk NPD projects" items={view.highRiskNpdProjects} showSupplier />
-      <OrderSection title="Orders at risk" items={view.ordersAtRisk} showSupplier />
+      <PartStatusSection items={view.partItems} total={view.partTotal} viewAll="/rfqs" showSupplier hideWhenEmpty />
+      <NpdSection title="Delayed NPD projects" items={view.delayedNpdProjects} total={view.delayedNpdTotal} viewAll="/npd" showSupplier />
+      <NpdSection title="High-risk NPD projects" items={view.highRiskNpdProjects} total={view.highRiskNpdTotal} viewAll="/npd" showSupplier />
+      <OrderSection title="Orders at risk" items={view.ordersAtRisk} total={view.ordersAtRiskTotal} viewAll="/ofp" showSupplier />
       <SupplierPerformanceSection rows={view.supplierPerformance} />
     </Stack>
   )

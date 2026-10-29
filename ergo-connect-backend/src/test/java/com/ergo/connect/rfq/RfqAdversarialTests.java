@@ -285,8 +285,8 @@ class RfqAdversarialTests extends AdversarialSupport {
 		Login npd = users.login(ergoCo, "ERGO_NPD");
 		long a = draft("PN-A");
 		long b = TestRfq.create(mvc, buyerB, TestRfq.form(inr, "PN-B"));
-		call(get("/api/rfqs"), kam, null).andExpect(jsonPath("$[*].id", hasItem((int) a))).andExpect(jsonPath("$[*].id", hasItem((int) b)));
-		call(get("/api/rfqs"), lonelyKam, null).andExpect(jsonPath("$", hasSize(0)));
+		call(get("/api/rfqs"), kam, null).andExpect(jsonPath("$.items[*].id", hasItem((int) a))).andExpect(jsonPath("$.items[*].id", hasItem((int) b)));
+		call(get("/api/rfqs"), lonelyKam, null).andExpect(jsonPath("$.items", hasSize(0)));
 		call(put("/api/rfqs/{id}", a), lonelyKam, TestRfq.form(inr, "PN-A")).andExpect(status().isNotFound());
 		call(post("/api/rfqs/{id}/submit", a), lonelyKam, "{}").andExpect(status().isNotFound());
 		call(post("/api/rfqs/{id}/clone", a), lonelyKam, null).andExpect(status().isNotFound());
@@ -296,12 +296,12 @@ class RfqAdversarialTests extends AdversarialSupport {
 		call(post("/api/rfqs"), lonelyKam, form(item("PN-1")).replace("{\"targetQuoteDate\"", "{\"customerCompanyId\": %d, \"targetQuoteDate\"".formatted(customer)))
 			.andExpect(status().isUnprocessableContent());
 		// NPD: the RFQ appears when the whole RFQ is approved
-		call(get("/api/rfqs"), npd, null).andExpect(jsonPath("$[*].id", not(hasItem((int) a))));
+		call(get("/api/rfqs"), npd, null).andExpect(jsonPath("$.items[*].id", not(hasItem((int) a))));
 		call(post("/api/rfqs/{id}/submit", a), buyer, "{}");
 		call(post("/api/rfqs/{id}/start-review", a), ergoRfq, null);
 		TestRfq.approveWhole(mvc, buyer, ergoRfq, sellerX, supplierX, inr, a, "90");
 		assertThat(rfqStatus(a)).isEqualTo("CUSTOMER_APPROVED");
-		call(get("/api/rfqs"), npd, null).andExpect(jsonPath("$[*].id", hasItem((int) a))).andExpect(jsonPath("$[*].id", not(hasItem((int) b))));
+		call(get("/api/rfqs"), npd, null).andExpect(jsonPath("$.items[*].id", hasItem((int) a))).andExpect(jsonPath("$.items[*].id", not(hasItem((int) b))));
 		call(get("/api/rfqs/{id}", a), npd, null).andExpect(status().isOk()).andExpect(jsonPath("$.actions", hasSize(0)));
 		call(put("/api/rfqs/{id}", a), npd, TestRfq.form(inr, "PN-A")).andExpect(status().isForbidden());
 	}

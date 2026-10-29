@@ -192,20 +192,20 @@ class RfqTests {
 		Login supplier = users.login(users.company("SUPPLIER"), "SUPPLIER_RFQ");
 
 		mvc.perform(get("/api/rfqs").header(HttpHeaders.AUTHORIZATION, buyerB.bearer()))
-			.andExpect(jsonPath("$[*].id", not(hasItem((int) rfqA))));
+			.andExpect(jsonPath("$.items[*].id", not(hasItem((int) rfqA))));
 		mvc.perform(get("/api/rfqs/{id}", rfqA).header(HttpHeaders.AUTHORIZATION, buyerB.bearer()))
 			.andExpect(status().isNotFound());
 		mvc.perform(get("/api/rfqs").header(HttpHeaders.AUTHORIZATION, kam.bearer()))
-			.andExpect(jsonPath("$[*].id", hasItem((int) rfqA)))
-			.andExpect(jsonPath("$[*].id", not(hasItem((int) rfqB))));
+			.andExpect(jsonPath("$.items[*].id", hasItem((int) rfqA)))
+			.andExpect(jsonPath("$.items[*].id", not(hasItem((int) rfqB))));
 		mvc.perform(get("/api/rfqs/{id}", rfqB).header(HttpHeaders.AUTHORIZATION, kam.bearer()))
 			.andExpect(status().isNotFound());
 		mvc.perform(get("/api/rfqs/{id}", rfqA).header(HttpHeaders.AUTHORIZATION, ergoNpd.bearer()))
 			.andExpect(status().isNotFound()); // NPD sees approved work only
 		// role sheet: Customer NPD has "V" on RFQ - its own company's RFQs, read-only
 		mvc.perform(get("/api/rfqs").header(HttpHeaders.AUTHORIZATION, customerNpd.bearer()))
-			.andExpect(jsonPath("$[*].id", hasItem((int) rfqA)))
-			.andExpect(jsonPath("$[*].id", not(hasItem((int) rfqB))));
+			.andExpect(jsonPath("$.items[*].id", hasItem((int) rfqA)))
+			.andExpect(jsonPath("$.items[*].id", not(hasItem((int) rfqB))));
 		mvc.perform(get("/api/rfqs/{id}", rfqA).header(HttpHeaders.AUTHORIZATION, customerNpd.bearer()))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.actions", empty()));
@@ -216,8 +216,8 @@ class RfqTests {
 		mvc.perform(get("/api/rfqs").header(HttpHeaders.AUTHORIZATION, supplier.bearer()))
 			.andExpect(status().isForbidden()); // until RFQs are sent to suppliers (Phase 2b)
 		mvc.perform(get("/api/rfqs").header(HttpHeaders.AUTHORIZATION, ergoRfq.bearer()))
-			.andExpect(jsonPath("$[*].id", hasItem((int) rfqA)))
-			.andExpect(jsonPath("$[*].customer").exists());
+			.andExpect(jsonPath("$.items[*].id", hasItem((int) rfqA)))
+			.andExpect(jsonPath("$.items[*].customer").exists());
 	}
 
 	@Test

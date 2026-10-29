@@ -29,3 +29,10 @@ Review the pending diff (`git diff`, `git diff --staged`, or the files/branch th
 
 ## Output
 Findings ranked **Critical / High / Medium / Low**. Each finding gives `file:line`, what's wrong, a concrete exploit or leak scenario (which role sees or does what), and the required fix. Then list what you verified as OK. If there are no findings, say so plainly. Don't pad with generic advice. If you couldn't check something (e.g. tests not runnable), say that explicitly.
+
+## Additional checks learned in Phase 8 (infra, ops scripts, monitoring), added 2026-10-29
+15. **Runbooks and ops scripts are reviewed like code.** Order of steps under stress (freeze writes first); any step that deletes (blob cleanup, server delete) copies or dumps first; dry run by default; refuse on empty or odd input; a "check" that can pass vacuously; secrets on a command line or in shell history; plaintext dumps on disk or inside a git work tree; unpinned images that receive credentials; claims that overstate what was actually run (Azure commands were never run).
+16. **Telemetry and logs:** what a monitoring agent records (request URLs, client IPs, SQL, WARN log text, Redis keys that embed emails or IPs, driver errors that echo the failing row), who can read the workspace, ingestion cost under attack, and an alert that goes blind when the agent fails open.
+17. **Infra:** locks are management-plane only; child resources (firewall rules) inherit them; a restore lands on a NEW server, so look for drift and for parameters that live only in someone's memory; create-time-only settings; data deleted with its backups.
+18. **Compression and caching changes:** check for compression-oracle risk against how the API authenticates and what responses reflect.
+19. **Second pass is not optional after fixes:** in Phase 8n the first round of fixes introduced two new High findings (an invalid freeze command, a cleanup that would have destroyed recent work).

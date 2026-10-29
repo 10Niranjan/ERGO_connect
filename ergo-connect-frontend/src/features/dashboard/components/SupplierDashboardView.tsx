@@ -8,10 +8,10 @@ import { NcrSection, NpdSection, OrderSection, QuoteSection } from './sections'
 export function SupplierDashboardView({ view }: { view: SupplierDashboard }) {
   return (
     <Stack spacing={3}>
-      <QuoteSection items={view.quoteItems} />
-      <NpdSection items={view.npdItems} />
-      <OrderSection items={view.orderItems} />
-      <NcrSection items={view.ncrItems} />
+      <QuoteSection items={view.quoteItems} total={view.quoteTotal} viewAll="/quotes" />
+      <NpdSection items={view.npdItems} total={view.npdTotal} viewAll="/npd/mine" />
+      <OrderSection items={view.orderItems} total={view.orderTotal} viewAll="/ofp" />
+      <NcrSection items={view.ncrItems} total={view.ncrTotal} viewAll="/quality/ncrs" />
     </Stack>
   )
 }

@@ -4,10 +4,16 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.repository.Repository;
 
 /** Package-private; RfqService applies the record scope for every read. */
 interface RfqRepository extends Repository<Rfq, Long> {
+
+	/** The only Specification method on purpose: JpaSpecificationExecutor would also bring bulk update/delete that skip @Version, the workflow and audit. */
+	Page<Rfq> findAll(Specification<Rfq> spec, Pageable pageable);
 
 	Rfq save(Rfq rfq);
 

@@ -44,3 +44,11 @@ You implement backend modules for ERGO Connect, a production system handling com
 - Run `./mvnw verify` from `ergo-connect-backend/` with JDK 21 and Docker running. Report failures verbatim. Never claim green without running it.
 
 Finish with a short list of files changed, what was tested, and any SRS ambiguity you hit (don't guess on those; list them for the user).
+
+## Lists, paging and dashboards (added 2026-10-29, Phase 8o)
+- **Never add an endpoint that returns an unbounded list.** A work list returns a page object `{ items, total, page, size }` (`RfqDtos.RfqPage` and `RfqService.list` are the pattern): record scope in a `Specification` (declare only `Page<T> findAll(Specification<T>, Pageable)` on the repository, never `JpaSpecificationExecutor`: it adds bulk update/delete that skip `@Version`, the workflow and audit), filters and search in the query, newest first, page size capped at 100, a bad filter value is 422.
+- A status filter uses the caller's **own** vocabulary: a customer filters by the collapsed status and an internal status name is refused (it would confirm what sits behind IN_PROGRESS). Search text is escaped for LIKE (`%`, `_`, `\`) and capped at 100 characters. A customer-name search is for ERGO only.
+- Cross-module lookups go through the owning module's `.api` facade (`Directory.companyIdsByName`); such a method may only **narrow** a set the caller's module has already scoped.
+- Dashboard sections are ranked and capped in `DashboardService` (`AttentionOrder`: urgent, then waiting on the viewer, then soonest, then newest; `ergo.dashboard.max-rows`, default 25) and carry a true `...Total`. Compute KPI counts from the full lists **before** capping, and never cap without a total (the counts would silently be wrong).
+- The Postgres driver is set to `logServerErrorDetail: false` (application.yml, guarded by `DriverErrorDetailTest`) so constraint errors do not carry the failing row (prices, hidden margins) into logs and telemetry. Never put record values or emails in WARN-or-higher log messages: they reach Application Insights.
+- Known unbounded lists still to convert to this pattern (see docs/LOAD_TESTING.md): NPD projects, sample and production POs, OFP orders, NCRs, deviations, inspections, the supplier quote list `/api/quotes`.

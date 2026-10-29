@@ -2,6 +2,8 @@
 
 > **START HERE (active work): read `docs/FLOW_ALIGNMENT.md` first.** The client's flow document now overrides the older SRS and the build-order list below: slices 1-6 (On Hold decision; multi-item RFQ, sub-RFQs, quotes per part, per-part customer quotation; Sample PO + KAM project creation + plan release to the supplier; plan submission, ERGO agreement and execution gate; dual quality gate and customer final approval; production PO + OFP project) are all done. That file says what was done, where to start and how.
 
+> **CURRENT STATE (2026-10-29), read before starting:** Phases 0-7 are done; Phase 8 is done through 8o, but 8k-8o are only **authored and tested locally, never run in Azure** (nothing is deployed). Branch `sprint-3`, last pushed commit `26e21bb`. **The dashboard cap + totals and server-side RFQ list paging (from the 8o load test) are committed; full `./mvnw verify` green (755), security-reviewed.** Resume: re-run `loadtest/hot-paths.js` (restart the scratch DB `ergo_load`, see memory) and fill in the results in `docs/LOAD_TESTING.md`. After that: convert the other unbounded lists, then 8p (security/pen-test pass, needs a deployed staging) and 8q (final sign-off).
+
 Production B2B platform for ERGO: RFQ → Quotation → NPD → OFP → Quality → Delivery → Closure, shared by three org types (ERGO, Customers, Suppliers) and 18 roles. It handles financial, quality and compliance data. **Correctness and access control come before speed.**
 
 ## Sources of truth (read before building anything)
@@ -29,6 +31,7 @@ Phase 0 foundation ✅ → 1a access model (login, roles, company scope, audit) 
 - **RFQ → NPD is manual.** Approval only puts the RFQ in the "ready for conversion" queue.
 - **Currency is tagged on every money row** (INR/USD/EUR/RMB).
 - **Module switches bind everything** (`docs/PERMISSIONS.md` §9): a module at V refuses every change and at NV shows nothing, from any path - other modules' facades, comments, documents, notifications, scheduled jobs. Use `ModuleSwitch` (`requireWritable` before the first write, `readable` for reads); a new `<module>.api` method must be classified in `ModuleSwitchFacadeTests`.
+- **No unbounded lists.** A work list returns a page (`items`, `total`, `page`, `size`) filtered and searched in the query, a dashboard section is capped with a true total (`RfqPage` / `AttentionOrder` are the patterns). Still unbounded: NPD projects, sample and production POs, OFP orders, NCRs, deviations, inspections, supplier `/api/quotes` (`docs/LOAD_TESTING.md`).
 - Modules talk only via `<module>.api`. `ModuleBoundaryTest` fails the build otherwise.
 - Record responses list the caller's allowed actions (see `CompanyDtos.CompanyAction`), computed by the same checks that enforce them. The UI renders only those buttons.
 - Flyway migrations are immutable once committed. Add a new `V<n>__<module>_<change>.sql` instead.
@@ -51,6 +54,8 @@ docker compose -f docker/docker-compose.local.yml up -d   # local Postgres + Red
 npm run dev      # http://localhost:5173, proxies /api → :8080
 npm run lint && npm run build
 ```
+
+Ops and test tooling (all authored locally; none has run against Azure): `infra/staging.bicepparam` + `infra/main.bicep` (deploy; secrets from env vars), `infra/ops/restore-drill.sh` (restore drill, encrypted `DUMP_OUT`), `infra/ops/prune-orphan-blobs.sh` (after a DB restore), `loadtest/seed.js` + `loadtest/hot-paths.js` (k6, run from the pinned container, see `docs/LOAD_TESTING.md`), `docs/BACKUP_AND_RECOVERY.md` (runbook). Write one-off scripts with the Write tool, not shell heredocs (quoting breaks).
 
 ## Agents (`.claude/agents/`)
 

@@ -21,6 +21,12 @@ public interface Directory {
 
 	Optional<CompanyRef> company(long id);
 
+	/**
+	 * Ids of the companies whose name contains {@code fragment} (case-insensitive, wildcards literal), for another module's
+	 * search box. It does not apply the caller's company scope: use it only to NARROW a set that module has already scoped.
+	 */
+	Set<Long> companyIdsByName(String fragment);
+
 	Map<Long, CompanyRef> companies(Collection<Long> ids);
 
 	Map<Long, UserRef> users(Collection<Long> ids);

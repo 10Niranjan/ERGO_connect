@@ -41,6 +41,11 @@ class DirectoryService implements Directory {
 	}
 
 	@Override
+	public Set<Long> companyIdsByName(String fragment) {
+		return companies.findByNameContainingIgnoreCase(fragment).stream().map(c -> c.id).collect(Collectors.toSet());
+	}
+
+	@Override
 	public Map<Long, CompanyRef> companies(Collection<Long> ids) {
 		return companies.findByIdIn(ids).stream().map(DirectoryService::ref)
 			.collect(Collectors.toMap(CompanyRef::id, Function.identity()));

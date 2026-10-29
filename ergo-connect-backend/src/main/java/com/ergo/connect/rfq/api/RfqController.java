@@ -28,7 +28,7 @@ import com.ergo.connect.rfq.domain.RfqDtos.CommentForm;
 import com.ergo.connect.rfq.domain.RfqDtos.DocumentView;
 import com.ergo.connect.rfq.domain.RfqDtos.NotesForm;
 import com.ergo.connect.rfq.domain.RfqDtos.RfqForm;
-import com.ergo.connect.rfq.domain.RfqDtos.RfqRow;
+import com.ergo.connect.rfq.domain.RfqDtos.RfqPage;
 import com.ergo.connect.rfq.domain.RfqDtos.RfqView;
 import com.ergo.connect.rfq.domain.RfqDtos.VisibilityForm;
 import com.ergo.connect.rfq.domain.RfqService;
@@ -59,10 +59,12 @@ class RfqController {
 		this.rfqs = rfqs;
 	}
 
+	/** One page, newest first; {@code status} and {@code q} narrow it (RfqService.list). Size is capped at 100. */
 	@GetMapping
 	@PreAuthorize(VIEWERS)
-	List<RfqRow> list() {
-		return rfqs.list();
+	RfqPage list(@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "25") int size,
+			@RequestParam(required = false) String status, @RequestParam(required = false) String q) {
+		return rfqs.list(page, size, status, q);
 	}
 
 	@GetMapping("/{id}")
