@@ -183,7 +183,7 @@ point-in-time-restored server updates it cleanly (the restore runbook's cutover 
 - **Privacy:** telemetry goes to your own workspace (the agent's optional usage statistics to Microsoft are switched off).
   Request URLs, client IPs and WARN log text (which can contain user emails) are recorded, and so are Redis calls with
   their keys, which embed IPs and, for forgot-password, the email address. INFO logs are not sent. No endpoint puts a
-  secret in a query string (checked 8m), but `GET /api/rfqs`, `GET /api/ofp/orders` and `GET /api/quotes` take `q` and `status` (customer and supplier names, PO and part numbers), which are recorded in request URLs and nginx logs. The Postgres driver is set to `logServerErrorDetail=false` so constraint errors
+  secret in a query string (checked 8m), but every paged list takes `q` and filters in the query string: `GET /api/rfqs`, `/api/quotes`, `/api/ofp/orders`, `/api/ofp/production-pos`, `/api/npd`, `/api/npd/sample-pos`, `/api/quality/ncrs`, `/api/quality/deviations` and `/api/quality/inspections` (search terms can be customer and supplier names, PO, part and batch/lot numbers), which are recorded in request URLs and nginx logs. The Postgres driver is set to `logServerErrorDetail=false` so constraint errors
   no longer carry the failing row (prices, hidden margins) into logs; the same text was already reaching the console logs
   before 8m. Anyone with Reader on the workspace sees all of this.
 - **Cost:** sampling is 100% and the workspace has no daily cap, so an unauthenticated login flood creates billable rows
