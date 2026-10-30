@@ -278,6 +278,52 @@ class DashboardTests {
 			.andExpect(jsonPath("$.npdItems[0].riskLevel").value(nullValue()));
 	}
 
+	/** The supplier's quote widget is built from a slim path (invitations plus a slim RFQ lookup, no quote versions or part
+	 * detail); it must still agree with the supplier's own quote list on every field it shows, and flag an overdue part. */
+	@Test
+	void theSupplierQuoteWidgetShowsTheSameRowsAsTheQuoteListAndFlagsTheOverdueOne() throws Exception {
+		long rfqId = com.ergo.connect.TestRfq.create(mvc, buyerA, com.ergo.connect.TestRfq.form(inr, "PN-DQ-1", "PN-DQ-2"));
+		submit(rfqId, buyerA);
+		mvc.perform(json(post("/api/rfqs/{id}/start-review", rfqId), "{}", ergoRfq)).andExpect(status().isOk());
+		com.ergo.connect.TestRfq.invite(mvc, ergoRfq, rfqId, supplier);
+		String number = com.ergo.connect.TestRfq.numberOf(mvc, ergoRfq, rfqId);
+		long firstPart = com.ergo.connect.TestRfq.itemIds(mvc, ergoRfq, rfqId).getFirst();
+		jdbc.update("UPDATE rfq_supplier_assignments SET response_due_date = ? WHERE supplier_company_id = ? AND rfq_item_id = ?",
+				LocalDate.now().minusDays(1), supplier, firstPart);
+
+		String dashboard = mvc.perform(get("/api/dashboard").header(HttpHeaders.AUTHORIZATION, seller.bearer()))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.quoteTotal").value(2))
+			.andExpect(jsonPath("$.quoteItems", org.hamcrest.Matchers.hasSize(2)))
+			// the overdue part ranks first
+			.andExpect(jsonPath("$.quoteItems[0].partNumber").value("PN-DQ-1"))
+			.andExpect(jsonPath("$.quoteItems[0].overdue").value(true))
+			.andExpect(jsonPath("$.quoteItems[1].partNumber").value("PN-DQ-2"))
+			.andExpect(jsonPath("$.quoteItems[1].overdue").value(false))
+			.andExpect(jsonPath("$.quoteItems[*].rfqNumber", org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.is(number))))
+			.andExpect(jsonPath("$.quoteItems[*].status", org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.is("NOT_STARTED"))))
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		// the same parts, with the same status and due date, as the supplier's own quote list
+		java.util.List<Number> ids = JsonPath.read(dashboard, "$.quoteItems[*].invitationId");
+		for (int i = 0; i < ids.size(); i++) {
+			long id = ids.get(i).longValue();
+			String due = JsonPath.read(dashboard, "$.quoteItems[" + i + "].responseDueDate");
+			mvc.perform(get("/api/quotes?size=100").header(HttpHeaders.AUTHORIZATION, seller.bearer()))
+				.andExpect(jsonPath("$.items[?(@.id == %d)].rfqNumber".formatted(id)).value(hasItem(number)))
+				.andExpect(jsonPath("$.items[?(@.id == %d)].status".formatted(id)).value(hasItem("NOT_STARTED")))
+				.andExpect(jsonPath("$.items[?(@.id == %d)].responseDueDate".formatted(id)).value(hasItem(due)));
+		}
+
+		// another supplier's dashboard holds none of these parts
+		Login otherSeller = users.login(users.company("SUPPLIER"), "SUPPLIER_RFQ");
+		mvc.perform(get("/api/dashboard").header(HttpHeaders.AUTHORIZATION, otherSeller.bearer()))
+			.andExpect(jsonPath("$.quoteTotal").value(0))
+			.andExpect(jsonPath("$.quoteItems", empty()));
+	}
+
 	@Test
 	void supplierWithNoDataGetsAnEmptyShapeNotAnError() throws Exception {
 		mvc.perform(get("/api/dashboard").header(HttpHeaders.AUTHORIZATION, seller.bearer()))

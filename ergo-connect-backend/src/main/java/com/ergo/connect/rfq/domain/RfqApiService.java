@@ -211,6 +211,22 @@ class RfqApiService implements RfqApi {
 
 	@Override
 	@Transactional(readOnly = true)
+	public Map<Long, SupplierItemRef> supplierItemRefs(Collection<Long> itemIds) {
+		if (itemIds.isEmpty() || !ModuleSwitch.readable(Module.RFQ)) {
+			return Map.of();
+		}
+		boolean open = ModuleSwitch.writable(Module.RFQ);
+		List<RfqItem> found = items.findByIdIn(itemIds);
+		Map<Long, Rfq> owners = rfqs.findByIdIn(found.stream().map(i -> i.rfqId).collect(Collectors.toSet())).stream()
+			.collect(Collectors.toMap(r -> r.id, Function.identity()));
+		return found.stream().collect(Collectors.toMap(i -> i.id, i -> {
+			Rfq r = owners.get(i.rfqId);
+			return new SupplierItemRef(i.id, r.number, i.partNumber, open && SUPPLIER_OPEN.contains(r.status));
+		}));
+	}
+
+	@Override
+	@Transactional(readOnly = true)
 	public Set<Long> matchingItems(Collection<Long> itemIds, String needle) {
 		if (itemIds.isEmpty() || !ModuleSwitch.readable(Module.RFQ)) {
 			return Set.of();

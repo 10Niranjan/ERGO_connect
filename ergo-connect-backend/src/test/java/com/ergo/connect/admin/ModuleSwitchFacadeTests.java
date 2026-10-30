@@ -65,7 +65,7 @@ class ModuleSwitchFacadeTests {
 		rules(RfqApi.class, Rule.NOT_FOUND, "forErgo(long)", "forCustomer(long)", "numberOf(long)",
 				"forSupplierItem(long)");
 		rules(RfqApi.class, Rule.HIDDEN_EMPTY, "visibleToCaller(long)", "partiesVisibleToCaller(long)",
-				"forSupplierItems(Collection)", "matchingItems(Collection,String)", "supplierDocuments(long,Collection)", "itemForErgo(long)", "customerParts()",
+				"forSupplierItems(Collection)", "supplierItemRefs(Collection)", "matchingItems(Collection,String)", "supplierDocuments(long,Collection)", "itemForErgo(long)", "customerParts()",
 				"dashboardItems()");
 		rules(RfqApi.class, Rule.WRITE, "distributing(long)", "quotationProgress(long,QuotationSummary)");
 		rules(RfqApi.class, Rule.FROZEN_EMPTY, "replaceOpenForCaller(long)");

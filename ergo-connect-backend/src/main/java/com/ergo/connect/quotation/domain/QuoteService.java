@@ -71,10 +71,12 @@ import com.ergo.connect.quotation.domain.QuoteDtos.SupplierAssignedRfqView;
 import com.ergo.connect.quotation.domain.QuoteDtos.SupplierQuoteRow;
 import com.ergo.connect.quotation.domain.QuoteDtos.SupplierQuoteView;
 import com.ergo.connect.quotation.domain.QuoteDtos.VersionView;
+import com.ergo.connect.quotation.api.QuotationApi.SupplierQuoteItem;
 import com.ergo.connect.rfq.api.RfqApi;
 import com.ergo.connect.rfq.api.RfqApi.ItemRef;
 import com.ergo.connect.rfq.api.RfqApi.QuotationSummary;
 import com.ergo.connect.rfq.api.RfqApi.RfqRef;
+import com.ergo.connect.rfq.api.RfqApi.SupplierItemRef;
 import com.ergo.connect.rfq.api.RfqApi.SupplierRfqItem;
 
 import tools.jackson.databind.json.JsonMapper;
@@ -357,10 +359,19 @@ public class QuoteService {
 		}).toList();
 	}
 
-	/** The supplier's parts with their quote status; only for roles that may see quotes. */
+	/** The dashboard's view of the supplier's parts: what the row shows and the overdue flag, and nothing else (no quote
+	 * versions, sub-RFQ numbers or part detail, which the list rows carry). */
 	@Transactional(readOnly = true)
-	List<SupplierQuoteRow> quoteRows() {
-		return quoteRows(myInvitations());
+	List<SupplierQuoteItem> dashboardRows() {
+		List<Invitation> mine = myInvitations();
+		Map<Long, SupplierItemRef> parts = rfqs.supplierItemRefs(mine.stream().map(i -> i.rfqItemId).toList());
+		LocalDate today = LocalDate.now();
+		return mine.stream().filter(i -> parts.containsKey(i.rfqItemId)).map(i -> { // none while the RFQ module is hidden
+			SupplierItemRef p = parts.get(i.rfqItemId);
+			return new SupplierQuoteItem(i.id, p.rfqNumber(), p.partNumber(), i.status.forSupplier().name(), i.responseDueDate,
+					p.quotingOpen() && i.responseDueDate != null && i.responseDueDate.isBefore(today)
+							&& QuoteStatus.EDITABLE.contains(i.status.forSupplier()));
+		}).toList();
 	}
 
 	private List<SupplierQuoteRow> quoteRows(List<Invitation> mine) {

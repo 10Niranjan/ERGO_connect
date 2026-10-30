@@ -1,6 +1,5 @@
 package com.ergo.connect.quotation.domain;
 
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -244,12 +243,7 @@ class QuotationApiService implements QuotationApi {
 				|| !ModuleSwitch.readable(Module.QUOTATION)) {
 			return List.of();
 		}
-		LocalDate today = LocalDate.now();
-		return quoteService.quoteRows().stream()
-			.map(r -> new SupplierQuoteItem(r.id(), r.rfqNumber(), r.partNumber(), r.status().name(),
-					r.responseDueDate(), r.quotingOpen() && r.responseDueDate() != null
-							&& r.responseDueDate().isBefore(today) && QuoteStatus.EDITABLE.contains(r.status())))
-			.toList();
+		return quoteService.dashboardRows();
 	}
 
 	@Override

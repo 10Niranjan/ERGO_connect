@@ -107,6 +107,13 @@ public interface RfqApi {
 	/** The parts as {@link #forSupplierItem}, by item id; parts that do not exist (or while the RFQ module is hidden) are absent. */
 	Map<Long, SupplierRfqItem> forSupplierItems(Collection<Long> itemIds);
 
+	/** What a supplier's dashboard row needs of a part, and nothing more (no description, materials or process steps). */
+	record SupplierItemRef(long itemId, String rfqNumber, String partNumber, boolean quotingOpen) {
+	}
+
+	/** The slim reference as {@link #forSupplierItems}, by item id: three lookups fewer per part; parts that do not exist (or while the RFQ module is hidden) are absent. The caller passes only the parts its supplier holds. */
+	Map<Long, SupplierItemRef> supplierItemRefs(Collection<Long> itemIds);
+
 	/** Which of these parts match a search (RFQ number, part number or description, case-insensitive); empty while the RFQ module is hidden. The caller passes only the parts its supplier holds; no record scope is checked here. */
 	Set<Long> matchingItems(Collection<Long> itemIds, String needle);
 
