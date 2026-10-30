@@ -79,7 +79,7 @@ class AuthController {
 		SessionResponse session = auth.refresh(sessionToken, shadowToken);
 		ResponseEntity.BodyBuilder response = ResponseEntity.ok();
 		if (shadowToken != null && session.impersonation() == null) {
-			// the view-only session has ended or can no longer stand: drop its cookie, the admin's own answered
+			// the "Login as" session has ended or can no longer stand: drop its cookie, the admin's own answered
 			response.header(HttpHeaders.SET_COOKIE, cookie(SHADOW_COOKIE, "", Duration.ZERO));
 		}
 		return response.body(session);
@@ -95,7 +95,7 @@ class AuthController {
 			.build();
 	}
 
-	/** Leave a "Login as" view. Called with the view-only token; the cookie is dropped, the admin's own login stays. */
+	/** Leave a "Login as" view. Called with the shadow token; the cookie is dropped, the admin's own login stays. */
 	@PostMapping("/impersonation/end")
 	ResponseEntity<Void> endImpersonation() {
 		auth.endImpersonation();

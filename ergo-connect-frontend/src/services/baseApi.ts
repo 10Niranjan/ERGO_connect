@@ -30,9 +30,6 @@ const rawBaseQuery = fetchBaseQuery({
 
 const NO_RETRY = ['/auth/login', '/auth/refresh', '/auth/logout']
 
-// A Super Admin's "Login as" session is view-only (the server refuses every change anyway); say so without a round trip.
-const VIEW_ONLY_ALLOWED = ['/auth/refresh', '/auth/logout', '/auth/switch-role', '/auth/impersonation/end']
-
 // Requests that hit an expired access token share one refresh call, then retry once.
 let refreshing: Promise<boolean> | null = null
 
@@ -52,16 +49,6 @@ function refreshAccess(api: BaseQueryApi, extra: object): void {
 
 export const baseQuery: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError> = async (args, api, extra) => {
   const url = typeof args === 'string' ? args : args.url
-  const method = (typeof args === 'string' ? 'GET' : (args.method ?? 'GET')).toUpperCase()
-  const state = api.getState() as { auth: AuthState }
-  if (state.auth?.session?.impersonation && method !== 'GET' && !VIEW_ONLY_ALLOWED.includes(url)) {
-    return {
-      error: {
-        status: 403,
-        data: { title: 'Forbidden', status: 403, detail: 'View-only session: nothing can be changed while viewing as another user.' },
-      },
-    }
-  }
   const result = await rawBaseQuery(args, api, extra)
   const current = (api.getState() as { auth: AuthState }).auth?.session?.access?.version
   const served = Number(result.meta?.response?.headers.get('X-Permissions-Version'))

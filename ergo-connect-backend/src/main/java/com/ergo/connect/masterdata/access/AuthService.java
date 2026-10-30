@@ -52,7 +52,7 @@ public class AuthService {
 
 	private static final Duration OTP_TTL = Duration.ofMinutes(5);
 
-	/** A Super Admin's view-only "Login as" lasts this long at most; there is no extension, start a new one. */
+	/** A Super Admin's "Login as" session lasts this long at most; there is no extension, start a new one. */
 	static final Duration SHADOW_TTL = Duration.ofMinutes(30);
 
 	/** A new login: the session payload plus the raw session token for the HttpOnly cookie - unless the account has
@@ -230,6 +230,9 @@ public class AuthService {
 	 */
 	public void setTwoFactor(boolean enabled, String currentPassword) {
 		CurrentUser me = CurrentUser.get();
+		if (me.impersonated()) { // the filter also refuses these paths; this holds whatever the URL spelling
+			throw ApiException.forbidden("Not allowed while logged in as another user: the account itself cannot be changed.");
+		}
 		User user = users.findById(me.userId()).orElseThrow();
 		if (!enabled && user.roles.contains(Role.ERGO_ADMIN)) {
 			throw ApiException.unprocessable("ERGO Admin accounts require two-factor authentication");
@@ -263,7 +266,7 @@ public class AuthService {
 
 	/**
 	 * Fresh access token for an existing login. Re-checks everything that may have changed since. While the browser
-	 * holds a live "Login as" cookie the view-only session wins; once it has ended or can no longer be trusted it is
+	 * holds a live "Login as" cookie the "Login as" session wins; once it has ended or can no longer be trusted it is
 	 * revoked and the Super Admin's own session answers instead, so Exit and the 30-minute end land back on their own
 	 * account without a new login.
 	 */
@@ -293,7 +296,7 @@ public class AuthService {
 		return response(user, company, role, session.id(), null);
 	}
 
-	/** The view-only session, or null (after ending it) when it may no longer stand. */
+	/** The "Login as" session, or null (after ending it) when it may no longer stand. */
 	private SessionResponse refreshShadow(String shadowToken, String adminToken) {
 		SessionStore.Session shadow = sessions.findActive(shadowToken).orElse(null);
 		if (shadow == null || shadow.impersonatedBy() == null) {
@@ -334,12 +337,12 @@ public class AuthService {
 	}
 
 	/**
-	 * Super Admin "Login as" (docs/PERMISSIONS.md section 13): a view-only session for another user, started from the
+	 * Super Admin "Login as" (docs/PERMISSIONS.md section 13): a session acting as another user, started from the
 	 * admin's own session, for a stated reason, audited. The admin's own session is untouched.
 	 */
 	public LoginResult startImpersonation(long targetUserId, String reason, String ip) {
 		CurrentUser me = CurrentUser.get();
-		if (me.viewOnly() || me.role() != Role.ERGO_ADMIN) {
+		if (me.impersonated() || me.role() != Role.ERGO_ADMIN) {
 			throw ApiException.forbidden("Only a Super Admin can log in as another user");
 		}
 		User admin = users.findById(me.userId()).orElseThrow();
@@ -386,10 +389,10 @@ public class AuthService {
 				Duration.between(now, ends));
 	}
 
-	/** Leaves a view-only session (called with the shadow token); the admin's own session carries on. */
+	/** Leaves a "Login as" session (called with the shadow token); the admin's own session carries on. */
 	public void endImpersonation() {
 		CurrentUser me = CurrentUser.get();
-		if (!me.viewOnly()) {
+		if (!me.impersonated()) {
 			throw ApiException.unprocessable("You are not viewing as another user");
 		}
 		sessions.revokeById(me.sessionId());
@@ -397,8 +400,8 @@ public class AuthService {
 	}
 
 	/**
-	 * Records the end of a view as the admin's own act (a view-only session can't write audit rows, and logout and
-	 * refresh have no signed-in caller). {@code cause}: EXIT, REPLACED, LOGOUT or NO_LONGER_VALID. A view that simply
+	 * Records the end of a session as the admin's own act (logout and refresh have no signed-in caller, and the
+	 * viewed user did not end it). {@code cause}: EXIT, REPLACED, LOGOUT or NO_LONGER_VALID. A view that simply
 	 * runs out after 30 minutes writes nothing; the session row shows when it stopped.
 	 */
 	private void auditEnded(User admin, long viewedUserId, String cause) {
@@ -411,8 +414,8 @@ public class AuthService {
 	public SessionResponse switchRole(Role role) {
 		CurrentUser me = CurrentUser.get();
 		User user = users.findById(me.userId()).orElseThrow();
-		if ((user.mustChangePassword && !me.viewOnly()) || !assignableRoles(user).contains(role)
-				|| (me.viewOnly() && role == Role.ERGO_ADMIN)) { // never another Super Admin, even if granted mid-view
+		if ((user.mustChangePassword && !me.impersonated()) || !assignableRoles(user).contains(role)
+				|| (me.impersonated() && role == Role.ERGO_ADMIN)) { // never another Super Admin, even if granted mid-view
 			throw ApiException.forbidden("This role is not available to you");
 		}
 		if (!sessions.setRole(me.sessionId(), me.userId(), role)) {
@@ -423,6 +426,9 @@ public class AuthService {
 
 	public SessionResponse changePassword(String currentPassword, String newPassword) {
 		CurrentUser me = CurrentUser.get();
+		if (me.impersonated()) { // the filter also refuses these paths; this holds whatever the URL spelling
+			throw ApiException.forbidden("Not allowed while logged in as another user: the account itself cannot be changed.");
+		}
 		changePasswordRateLimiter.checkAndRecord(me.userId()); // before bcrypt: a stolen token holder gets no free guesses
 		User user = users.findById(me.userId()).orElseThrow();
 		Instant now = Instant.now();
@@ -555,7 +561,7 @@ public class AuthService {
 			.sorted()
 			.map(r -> new RoleOption(r, catalog.get(r), r.companyType()))
 			.toList();
-		// a view-only session never has to change the viewed user's password (it could not anyway)
+		// a Login as session never has to change the viewed user's password (and may not: it is refused)
 		boolean mustChange = impersonatorId == null && user.mustChangePassword;
 		Impersonation impersonation = null;
 		if (impersonatorId != null) {

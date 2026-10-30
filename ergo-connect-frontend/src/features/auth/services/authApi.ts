@@ -71,7 +71,7 @@ export const authApi = api.injectEndpoints({
         }
       },
     }),
-    /** Super Admin "Login as": a view-only session as another user. The admin's own login is kept by the server. */
+    /** Super Admin "Login as": a session acting as another user. The admin's own login is kept by the server. */
     loginAs: build.mutation<Session, { id: number; reason: string }>({
       query: ({ id, reason }) => ({ url: `/users/${id}/login-as`, method: 'POST', body: { reason } }),
       ...startsSession,

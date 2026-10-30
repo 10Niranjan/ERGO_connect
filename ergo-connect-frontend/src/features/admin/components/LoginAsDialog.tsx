@@ -4,7 +4,7 @@ import { problemMessage } from '../../../shared/problem'
 import { useLoginAsMutation } from '../../auth/services/authApi'
 import type { User } from '../adminApi'
 
-/** Super Admin "Login as": a view-only session as this user. The reason is stored in the audit trail. */
+/** Super Admin "Login as": a session acting as this user. The reason is stored in the audit trail. */
 export function LoginAsDialog({ user, onClose, onStarted }: { user: User; onClose: () => void; onStarted: () => void }) {
   const [loginAs, { isLoading, error }] = useLoginAsMutation()
 
@@ -28,8 +28,9 @@ export function LoginAsDialog({ user, onClose, onStarted }: { user: User; onClos
         </DialogTitle>
         <DialogContent sx={{ display: 'grid', gap: 2, pt: '8px !important' }}>
           <DialogContentText>
-            You will see ERGO Connect exactly as {user.email} does. It is view only: nothing can be changed. It ends after
-            30 minutes or when you press Exit, and the start is recorded in the audit trail with your reason.
+            You will be signed in as {user.email} and can do everything they can. Every change is saved as theirs and the audit
+            trail names you as the Super Admin behind it. You cannot change their password or 2FA. It ends after 30 minutes or
+            when you press Exit; the start is recorded with your reason.
           </DialogContentText>
           <TextField
             name="reason"
@@ -44,7 +45,7 @@ export function LoginAsDialog({ user, onClose, onStarted }: { user: User; onClos
         <DialogActions>
           <Button onClick={onClose}>Cancel</Button>
           <Button type="submit" variant="contained" loading={isLoading}>
-            Start viewing
+            Log in as this user
           </Button>
         </DialogActions>
       </form>

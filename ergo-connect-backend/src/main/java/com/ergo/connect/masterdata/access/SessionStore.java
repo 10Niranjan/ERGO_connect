@@ -24,7 +24,7 @@ import com.ergo.connect.common.security.Role;
 @Component
 class SessionStore {
 
-	/** {@code impersonatedBy} is the Super Admin's user id for a view-only shadow session, else null. */
+	/** {@code impersonatedBy} is the Super Admin's user id for a "Login as" shadow session, else null. */
 	record Session(long id, long userId, Role role, Instant expiresAt, Long impersonatedBy, Long parentSessionId) {
 	}
 
@@ -51,7 +51,7 @@ class SessionStore {
 	}
 
 	/**
-	 * A view-only shadow session of {@code userId}, started by the Super Admin {@code adminId} from their own session
+	 * A "Login as" shadow session of {@code userId}, started by the Super Admin {@code adminId} from their own session
 	 * {@code parentSessionId}. Any shadow session that admin still has open is ended first: one at a time.
 	 */
 	NewSession createShadow(long userId, Role role, Instant expiresAt, String ip, long adminId, long parentSessionId,

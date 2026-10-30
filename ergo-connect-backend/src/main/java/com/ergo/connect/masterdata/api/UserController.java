@@ -117,7 +117,7 @@ class UserController {
 		return users.resetPassword(id);
 	}
 
-	/** Super Admin "Login as": a view-only session for this user (docs/PERMISSIONS.md section 13). */
+	/** Super Admin "Login as": a session acting as this user (docs/PERMISSIONS.md section 13). */
 	@PostMapping("/users/{id}/login-as")
 	@PreAuthorize(ERGO_ADMIN)
 	ResponseEntity<SessionResponse> loginAs(@PathVariable long id, @Valid @RequestBody LoginAsRequest body,

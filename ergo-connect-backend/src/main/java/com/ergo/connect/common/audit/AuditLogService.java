@@ -12,7 +12,6 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
-import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.common.security.CurrentUser;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -91,28 +90,29 @@ public class AuditLogService {
 	private void insert(String module, String entity, long recordId, String eventType, String field, String oldValue,
 			String newValue, String channel, String ip) {
 		Optional<CurrentUser> actor = CurrentUser.find();
-		if (actor.map(CurrentUser::viewOnly).orElse(false)) {
-			// backstop for the "Login as" rule (the guarantee is ViewOnlyFilter): refusing the audit row rolls back an
-			// audited write in a service that rolls back on ApiException. It cannot stop un-audited writes.
-			throw ApiException.forbidden("View-only session: nothing can be changed while viewing as another user.");
-		}
 		jdbc.update("""
 				INSERT INTO audit_logs (module_name, entity_name, record_id, event_type, field_name, old_value, new_value,
 				                        action_reason, changed_by_user_id, changed_by_role_code, changed_by_company_id,
-				                        source_channel, ip_address)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+				                        source_channel, ip_address, acting_admin_user_id)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
 				module, entity, recordId, eventType, field, oldValue, newValue,
 				TransactionSynchronizationManager.getResource(REASON),
 				actor.map(CurrentUser::userId).orElse(null), actor.map(u -> u.role().name()).orElse(null),
-				actor.map(CurrentUser::companyId).orElse(null), channel, ip);
+				actor.map(CurrentUser::companyId).orElse(null), channel, ip,
+				actor.map(CurrentUser::impersonatorId).orElse(null)); // a Super Admin acting as this user, else null
 	}
 
 	/** The audit trail of one record, oldest first. Callers decide who may read it. */
 	public List<AuditEntry> history(String module, String entity, long recordId) {
 		return jdbc.query("""
-				SELECT a.changed_at, u.first_name || ' ' || u.last_name AS user_name, a.changed_by_role_code, a.event_type,
+				SELECT a.changed_at,
+				       u.first_name || ' ' || u.last_name
+				         || CASE WHEN a.acting_admin_user_id IS NULL THEN ''
+				                 ELSE ' (by Super Admin ' || ad.first_name || ' ' || ad.last_name || ')' END AS user_name,
+				       a.changed_by_role_code, a.event_type,
 				       a.field_name, a.old_value, a.new_value, a.action_reason, a.source_channel
 				FROM audit_logs a LEFT JOIN users u ON u.user_id = a.changed_by_user_id
+				LEFT JOIN users ad ON ad.user_id = a.acting_admin_user_id
 				WHERE a.module_name = ? AND a.entity_name = ? AND a.record_id = ?
 				ORDER BY a.audit_log_id""", (rs, n) -> new AuditEntry(rs.getObject(1, OffsetDateTime.class).toInstant(),
 				rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5), rs.getString(6), rs.getString(7),

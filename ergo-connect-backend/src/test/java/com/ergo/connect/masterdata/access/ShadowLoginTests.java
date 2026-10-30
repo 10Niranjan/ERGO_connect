@@ -34,6 +34,7 @@ import org.springframework.web.servlet.mvc.method.RequestMappingInfo;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 
 import com.ergo.connect.IntegrationTest;
+import com.ergo.connect.TestRfq;
 import com.ergo.connect.common.audit.AuditLogService;
 import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.common.security.CompanyType;
@@ -44,8 +45,8 @@ import com.jayway.jsonpath.JsonPath;
 import jakarta.servlet.http.Cookie;
 
 /**
- * Super Admin "Login as" (docs/PERMISSIONS.md section 13): a view-only session for another user. It sees what that user
- * sees, can change nothing, and ends with the admin's own session, the 30 minutes, or any change to either account.
+ * Super Admin "Login as" (docs/PERMISSIONS.md section 13): a session acting as another user. It sees and can do what that
+ * user can (changes carry the admin in the audit trail), cannot take over the account, and ends with the admin's own session, the 30 minutes, or any change to either account.
  */
 @IntegrationTest
 class ShadowLoginTests {
@@ -214,6 +215,8 @@ class ShadowLoginTests {
 		assertThat(((Number) row.get("changed_by_user_id")).longValue()).isEqualTo(admin.id);
 		assertThat(row.get("changed_by_role_code")).isEqualTo("ERGO_ADMIN");
 		assertThat(row.get("action_reason")).isEqualTo(REASON);
+		assertThat(jdbc.queryForObject("SELECT acting_admin_user_id FROM audit_logs WHERE event_type = 'IMPERSONATION_STARTED' AND record_id = ?",
+				Long.class, target.id)).isNull(); // the start is the admin's own act, not an act as someone
 
 		// at most 30 minutes, and never longer than the admin's own session
 		Map<String, Object> session = jdbc.queryForMap("""
@@ -252,63 +255,72 @@ class ShadowLoginTests {
 		assertThat((Map<String, String>) JsonPath.read(seen, "$.permissions")).isNotEqualTo(JsonPath.read(own, "$.permissions"));
 	}
 
-	// ---- view only
+	// ---- acting as the viewed user
 
 	@Test
-	void everyEndpointThatIsNotARead_isRefusedUnderAShadowToken_exceptLeavingRenewingAndSwitchingRole() throws Exception {
-		User target = accounts.user(customer, Role.CUSTOMER_RFQ, Role.CUSTOMER_NPD);
-		String shadow = Accounts.bearer(start(target.id));
-		Set<String> allowed = Set.of("POST /api/auth/refresh", "POST /api/auth/logout", "POST /api/auth/switch-role",
-				"POST /api/auth/impersonation/end");
+	void theAdminActsAsTheViewedUser_theChangeIsTheirsAndTheAuditNamesTheAdmin() throws Exception {
+		User buyer = accounts.user(customer, Role.CUSTOMER_RFQ);
+		String shadow = Accounts.bearer(start(buyer.id));
+		long currency = jdbc.queryForObject("SELECT min(currency_id) FROM currencies", Long.class);
+		long auditBefore = jdbc.queryForObject("SELECT coalesce(max(audit_log_id), 0) FROM audit_logs", Long.class);
 
-		List<String> notRefused = new ArrayList<>();
-		int swept = 0;
-		for (Map.Entry<RequestMappingInfo, HandlerMethod> e : mappings.getHandlerMethods().entrySet()) {
-			if (e.getKey().getPathPatternsCondition() == null) {
-				continue;
-			}
-			Set<RequestMethod> methods = e.getKey().getMethodsCondition().getMethods();
-			for (RequestMethod method : methods.isEmpty() ? Set.of(RequestMethod.POST) : methods) {
-				if (method == RequestMethod.GET || method == RequestMethod.HEAD || method == RequestMethod.OPTIONS) {
-					continue;
-				}
-				for (String pattern : e.getKey().getPathPatternsCondition().getPatternValues()) {
-					if (!pattern.startsWith("/api/") || allowed.contains(method + " " + pattern)) {
-						continue;
-					}
-					swept++;
-					String path = pattern.replaceAll("\\{[^/}]+}", "1");
-					MvcResult r = mvc.perform(request(HttpMethod.valueOf(method.name()), path)
-						.header(HttpHeaders.AUTHORIZATION, shadow).contentType(MediaType.APPLICATION_JSON).content("{}"))
-						.andReturn();
-					if (r.getResponse().getStatus() != 403 || !r.getResponse().getContentAsString().contains("View-only")) {
-						notRefused.add(method + " " + pattern + " -> " + r.getResponse().getStatus());
-					}
-				}
-			}
+		String created = mvc.perform(json(post("/api/rfqs"), TestRfq.form(currency, "PN-SHADOW"), shadow))
+			.andExpect(status().is2xxSuccessful()).andReturn().getResponse().getContentAsString();
+		long rfq = JsonPath.<Number>read(created, "$.id").longValue();
+
+		// the RFQ is the customer company's, made by the viewed user ...
+		assertThat(jdbc.queryForObject("SELECT customer_company_id FROM rfqs WHERE rfq_id = ?", Long.class, rfq)).isEqualTo(customer.id);
+		// ... and every audit row of the change is theirs, with the Super Admin named beside it
+		List<Map<String, Object>> rows = jdbc.queryForList(
+				"SELECT module_name, entity_name, changed_by_user_id, acting_admin_user_id FROM audit_logs WHERE audit_log_id > ? AND module_name = 'rfq'",
+				auditBefore);
+		assertThat(rows).isNotEmpty();
+		for (Map<String, Object> row : rows) {
+			assertThat(((Number) row.get("changed_by_user_id")).longValue()).isEqualTo(buyer.id);
+			assertThat(((Number) row.get("acting_admin_user_id")).longValue()).isEqualTo(admin.id);
 		}
-		assertThat(swept).as("endpoints swept").isGreaterThan(100);
-		assertThat(notRefused).as("endpoints a view-only session got past the filter on").isEmpty();
+		Map<String, Object> first = rows.get(0);
+		assertThat(audit.history((String) first.get("module_name"), (String) first.get("entity_name"), rfq))
+			.anySatisfy(entry -> assertThat(entry.user()).contains("(by Super Admin " + admin.firstName));
 
-		// the three allowed ones work, and switching role keeps it view-only
+		// the same call by the customer themselves carries no admin
+		String own = accounts.bearer(buyer);
+		long ownBefore = jdbc.queryForObject("SELECT coalesce(max(audit_log_id), 0) FROM audit_logs", Long.class);
+		long second = JsonPath.<Number>read(mvc.perform(json(post("/api/rfqs"), TestRfq.form(currency, "PN-OWN"), own))
+			.andExpect(status().is2xxSuccessful()).andReturn().getResponse().getContentAsString(), "$.id").longValue();
+		assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_logs WHERE audit_log_id > ? AND module_name = 'rfq' AND acting_admin_user_id IS NOT NULL",
+				Long.class, ownBefore)).isZero();
+	}
+
+	@Test
+	void theAccountItselfCannotBeTakenOverAndNoSecondLoginAsStartsFromInside() throws Exception {
+		User target = accounts.user(customer, Role.CUSTOMER_RFQ, Role.CUSTOMER_NPD);
+		String hash = jdbc.queryForObject("SELECT password_hash FROM users WHERE user_id = ?", String.class, target.id);
+		String shadow = Accounts.bearer(start(target.id));
+
+		mvc.perform(json(post("/api/auth/change-password"), "{\"currentPassword\": \"" + Accounts.PASSWORD + "\", \"newPassword\": \"Another-Pass-77\"}", shadow))
+			.andExpect(status().isForbidden()).andExpect(content().string(org.hamcrest.Matchers.containsString("account itself")));
+		mvc.perform(json(post("/api/auth/2fa"), "{\"enabled\": true}", shadow)).andExpect(status().isForbidden());
+		mvc.perform(json(post("/api/users/{id}/login-as", target.id), "{\"reason\": \"" + REASON + "\"}", shadow))
+			.andExpect(status().isForbidden());
+		// the same paths spelled with URL encoding are refused too (by the service, not only the filter)
+		mvc.perform(json(post(java.net.URI.create("/api/auth/change%2Dpassword")), "{\"currentPassword\": \"x\", \"newPassword\": \"Another-Pass-77\"}", shadow))
+			.andExpect(status().isForbidden());
+		mvc.perform(json(post(java.net.URI.create("/api/auth/2f%61")), "{\"enabled\": true}", shadow)).andExpect(status().isForbidden());
+		assertThat(jdbc.queryForObject("SELECT password_hash FROM users WHERE user_id = ?", String.class, target.id)).isEqualTo(hash);
+		assertThat(jdbc.queryForObject("SELECT failed_login_count FROM users WHERE user_id = ?", Integer.class, target.id)).isZero();
+		// an unaudited write (read flags) is refused as well
+		mvc.perform(json(post("/api/notifications/read-all"), "", shadow)).andExpect(status().isForbidden());
+
+		// switching role works within the viewed user's own roles and stays a Login as session
 		String switched = mvc.perform(json(post("/api/auth/switch-role"), "{\"role\": \"CUSTOMER_NPD\"}", shadow))
 			.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
 		assertThat((String) JsonPath.read(switched, "$.activeRole")).isEqualTo("CUSTOMER_NPD");
 		assertThat((String) JsonPath.read(switched, "$.impersonation.adminName")).isNotBlank();
 		String again = "Bearer " + JsonPath.read(switched, "$.accessToken");
-		mvc.perform(json(post("/api/users/{id}/login-as", target.id), "{\"reason\": \"" + REASON + "\"}", again))
-			.andExpect(status().isForbidden()); // still view-only, and not an admin anyway
-		// the role the viewed user does not hold cannot be switched to
 		mvc.perform(json(post("/api/auth/switch-role"), "{\"role\": \"CUSTOMER_OFP\"}", again)).andExpect(status().isForbidden());
-	}
-
-	@Test
-	void theAuditWriterRefusesToWriteForAViewOnlySession_soNoUnforeseenWritePathCanSave() {
-		CurrentUser shadow = new CurrentUser(1L, 1L, CompanyType.CUSTOMER, Role.CUSTOMER_RFQ, 1L, 2L);
-		assertThatThrownBy(() -> CurrentUser.runAs(shadow, () -> {
-			audit.record(User.class, 1L, "ANYTHING", null, null, null);
-			return null;
-		})).isInstanceOf(ApiException.class).hasMessageContaining("View-only");
+		mvc.perform(json(post("/api/users/{id}/login-as", target.id), "{\"reason\": \"" + REASON + "\"}", again))
+			.andExpect(status().isForbidden());
 	}
 
 	// ---- how it ends
@@ -349,7 +361,7 @@ class ShadowLoginTests {
 
 		// without the admin's own cookie a view cannot be renewed (and is not left open)
 		assertThat(refreshStatus(shadowCookie)).isEqualTo(401);
-		// a view-only token is not accepted as a login cookie
+		// a shadow token is not accepted as a login cookie
 		assertThat(refreshStatus(new Cookie("ergo_session", shadowCookie.getValue()))).isEqualTo(401);
 
 		// a new view replaces the old one: only one at a time

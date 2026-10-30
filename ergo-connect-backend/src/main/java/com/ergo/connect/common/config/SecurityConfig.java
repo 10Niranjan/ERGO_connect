@@ -31,7 +31,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import com.ergo.connect.common.security.SecurityProperties;
-import com.ergo.connect.common.security.ViewOnlyFilter;
+import com.ergo.connect.common.security.ShadowSessionFilter;
 import com.ergo.connect.common.security.jwt.AccessTokens;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -75,8 +75,8 @@ class SecurityConfig {
 				.jwt(jwt -> jwt.jwtAuthenticationConverter(
 						token -> new JwtAuthenticationToken(token, AccessTokens.authorities(token), token.getSubject())))
 				.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
-			// right after the bearer token is read: a Super Admin's "Login as" session may only read
-			.addFilterAfter(new ViewOnlyFilter(), BearerTokenAuthenticationFilter.class)
+			// right after the bearer token is read: a Super Admin acting as another user may not take over the account
+			.addFilterAfter(new ShadowSessionFilter(), BearerTokenAuthenticationFilter.class)
 			.exceptionHandling(e -> e.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))
 				.accessDeniedHandler(SecurityConfig::forbidden))
 			.build();

@@ -283,7 +283,7 @@ function Grid({ side, data, refreshing }: { side: CompanyType; data: EditablePer
       </TableContainer>
       {side === 'ERGO' && (
         <Typography variant="caption" color="text.secondary">
-          ERGO Admin manages accounts, companies and these permissions, so it stays view-only on the business modules.
+          ERGO Admin manages accounts, companies and these permissions, so it stays view-only on the business modules in its own role (Login as is the separate, audited way to act as another user).
           Every module keeps at least one ERGO role at Owner. An outlined level differs from the signed-off default.
         </Typography>
       )}

@@ -258,6 +258,9 @@ public class NotificationService {
 
 	/** Idempotent. Someone else's notification does not exist for the caller (404, not 403). */
 	public NotificationView markRead(long id) {
+		if (CurrentUser.get().impersonated()) { // an unaudited write: the admin must not clear the real user's alerts
+			throw ApiException.forbidden("Not allowed while logged in as another user.");
+		}
 		long me = CurrentUser.get().userId();
 		jdbc.update("""
 				UPDATE notifications SET read_flag = true, read_at = now()
@@ -270,6 +273,9 @@ public class NotificationService {
 	}
 
 	public MarkedRead markAllRead() {
+		if (CurrentUser.get().impersonated()) { // an unaudited write: the admin must not clear the real user's alerts
+			throw ApiException.forbidden("Not allowed while logged in as another user.");
+		}
 		long me = CurrentUser.get().userId();
 		return new MarkedRead(jdbc.update("""
 				UPDATE notifications SET read_flag = true, read_at = now()

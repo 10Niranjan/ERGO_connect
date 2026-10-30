@@ -21,7 +21,7 @@ long version. If the two disagree, the code wins, then this file, then §8.
 4. Answers to my planning questions (these are **settled**, do not re-ask):
    - "Super Admin" = the existing **ERGO Admin** role. No new role.
    - Any level may be given to any role (not "tighten only"), including **O for suppliers**.
-   - **ERGO Admin is view-only (NV/V) on the five workflow modules**, but still creates accounts, manages permissions
+   - **ERGO Admin is view-only (NV/V) on the five workflow modules in its own role** (Login as, section 13, is the separate audited way to act as another user), but still creates accounts, manages permissions
      and adds companies.
    - The matrix covers the **5 workflow modules** (RFQ, Quotation, NPD, OFP, Quality). **Every other sidebar page is
      also registered as a module** and the **sidebar is fully dynamic**, so permissions for other modules can be added
@@ -358,44 +358,50 @@ sidebar items are seeded: `production-pos` (Production POs) and `ofp-projects` (
   customer OFP viewers (own company) and ERGO roles with OFP view. Suppliers never reach a production PO.
 - **Handover to an order** exists only for production projects.
 
-## 13. Super Admin "Login as" (view-only shadow login, 2026-10-31)
+## 13. Super Admin "Login as" (shadow login, 2026-10-31)
 
-A Super Admin (`ERGO_ADMIN`, acting as that role) opens **Login as** on a user in Admin > Users, gives a reason, and sees
-that user's portal exactly as they see it. **Nothing can be changed.** Decided with the client: view only, audit only
-(the viewed person is not emailed).
+A Super Admin (`ERGO_ADMIN`, acting as that role) opens **Login as** on a user in Admin > Users, gives a reason, and is
+signed in as that user: same sidebar, same records, and **the same powers**. Decided with the client in two steps: it was
+first built view-only; the user then asked for full access (2026-10-31), and the view-only rule was removed.
 
 | Rule | Value |
 |---|---|
-| Who starts one | `ERGO_ADMIN` as the active role, not already in a view. An admin working as another of their roles is refused. |
+| Who starts one | `ERGO_ADMIN` as the active role, not already in a Login as session. An admin working as another of their roles is refused. |
 | Who can be viewed | Any active, undeleted user of an active company (ERGO, customer, supplier). Not yourself, not another Super Admin. |
 | Reason | Required, 5 to 500 characters; stored on the audit row. |
-| Length | 30 minutes at most, never beyond the admin's own session. No extension: start a new one. One at a time per admin. |
+| What the admin can do | Everything the viewed user's role and company allow, including creating, submitting and approving. **Not** the account itself: changing the user's password, their 2FA setting, or starting another Login as is refused (403). |
+| Length | 30 minutes at most, never beyond the admin's own session. No extension. One at a time per admin. |
 | Ends at once when | Exit is pressed; the admin logs out, is deactivated, loses the role or switches role; the viewed user or their company is deactivated; the admin resets the viewed user's password. |
 | Admin's own login | Untouched. Exit and the 30-minute end land back on the admin's own account, no new login or 2FA. |
 
 **How it is built.** A shadow session is its own `user_sessions` row for the viewed user (V41: `impersonated_by_user_id`,
 `parent_session_id`, `impersonation_reason`, a CHECK that they are set together and never for yourself). The token carries
-an `imp` claim (`CurrentUser.impersonatorId`, `viewOnly()`); a second HttpOnly cookie `ergo_shadow` (same flags and path as
+an `imp` claim (`CurrentUser.impersonatorId`, `impersonated()`); a second HttpOnly cookie `ergo_shadow` (same flags and path as
 `ergo_session`) lets `/api/auth/refresh` return to it. Everything else (record scope, hidden fields, module switches, the
 sidebar) follows the viewed user's role and company, because the request simply is that user's.
 
-**View-only is enforced by the filter, with a backstop.** `ViewOnlyFilter` refuses every request that is not
-GET/HEAD/OPTIONS except `POST` refresh, logout, switch-role (within the viewed user's own roles, never `ERGO_ADMIN`) and
-`impersonation/end`: that is the guarantee, so a new GET must never change data. `AuditLogService` also refuses to write
-for a view-only caller, which rolls back an audited write in a service that rolls back on `ApiException`; it does not
-stop un-audited writes (read flags, sessions).
-`SessionStillValidValidator` checks on every request that the `imp` claim matches the session row and that the admin's
-own session, account and Super Admin role still stand.
+**Accountability replaces the read-only rule.** Every audit row written during the session keeps the viewed user as the
+actor (the record shows them as its author, which the workflow needs) and sets `audit_logs.acting_admin_user_id` (V42) to the
+Super Admin; the history screen shows "Name (by Super Admin X)". Together with `IMPERSONATION_STARTED` / `IMPERSONATION_ENDED`
+and the stated reason, every action taken this way can be traced to a named admin. `ShadowSessionFilter` is the only
+restriction inside a session: password, 2FA and nested Login as are refused. `SessionStillValidValidator` checks on every
+request that the `imp` claim matches the session row and that the admin's own session, account and Super Admin role still
+stand.
 
 **Audit.** `IMPERSONATION_STARTED` (actor: the admin, record: the viewed user, with the reason) and `IMPERSONATION_ENDED`
-(written as the admin through `CurrentUser.runAs`, `cause` = EXIT, REPLACED, LOGOUT or NO_LONGER_VALID). A view that
+(written as the admin through `CurrentUser.runAs`, `cause` = EXIT, REPLACED, LOGOUT or NO_LONGER_VALID). A session that
 runs out after 30 minutes writes no `ENDED` row; the session row shows when it stopped.
 
-**What the admin sees.** Exactly what the viewed user sees, including things ERGO staff never see in their own role, such
-as a supplier's unsubmitted draft quote (see ARCHITECTURE.md section 8, 2026-10-31). While a view is live, every browser tab
-of the admin follows it on its next refresh, so the app must show the banner from `SessionResponse.impersonation`.
+**Consequences the client accepted.**
+- The admin sees what the viewed user sees, including what ERGO staff never see in their own roles, such as a supplier's
+  unsubmitted draft quote (ARCHITECTURE.md section 8, 2026-10-31).
+- The admin can act for a customer or supplier (submit a quote, approve as the customer). This breaks the earlier rule that
+  the Super Admin never creates or approves business records; the safeguard is the audit trail naming the admin, not a block.
+- While a session is live, every browser tab of the admin follows it on its next refresh, so the app shows the banner from
+  `SessionResponse.impersonation`.
+- Customers and suppliers should be told in the terms of use that ERGO support can log in as their users.
 
 **API.** `POST /api/users/{id}/login-as` (`{reason}`), `POST /api/auth/impersonation/end`; the Users list carries
-`LOGIN_AS` in `actions`; `SessionResponse.impersonation` (`adminName`, `endsAt`) is set only in a view.
+`LOGIN_AS` in `actions`; `SessionResponse.impersonation` (`adminName`, `endsAt`) is set only in a Login as session.
 
-Tests: `masterdata/access/ShadowLoginTests`, including a sweep of every non-GET endpoint under a shadow token.
+Tests: `masterdata/access/ShadowLoginTests`, including an RFQ created by the admin as a customer with the audit naming the admin.

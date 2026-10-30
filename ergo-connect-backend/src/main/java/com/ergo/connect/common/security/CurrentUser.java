@@ -20,8 +20,8 @@ public record CurrentUser(long userId, long companyId, CompanyType companyType, 
 		this(userId, companyId, companyType, role, sessionId, null);
 	}
 
-	/** True for a Super Admin's view-only "Login as" session: it may read what this user reads and change nothing. */
-	public boolean viewOnly() {
+	/** True for a Super Admin's "Login as" session: it acts as this user, and every audit row names the admin. */
+	public boolean impersonated() {
 		return impersonatorId != null;
 	}
 
@@ -35,7 +35,7 @@ public record CurrentUser(long userId, long companyId, CompanyType companyType, 
 	 * Runs a server-side, read-only check as another user (e.g. "could this person read that record?" - the same
 	 * module probes that scope the real caller). Never reachable from a request: only code in this codebase calls it,
 	 * and the override is cleared on the way out. Do not use it to change data; the one write it carries is the audit row that
-	 * ends a "Login as" view, recorded as the admin because a view-only session may not write one.
+	 * ends a "Login as" session, recorded as the admin's own act (not as the viewed user's).
 	 */
 	public static <T> T runAs(CurrentUser user, Supplier<T> action) {
 		CurrentUser previous = ACTING_AS.get();

@@ -47,7 +47,7 @@ public final class UserDtos {
 	public record DeleteRequest(@NotInvisiblyBlank @Size(max = 500) String reason) {
 	}
 
-	/** Why a Super Admin logs in as this user (view only); stored in the audit trail with the start. */
+	/** Why a Super Admin logs in as this user; stored in the audit trail with the start. */
 	public record LoginAsRequest(@NotInvisiblyBlank @Size(min = 5, max = 500) String reason) {
 	}
 

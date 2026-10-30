@@ -40,7 +40,7 @@ public class AccessTokens {
 
 	private static final String PASSWORD_CHANGE_REQUIRED = "pwc";
 
-	/** Present only on a view-only shadow session: the id of the Super Admin viewing as this user. */
+	/** Present only on a "Login as" shadow session: the id of the Super Admin acting as this user. */
 	private static final String IMPERSONATOR = "imp";
 
 	private final NimbusJwtEncoder encoder;

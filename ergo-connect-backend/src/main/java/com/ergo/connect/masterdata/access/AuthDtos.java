@@ -60,7 +60,7 @@ public final class AuthDtos {
 			List<RoleOption> roles, boolean mustChangePassword, AccessView access, Impersonation impersonation) {
 	}
 
-	/** Set only on a Super Admin's view-only "Login as" session: who is viewing and when the view ends. */
+	/** Set only on a Super Admin's "Login as" session: who is acting and when it ends. */
 	public record Impersonation(String adminName, Instant endsAt) {
 	}
 
