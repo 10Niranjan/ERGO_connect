@@ -3,6 +3,7 @@ package com.ergo.connect.quality;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -141,10 +142,10 @@ class NcrTests {
 		long id = createAsSupplier(supplierXQuality, 10);
 
 		call(get("/api/quality/ncrs/{id}", id), supplierXQuality, null).andExpect(status().isOk());
-		call(get("/api/quality/ncrs"), supplierXQuality, null).andExpect(jsonPath("$[*].id", hasItem((int) id)));
+		call(get("/api/quality/ncrs?size=100"), supplierXQuality, null).andExpect(jsonPath("$.items[*].id", hasItem((int) id)));
 
 		call(get("/api/quality/ncrs/{id}", id), supplierYQuality, null).andExpect(status().isNotFound());
-		call(get("/api/quality/ncrs"), supplierYQuality, null).andExpect(jsonPath("$[*].id", not(hasItem((int) id))));
+		call(get("/api/quality/ncrs?size=100"), supplierYQuality, null).andExpect(jsonPath("$.items").isArray()).andExpect(jsonPath("$.items[*].id", not(hasItem((int) id))));
 
 		call(put("/api/quality/ncrs/{id}", id), supplierYQuality, updateForm(null, null, null, null))
 			.andExpect(status().isNotFound());
@@ -161,9 +162,9 @@ class NcrTests {
 		call(get("/api/quality/ncrs/{id}", forA), customerAQuality, null).andExpect(status().isOk());
 		call(get("/api/quality/ncrs/{id}", forB), customerAQuality, null).andExpect(status().isNotFound());
 
-		String list = call(get("/api/quality/ncrs"), customerAQuality, null).andExpect(status().isOk())
-			.andExpect(jsonPath("$[*].id", hasItem((int) forA)))
-			.andExpect(jsonPath("$[*].id", not(hasItem((int) forB))))
+		String list = call(get("/api/quality/ncrs?size=100"), customerAQuality, null).andExpect(status().isOk())
+			.andExpect(jsonPath("$.items[*].id", hasItem((int) forA)))
+			.andExpect(jsonPath("$.items[*].id", not(hasItem((int) forB))))
 			.andReturn()
 			.getResponse()
 			.getContentAsString();
@@ -201,18 +202,18 @@ class NcrTests {
 		long npdOne = createLinkedNcr(ergoQuality, "NPD", createNpdProject(customerA, supplierX));
 		long ofpOne = createLinkedNcr(ergoQuality, "OFP", createOrder(customerA, supplierX));
 
-		call(get("/api/quality/ncrs"), ergoKam, null).andExpect(jsonPath("$[*].id", hasItem((int) forA)))
-			.andExpect(jsonPath("$[*].id", not(hasItem((int) forB))));
+		call(get("/api/quality/ncrs?size=100"), ergoKam, null).andExpect(jsonPath("$.items[*].id", hasItem((int) forA)))
+			.andExpect(jsonPath("$.items[*].id", not(hasItem((int) forB))));
 		call(get("/api/quality/ncrs/{id}", forB), ergoKam, null).andExpect(status().isNotFound());
 
-		call(get("/api/quality/ncrs"), ergoNpd, null).andExpect(jsonPath("$[*].id", hasItem((int) npdOne)))
-			.andExpect(jsonPath("$[*].id", not(hasItem((int) ofpOne))));
-		call(get("/api/quality/ncrs"), ergoOfp, null).andExpect(jsonPath("$[*].id", hasItem((int) ofpOne)))
-			.andExpect(jsonPath("$[*].id", not(hasItem((int) npdOne))));
+		call(get("/api/quality/ncrs?size=100"), ergoNpd, null).andExpect(jsonPath("$.items[*].id", hasItem((int) npdOne)))
+			.andExpect(jsonPath("$.items[*].id", not(hasItem((int) ofpOne))));
+		call(get("/api/quality/ncrs?size=100"), ergoOfp, null).andExpect(jsonPath("$.items[*].id", hasItem((int) ofpOne)))
+			.andExpect(jsonPath("$.items[*].id", not(hasItem((int) npdOne))));
 
 		// ERGO RFQ and Admin view every NCR (role sheet "V")
 		for (Login viewer : List.of(ergoRfq, ergoAdmin)) {
-			call(get("/api/quality/ncrs"), viewer, null).andExpect(jsonPath("$[*].id", hasItem((int) forB)));
+			call(get("/api/quality/ncrs?size=100"), viewer, null).andExpect(jsonPath("$.items[*].id", hasItem((int) forB)));
 			call(get("/api/quality/ncrs/{id}", forA), viewer, null).andExpect(status().isOk());
 		}
 	}
@@ -650,7 +651,7 @@ class NcrTests {
 			.formatted(LocalDate.now().plusDays(30), customerA, supplierX)).andExpect(status().isOk());
 
 		call(get("/api/quality/ncrs/{id}", id), customerAQuality, null).andExpect(status().isNotFound());
-		call(get("/api/quality/ncrs"), customerAQuality, null).andExpect(jsonPath("$[*].id", not(hasItem((int) id))));
+		call(get("/api/quality/ncrs?size=100"), customerAQuality, null).andExpect(jsonPath("$.items").isArray()).andExpect(jsonPath("$.items[*].id", not(hasItem((int) id))));
 
 		call(put("/api/quality/ncrs/{id}", id), ergoQuality, """
 				{"issueCategory": "Dimensional", "issueDescription": "desc", "targetClosureDate": "%s",
@@ -658,14 +659,60 @@ class NcrTests {
 			.formatted(LocalDate.now().plusDays(30), customerA, supplierX)).andExpect(status().isOk());
 
 		call(get("/api/quality/ncrs/{id}", id), customerAQuality, null).andExpect(status().isOk());
-		call(get("/api/quality/ncrs"), customerAQuality, null).andExpect(jsonPath("$[*].id", hasItem((int) id)));
+		call(get("/api/quality/ncrs?size=100"), customerAQuality, null).andExpect(jsonPath("$.items[*].id", hasItem((int) id)));
+	}
+
+	@Test
+	void theNcrListIsPagedFilteredAndSearchedInTheQueryWithoutBreakingTwoWayAnonymity() throws Exception {
+		long a = createErgoNcr(310, customerA, supplierX);
+		call(put("/api/quality/ncrs/{id}", a), ergoQuality, """
+				{"issueCategory": "Dimensional", "issueDescription": "desc", "targetClosureDate": "%s",
+				 "customerCompanyId": %d, "supplierCompanyId": %d, "customerVisible": true}"""
+			.formatted(LocalDate.now().plusDays(30), customerA, supplierX)).andExpect(status().isOk());
+		long b = createErgoNcr(311, customerB, supplierY);
+		String numberA = jdbc.queryForObject("SELECT ncr_number FROM ncrs WHERE ncr_id = ?", String.class, a);
+		String numberB = jdbc.queryForObject("SELECT ncr_number FROM ncrs WHERE ncr_id = ?", String.class, b);
+		String customerAName = jdbc.queryForObject("SELECT company_name FROM companies WHERE company_id = ?", String.class, customerA);
+		String customerBName = jdbc.queryForObject("SELECT company_name FROM companies WHERE company_id = ?", String.class, customerB);
+		String supplierXName = jdbc.queryForObject("SELECT company_name FROM companies WHERE company_id = ?", String.class, supplierX);
+
+		// paging: newest first, one row a page; sizes and pages are clamped
+		call(get("/api/quality/ncrs?size=1"), ergoQuality, null).andExpect(jsonPath("$.items", hasSize(1)))
+			.andExpect(jsonPath("$.items[0].id").value((int) b)).andExpect(jsonPath("$.size").value(1))
+			.andExpect(jsonPath("$.total").value(org.hamcrest.Matchers.greaterThanOrEqualTo(2)));
+		call(get("/api/quality/ncrs?size=1&page=1"), ergoQuality, null).andExpect(jsonPath("$.items[0].id").value((int) a));
+		call(get("/api/quality/ncrs?size=100000&page=-3"), ergoQuality, null).andExpect(jsonPath("$.size").value(100)).andExpect(jsonPath("$.page").value(0));
+
+		// each side sees exactly its own, and only what its row shows is searchable
+		call(get("/api/quality/ncrs"), customerAQuality, null).andExpect(jsonPath("$.total").value(1)).andExpect(jsonPath("$.items[0].id").value((int) a));
+		call(get("/api/quality/ncrs"), supplierXQuality, null).andExpect(jsonPath("$.total").value(1)).andExpect(jsonPath("$.items[0].id").value((int) a));
+		call(get("/api/quality/ncrs?q=" + numberA.toLowerCase()), customerAQuality, null).andExpect(jsonPath("$.total").value(1));
+		call(get("/api/quality/ncrs?q=" + numberB), customerAQuality, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/quality/ncrs").param("q", supplierXName), customerAQuality, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/quality/ncrs").param("q", customerAName), supplierXQuality, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/quality/ncrs?q=dimensional"), supplierXQuality, null).andExpect(jsonPath("$.total").value(1));
+
+		// ERGO also searches the company names; the account-scoped KAM only within its own accounts
+		call(get("/api/quality/ncrs").param("q", customerBName), ergoQuality, null).andExpect(jsonPath("$.items[*].id", hasItem((int) b)))
+			.andExpect(jsonPath("$.items[*].id", not(hasItem((int) a))));
+		call(get("/api/quality/ncrs").param("q", customerBName), ergoKam, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/quality/ncrs").param("q", "%"), ergoQuality, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/quality/ncrs").param("q", "\u0000" + numberA), ergoQuality, null).andExpect(status().isOk()).andExpect(jsonPath("$.total").value(1));
+
+		// filters narrow inside the same query; an unknown value is refused, not ignored
+		call(get("/api/quality/ncrs?status=OPEN&q=" + numberA), ergoQuality, null).andExpect(jsonPath("$.total").value(1));
+		call(get("/api/quality/ncrs?status=CLOSED&q=" + numberA), ergoQuality, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/quality/ncrs?linkedModule=INCOMING&q=" + numberA), ergoQuality, null).andExpect(jsonPath("$.total").value(1));
+		call(get("/api/quality/ncrs?linkedModule=NPD&q=" + numberA), ergoQuality, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/quality/ncrs?status=BOGUS"), ergoQuality, null).andExpect(status().isUnprocessableEntity());
+		call(get("/api/quality/ncrs?linkedModule=BOGUS"), ergoQuality, null).andExpect(status().isUnprocessableEntity());
 	}
 
 	@Test
 	void ergoCreatedNcrIsAlsoHiddenFromTheCustomerByDefault() throws Exception {
 		long id = createErgoNcr(190, customerA, supplierX);
 		call(get("/api/quality/ncrs/{id}", id), customerAQuality, null).andExpect(status().isNotFound());
-		call(get("/api/quality/ncrs"), customerAQuality, null).andExpect(jsonPath("$[*].id", not(hasItem((int) id))));
+		call(get("/api/quality/ncrs?size=100"), customerAQuality, null).andExpect(jsonPath("$.items").isArray()).andExpect(jsonPath("$.items[*].id", not(hasItem((int) id))));
 	}
 
 	// ---------------------------------------------------------------- CAPA evidence: supplier-only, never customer (H1 fix)

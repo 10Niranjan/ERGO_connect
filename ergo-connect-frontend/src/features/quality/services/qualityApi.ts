@@ -314,6 +314,22 @@ export interface CustomerNcrRow {
 
 export type NcrSummary = NcrRow | SupplierNcrRow | CustomerNcrRow
 
+/** One page of the NCR list; `total` counts every match, not just this page. */
+export interface NcrPage {
+  items: NcrSummary[]
+  total: number
+  page: number
+  size: number
+}
+
+export interface NcrListArgs {
+  page: number
+  size: number
+  status?: string
+  linkedModule?: string
+  q?: string
+}
+
 /** ERGO's unrestricted detail view: every field, including the ERGO-internal effectivenessStatus and owner, both
  * companies, and the full CapaActionView list. */
 export interface NcrView {
@@ -433,7 +449,14 @@ const qualityApi = api.enhanceEndpoints({ addTagTypes: ['Quality', 'Ncr'] }).inj
     }),
 
     // ---------------------------------------------------------------- NCR / CAPA
-    ncrs: build.query<NcrSummary[], void>({ query: () => '/quality/ncrs', providesTags: ['Ncr'] }),
+    // One page, newest first; filtered and searched by the server.
+    ncrs: build.query<NcrPage, NcrListArgs>({
+      query: ({ page, size, status, linkedModule, q }) => ({
+        url: '/quality/ncrs',
+        params: { page, size, ...(status ? { status } : {}), ...(linkedModule ? { linkedModule } : {}), ...(q ? { q } : {}) },
+      }),
+      providesTags: ['Ncr'],
+    }),
     ncr: build.query<NcrDetail, number>({
       query: (id) => `/quality/ncrs/${id}`,
       providesTags: (_r, _e, id) => [{ type: 'Ncr', id }],

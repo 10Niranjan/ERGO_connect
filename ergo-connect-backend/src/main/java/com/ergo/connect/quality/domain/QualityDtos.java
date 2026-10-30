@@ -200,6 +200,10 @@ public final class QualityDtos {
 	public sealed interface NcrSummary permits NcrRow, SupplierNcrRow, CustomerNcrRow {
 	}
 
+	/** One page of the NCR list; {@code total} counts every match, not just this page. */
+	public record NcrPage(List<? extends NcrSummary> items, long total, int page, int size) {
+	}
+
 	/** Per-audience detail view, see {@link InspectionDetail}. */
 	public sealed interface NcrDetail permits NcrView, SupplierNcrView, CustomerNcrView {
 	}

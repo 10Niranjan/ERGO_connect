@@ -14,8 +14,12 @@ interface NcrRepository extends Repository<Ncr, Long> {
 
 	Optional<Ncr> findById(Long id);
 
-	/** ERGO Admin/Management/Quality: unrestricted (SRS §10.8 "V(all)"). */
+	/** ERGO Admin/Management/Quality: unrestricted (SRS §10.8 "V(all)"). Used by the facade; the list is paged. */
 	List<Ncr> findAllByOrderByIdDesc();
+
+	/** The list page. The only Specification method on purpose (JpaSpecificationExecutor would bring bulk update/delete that skip @Version and audit). */
+	org.springframework.data.domain.Page<Ncr> findAll(org.springframework.data.jpa.domain.Specification<Ncr> spec,
+			org.springframework.data.domain.Pageable pageable);
 
 	/** ERGO KAM's scope (SRS §8.2): every NCR tagged to one of their assigned customer accounts. */
 	List<Ncr> findByCustomerCompanyIdInOrderByIdDesc(Collection<Long> customerCompanyIds);

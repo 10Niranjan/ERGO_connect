@@ -27,6 +27,7 @@ import com.ergo.connect.quality.domain.NcrService.EvidenceFile;
 import com.ergo.connect.quality.domain.QualityDtos.CapaActionForm;
 import com.ergo.connect.quality.domain.QualityDtos.NcrDetail;
 import com.ergo.connect.quality.domain.QualityDtos.NcrForm;
+import com.ergo.connect.quality.domain.QualityDtos.NcrPage;
 import com.ergo.connect.quality.domain.QualityDtos.NcrSummary;
 import com.ergo.connect.quality.domain.QualityDtos.NcrUpdateForm;
 import com.ergo.connect.quality.domain.QualityDtos.ReasonForm;
@@ -61,8 +62,10 @@ class NcrController {
 
 	@GetMapping
 	@PreAuthorize(VIEWERS)
-	List<? extends NcrSummary> list() {
-		return ncrs.list();
+	NcrPage list(@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "25") int size,
+			@RequestParam(required = false) String status, @RequestParam(required = false) String linkedModule,
+			@RequestParam(required = false) String q) {
+		return ncrs.list(page, size, status, linkedModule, q);
 	}
 
 	@GetMapping("/{id}")

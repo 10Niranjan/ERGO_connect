@@ -19,6 +19,7 @@ import static com.ergo.connect.common.security.Role.SUPPLIER_QUALITY;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.Year;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.EnumSet;
@@ -29,9 +30,15 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import jakarta.persistence.criteria.Predicate;
 
 import com.ergo.connect.common.audit.AuditLogService;
 import com.ergo.connect.common.audit.AuditLogService.AuditEntry;
@@ -60,6 +67,7 @@ import com.ergo.connect.quality.domain.QualityDtos.CustomerNcrView;
 import com.ergo.connect.quality.domain.QualityDtos.NcrAction;
 import com.ergo.connect.quality.domain.QualityDtos.NcrDetail;
 import com.ergo.connect.quality.domain.QualityDtos.NcrForm;
+import com.ergo.connect.quality.domain.QualityDtos.NcrPage;
 import com.ergo.connect.quality.domain.QualityDtos.NcrRow;
 import com.ergo.connect.quality.domain.QualityDtos.NcrSummary;
 import com.ergo.connect.quality.domain.QualityDtos.NcrUpdateForm;
@@ -123,6 +131,10 @@ public class NcrService {
 	 * all but decides closure/send-back/reopen. Supplier Quality is deliberately absent. */
 	private static final Set<Role> APPROVERS = ModuleAccess.approvers(Module.QUALITY, CompanyType.ERGO);
 
+	private static final int MAX_PAGE_SIZE = 100;
+
+	private static final int MAX_SEARCH_LENGTH = 100;
+
 	private static final Set<Role> SUPPLIER_VIEWERS = ModuleAccess.viewers(Module.QUALITY, CompanyType.SUPPLIER);
 
 	private static final Set<Role> CUSTOMER_VIEWERS = ModuleAccess.viewers(Module.QUALITY, CompanyType.CUSTOMER);
@@ -160,37 +172,107 @@ public class NcrService {
 
 	// ---------------------------------------------------------------- reads
 
+	/**
+	 * One page of the NCR list, one row shape per caller's audience. The record scope is applied in the query, then
+	 * narrowed by {@code status}, {@code linkedModule} and {@code q}: NCR number and issue category (all a supplier or
+	 * customer sees of a row), and for ERGO also the customer's and supplier's names. A supplier never matches on the
+	 * customer (nor a customer on the supplier), the two-way anonymity rule.
+	 */
 	@Transactional(readOnly = true)
-	public List<? extends NcrSummary> list() {
+	public NcrPage list(int page, int size, String status, String linkedModule, String q) {
 		CurrentUser me = CurrentUser.get();
-		if (SUPPLIER_VIEWERS.contains(me.role())) {
-			return ncrs.findBySupplierCompanyIdOrderByIdDesc(me.companyId()).stream()
-				.map(n -> new SupplierNcrRow(n.id, n.ncrNumber, n.linkedModule, n.linkedRecordId, n.issueCategory,
-						n.currentStatus, n.targetClosureDate))
-				.toList();
+		int pageSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+		int pageNo = Math.min(Math.max(page, 0), Integer.MAX_VALUE / pageSize - 1); // the offset must fit an int, else a 500
+		boolean supplier = SUPPLIER_VIEWERS.contains(me.role());
+		boolean customer = !supplier && CUSTOMER_VIEWERS.contains(me.role());
+		Specification<Ncr> spec = scopeOf(me, supplier, customer);
+		if (spec == null) {
+			return new NcrPage(List.of(), 0, pageNo, pageSize);
 		}
-		if (CUSTOMER_VIEWERS.contains(me.role())) {
-			return ncrs.findByCustomerCompanyIdAndCustomerVisibleTrueOrderByIdDesc(me.companyId()).stream()
-				.map(n -> new CustomerNcrRow(n.id, n.ncrNumber, n.linkedModule, n.linkedRecordId, n.issueCategory,
-						n.currentStatus, n.targetClosureDate))
-				.toList();
+		if (status != null && !status.isBlank()) {
+			NcrStatus wanted = parseFilter(NcrStatus::valueOf, status);
+			spec = spec.and((root, query, cb) -> cb.equal(root.get("currentStatus"), wanted));
 		}
-		List<Ncr> visible = switch (QualityScope.of(me.role())) {
-			case FULL -> ncrs.findAllByOrderByIdDesc();
+		if (linkedModule != null && !linkedModule.isBlank()) {
+			LinkedModule wanted = parseFilter(LinkedModule::valueOf, linkedModule);
+			spec = spec.and((root, query, cb) -> cb.equal(root.get("linkedModule"), wanted));
+		}
+		Specification<Ncr> search = searchOf(supplier, customer, q);
+		if (search != null) {
+			spec = spec.and(search);
+		}
+		Page<Ncr> found = ncrs.findAll(spec, PageRequest.of(pageNo, pageSize, Sort.by(Sort.Direction.DESC, "id")));
+		List<Ncr> visible = found.getContent();
+		List<NcrSummary> rows;
+		if (supplier) {
+			rows = visible.stream().<NcrSummary>map(n -> new SupplierNcrRow(n.id, n.ncrNumber, n.linkedModule, n.linkedRecordId,
+					n.issueCategory, n.currentStatus, n.targetClosureDate)).toList();
+		}
+		else if (customer) {
+			rows = visible.stream().<NcrSummary>map(n -> new CustomerNcrRow(n.id, n.ncrNumber, n.linkedModule, n.linkedRecordId,
+					n.issueCategory, n.currentStatus, n.targetClosureDate)).toList();
+		}
+		else {
+			Map<Long, CompanyRef> customers = directory.companies(ids(visible, n -> n.customerCompanyId));
+			Map<Long, CompanyRef> suppliers = directory.companies(ids(visible, n -> n.supplierCompanyId));
+			rows = visible.stream().<NcrSummary>map(n -> new NcrRow(n.id, n.ncrNumber, n.linkedModule, n.linkedRecordId,
+					name(customers, n.customerCompanyId), name(suppliers, n.supplierCompanyId), n.issueCategory, n.currentStatus,
+					n.targetClosureDate)).toList();
+		}
+		return new NcrPage(rows, found.getTotalElements(), pageNo, pageSize);
+	}
+
+	private static <E> E parseFilter(java.util.function.Function<String, E> parse, String value) {
+		try {
+			return parse.apply(value);
+		}
+		catch (IllegalArgumentException e) {
+			throw ApiException.unprocessable("That value is not one you can filter by");
+		}
+	}
+
+	/** The query form of {@link #inScope}; {@code null} = none (and no query is made). */
+	private Specification<Ncr> scopeOf(CurrentUser me, boolean supplier, boolean customer) {
+		if (supplier) {
+			return (root, query, cb) -> cb.equal(root.get("supplierCompanyId"), me.companyId());
+		}
+		if (customer) { // only the NCRs an ERGO editor has released to the customer
+			return (root, query, cb) -> cb.and(cb.isTrue(root.get("customerVisible")),
+					cb.equal(root.get("customerCompanyId"), me.companyId()));
+		}
+		return switch (QualityScope.of(me.role())) {
+			case FULL -> (root, query, cb) -> cb.conjunction();
 			case KAM -> {
 				Set<Long> accounts = directory.accountsOf(me.userId());
-				yield accounts.isEmpty() ? List.of() : ncrs.findByCustomerCompanyIdInOrderByIdDesc(accounts);
+				yield accounts.isEmpty() ? null : (root, query, cb) -> root.get("customerCompanyId").in(accounts);
 			}
-			case NPD_LINKED -> ncrs.findByLinkedModuleOrderByIdDesc(LinkedModule.NPD);
-			case OFP_LINKED -> ncrs.findByLinkedModuleOrderByIdDesc(LinkedModule.OFP);
-			default -> List.of(); // SRS §10.8 X: ERGO RFQ and every other role not handled above/below
+			case NPD_LINKED -> (root, query, cb) -> cb.equal(root.get("linkedModule"), LinkedModule.NPD);
+			case OFP_LINKED -> (root, query, cb) -> cb.equal(root.get("linkedModule"), LinkedModule.OFP);
+			default -> null; // SRS §10.8 X: ERGO RFQ and every other role not handled above
 		};
-		Map<Long, CompanyRef> customers = directory.companies(ids(visible, n -> n.customerCompanyId));
-		Map<Long, CompanyRef> suppliers = directory.companies(ids(visible, n -> n.supplierCompanyId));
-		return visible.stream()
-			.map(n -> new NcrRow(n.id, n.ncrNumber, n.linkedModule, n.linkedRecordId, name(customers, n.customerCompanyId),
-					name(suppliers, n.supplierCompanyId), n.issueCategory, n.currentStatus, n.targetClosureDate))
-			.toList();
+	}
+
+	private Specification<Ncr> searchOf(boolean supplier, boolean customer, String q) {
+		String needle = q == null ? "" : q.replaceAll("\\p{Cntrl}", "").strip(); // a NUL makes Postgres reject the query
+		if (needle.isEmpty()) {
+			return null;
+		}
+		if (needle.length() > MAX_SEARCH_LENGTH) {
+			needle = needle.substring(0, MAX_SEARCH_LENGTH);
+		}
+		String pattern = "%" + needle.toLowerCase(java.util.Locale.ROOT).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+		// Company names are for ERGO's search only.
+		Set<Long> companyIds = supplier || customer ? Set.of() : directory.companyIdsByName(needle);
+		return (root, query, cb) -> {
+			List<Predicate> any = new ArrayList<>();
+			any.add(cb.like(cb.lower(root.<String>get("ncrNumber")), pattern, '\\'));
+			any.add(cb.like(cb.lower(root.<String>get("issueCategory")), pattern, '\\'));
+			if (!companyIds.isEmpty()) {
+				any.add(root.get("customerCompanyId").in(companyIds));
+				any.add(root.get("supplierCompanyId").in(companyIds));
+			}
+			return cb.or(any.toArray(new Predicate[0]));
+		};
 	}
 
 	@Transactional(readOnly = true)
