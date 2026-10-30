@@ -113,6 +113,22 @@ export interface CustomerInspectionRow {
 
 export type InspectionSummary = InspectionRow | SupplierInspectionRow | CustomerInspectionRow
 
+/** One page of the inspection list; `total` counts every match, not just this page. */
+export interface InspectionPage {
+  items: InspectionSummary[]
+  total: number
+  page: number
+  size: number
+}
+
+export interface InspectionListArgs {
+  page: number
+  size: number
+  status?: string
+  linkedModule?: string
+  q?: string
+}
+
 /** ERGO's unrestricted detail view. */
 export interface InspectionView {
   id: number
@@ -410,7 +426,14 @@ const qualityApi = api.enhanceEndpoints({ addTagTypes: ['Quality', 'Ncr'] }).inj
   endpoints: (build) => ({
     // One endpoint for every audience (same precedent as OFP's ofpOrders): InspectionService.list() returns the
     // right scoped, per-audience shape for whoever is calling.
-    inspections: build.query<InspectionSummary[], void>({ query: () => '/quality/inspections', providesTags: ['Quality'] }),
+    // One page, newest first; filtered and searched by the server.
+    inspections: build.query<InspectionPage, InspectionListArgs>({
+      query: ({ page, size, status, linkedModule, q }) => ({
+        url: '/quality/inspections',
+        params: { page, size, ...(status ? { status } : {}), ...(linkedModule ? { linkedModule } : {}), ...(q ? { q } : {}) },
+      }),
+      providesTags: ['Quality'],
+    }),
     inspection: build.query<InspectionDetail, number>({
       query: (id) => `/quality/inspections/${id}`,
       providesTags: (_r, _e, id) => [{ type: 'Quality', id }],

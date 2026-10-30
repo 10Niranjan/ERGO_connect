@@ -8,9 +8,9 @@ export async function run(ctx) {
   const npds = Object.fromEntries((await get('npdLead', '/npd')).map((n) => [n.partNumber, n.id]))
   const orders = Object.fromEntries((await getAll('ofp', '/ofp/orders')).map((o) => [o.partNumber, o.id]))
   const asc = (a, b) => a - b
-  const insp = (await get('quality', '/quality/inspections')).map((i) => i.id).sort(asc)
-  const ncrs = (await get('quality', '/quality/ncrs')).map((n) => n.id).sort(asc)
-  const devs = (await get('quality', '/quality/deviations')).map((d) => d.id).sort(asc)
+  const insp = (await getAll('quality', '/quality/inspections')).map((i) => i.id).sort(asc)
+  const ncrs = (await getAll('quality', '/quality/ncrs')).map((n) => n.id).sort(asc)
+  const devs = (await getAll('quality', '/quality/deviations')).map((d) => d.id).sort(asc)
   // the ERGO persona who can actually see (and so resolve / escalate) a thread of each module
   const steward = { rfq: 'rfq', quotation: 'rfq', npd: 'npdLead', ofp: 'ofp', inspection: 'quality', ncr: 'quality', deviation: 'quality' }
   const quoteOf = async (part, supplierName) => (await get('rfq', `/rfqs/${rfqs[part]}/quotes`)).quotes?.find((q) => q.supplier.name === supplierName)?.id

@@ -81,6 +81,10 @@ public final class QualityDtos {
 	public sealed interface InspectionSummary permits InspectionRow, SupplierInspectionRow, CustomerInspectionRow {
 	}
 
+	/** One page of the inspection list; {@code total} counts every match, not just this page. */
+	public record InspectionPage(List<? extends InspectionSummary> items, long total, int page, int size) {
+	}
+
 	/** Per-audience detail view, see {@link InspectionSummary}. */
 	public sealed interface InspectionDetail permits InspectionView, SupplierInspectionView, CustomerInspectionView {
 	}

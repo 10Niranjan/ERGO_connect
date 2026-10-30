@@ -1,7 +1,5 @@
 package com.ergo.connect.quality.api;
 
-import java.util.List;
-
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -9,6 +7,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -16,7 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.ergo.connect.quality.domain.InspectionService;
 import com.ergo.connect.quality.domain.QualityDtos.InspectionDetail;
 import com.ergo.connect.quality.domain.QualityDtos.InspectionForm;
-import com.ergo.connect.quality.domain.QualityDtos.InspectionSummary;
+import com.ergo.connect.quality.domain.QualityDtos.InspectionPage;
 import com.ergo.connect.quality.domain.QualityDtos.InspectionUpdateForm;
 import com.ergo.connect.quality.domain.QualityDtos.ReasonForm;
 
@@ -49,8 +48,10 @@ class InspectionController {
 
 	@GetMapping
 	@PreAuthorize(VIEWERS)
-	List<? extends InspectionSummary> list() {
-		return inspections.list();
+	InspectionPage list(@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "25") int size,
+			@RequestParam(required = false) String status, @RequestParam(required = false) String linkedModule,
+			@RequestParam(required = false) String q) {
+		return inspections.list(page, size, status, linkedModule, q);
 	}
 
 	@GetMapping("/{id}")

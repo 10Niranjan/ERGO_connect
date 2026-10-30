@@ -248,7 +248,7 @@ public class NcrService {
 			}
 			case NPD_LINKED -> (root, query, cb) -> cb.equal(root.get("linkedModule"), LinkedModule.NPD);
 			case OFP_LINKED -> (root, query, cb) -> cb.equal(root.get("linkedModule"), LinkedModule.OFP);
-			default -> null; // SRS §10.8 X: ERGO RFQ and every other role not handled above
+			default -> null; // QualityScope.NONE: a role with no Quality access
 		};
 	}
 

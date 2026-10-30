@@ -16,6 +16,10 @@ interface InspectionRepository extends Repository<Inspection, Long> {
 	/** ERGO Admin/Management/Quality: unrestricted (SRS §10.8 "V(all)"). */
 	List<Inspection> findAllByOrderByIdDesc();
 
+	/** The list page. The only Specification method on purpose (JpaSpecificationExecutor would bring bulk update/delete that skip @Version and audit). */
+	org.springframework.data.domain.Page<Inspection> findAll(org.springframework.data.jpa.domain.Specification<Inspection> spec,
+			org.springframework.data.domain.Pageable pageable);
+
 	/** ERGO KAM's scope (SRS §8.2): every inspection tagged to one of their assigned customer accounts, regardless
 	 * of {@code customerVisible} - that flag gates the customer's own view, not ERGO's. */
 	List<Inspection> findByCustomerCompanyIdInOrderByIdDesc(Collection<Long> customerCompanyIds);

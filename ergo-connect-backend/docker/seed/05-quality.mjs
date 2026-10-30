@@ -31,7 +31,7 @@ export async function run(ctx) {
   log(`  inspections: ${ins} raised or already present`)
 
   // ---------------------------------------------------------------- NCRs
-  const ncrs = await get('quality', '/quality/ncrs')
+  const ncrs = await getAll('quality', '/quality/ncrs')
   const NCRS = [
     { part: 'ACM-KNUCKLE-01', module: 'NPD', rec: npds['ACM-KNUCKLE-01'], cat: 'Dimensional', desc: 'Bore diameter 0.05 mm over tolerance on 3 trial pieces.', stage: 'CLOSED' },
     { part: 'ACM-SHAFT-20', module: 'OFP', rec: orders['ACM-SHAFT-20'], cat: 'Surface finish', desc: 'Chatter marks found on journal surfaces during in-process audit.', stage: 'PENDING_CLOSURE' },
@@ -73,8 +73,8 @@ export async function run(ctx) {
   log(`  NCRs: ${nc} created`)
 
   // ---------------------------------------------------------------- deviations
-  const devs = await get('quality', '/quality/deviations')
-  const linkedInspections = await get('quality', '/quality/inspections') // a deviation may cite an inspection of the same NPD/OFP record
+  const devs = await getAll('quality', '/quality/deviations')
+  const linkedInspections = await getAll('quality', '/quality/inspections') // a deviation may cite an inspection of the same NPD/OFP record
   const DEVIATIONS = [
     { who: 'quality', part: 'ACM-KNUCKLE-01', module: 'NPD', rec: npds['ACM-KNUCKLE-01'], desc: 'Accept forgings with parting-line flash up to 0.6 mm for the trial lot.', qi: 'None on fit or function.', ti: 'Flash is removed in the next machining step.', cust: true, qty: 400, flow: 'closed' },
     { who: 'precQa', part: 'ACM-GEARBLANK-09', module: 'OFP', rec: orders['ACM-GEARBLANK-09'], desc: 'Supplier requests acceptance of gear blanks with 0.1 mm extra stock on the rim.', qi: 'None; stock is removed in machining.', ti: 'Slightly longer cycle time at the customer.', cust: false, qty: 600, flow: 'requested' },

@@ -3,6 +3,7 @@ package com.ergo.connect.quality;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -160,13 +161,13 @@ class QualityTests {
 		long id = createAsSupplier(supplierXQuality, "INCOMING", 10);
 
 		call(get("/api/quality/inspections/{id}", id), supplierXQuality, null).andExpect(status().isOk());
-		call(get("/api/quality/inspections"), supplierXQuality, null)
-			.andExpect(jsonPath("$[*].id", hasItem((int) id)));
+		call(get("/api/quality/inspections?size=100"), supplierXQuality, null)
+			.andExpect(jsonPath("$.items[*].id", hasItem((int) id)));
 
 		// supplier Y cannot see it: 404, not 403 (scope, not a role gap)
 		call(get("/api/quality/inspections/{id}", id), supplierYQuality, null).andExpect(status().isNotFound());
-		call(get("/api/quality/inspections"), supplierYQuality, null)
-			.andExpect(jsonPath("$[*].id", not(hasItem((int) id))));
+		call(get("/api/quality/inspections?size=100"), supplierYQuality, null)
+			.andExpect(jsonPath("$.items").isArray()).andExpect(jsonPath("$.items[*].id", not(hasItem((int) id))));
 
 		// nor may supplier Y edit or transition it
 		call(put("/api/quality/inspections/{id}", id), supplierYQuality, updateForm("2", "0")).andExpect(status().isNotFound());
@@ -188,10 +189,10 @@ class QualityTests {
 		call(get("/api/quality/inspections/{id}", visibleToB), customerAQuality, null)
 			.andExpect(status().isNotFound());
 
-		String list = call(get("/api/quality/inspections"), customerAQuality, null).andExpect(status().isOk())
-			.andExpect(jsonPath("$[*].id", hasItem((int) visibleToA)))
-			.andExpect(jsonPath("$[*].id", not(hasItem((int) notVisibleToA))))
-			.andExpect(jsonPath("$[*].id", not(hasItem((int) visibleToB))))
+		String list = call(get("/api/quality/inspections?size=100"), customerAQuality, null).andExpect(status().isOk())
+			.andExpect(jsonPath("$.items[*].id", hasItem((int) visibleToA)))
+			.andExpect(jsonPath("$.items[*].id", not(hasItem((int) notVisibleToA))))
+			.andExpect(jsonPath("$.items[*].id", not(hasItem((int) visibleToB))))
 			.andReturn()
 			.getResponse()
 			.getContentAsString();
@@ -229,22 +230,22 @@ class QualityTests {
 		long npdOne = createErgoInspection("NPD", createNpdProject(customerA, supplierX), null, null, false);
 		long ofpOne = createErgoInspection("OFP", createOrder(customerA, supplierX), null, null, false);
 
-		call(get("/api/quality/inspections"), ergoKam, null).andExpect(jsonPath("$[*].id", hasItem((int) forA)))
-			.andExpect(jsonPath("$[*].id", not(hasItem((int) forB))));
+		call(get("/api/quality/inspections?size=100"), ergoKam, null).andExpect(jsonPath("$.items[*].id", hasItem((int) forA)))
+			.andExpect(jsonPath("$.items[*].id", not(hasItem((int) forB))));
 		call(get("/api/quality/inspections/{id}", forA), ergoKam, null).andExpect(status().isOk());
 		call(get("/api/quality/inspections/{id}", forB), ergoKam, null).andExpect(status().isNotFound());
 
-		call(get("/api/quality/inspections"), ergoNpd, null).andExpect(jsonPath("$[*].id", hasItem((int) npdOne)))
-			.andExpect(jsonPath("$[*].id", not(hasItem((int) ofpOne))));
+		call(get("/api/quality/inspections?size=100"), ergoNpd, null).andExpect(jsonPath("$.items[*].id", hasItem((int) npdOne)))
+			.andExpect(jsonPath("$.items[*].id", not(hasItem((int) ofpOne))));
 		call(get("/api/quality/inspections/{id}", ofpOne), ergoNpd, null).andExpect(status().isNotFound());
 
-		call(get("/api/quality/inspections"), ergoOfp, null).andExpect(jsonPath("$[*].id", hasItem((int) ofpOne)))
-			.andExpect(jsonPath("$[*].id", not(hasItem((int) npdOne))));
+		call(get("/api/quality/inspections?size=100"), ergoOfp, null).andExpect(jsonPath("$.items[*].id", hasItem((int) ofpOne)))
+			.andExpect(jsonPath("$.items[*].id", not(hasItem((int) npdOne))));
 		call(get("/api/quality/inspections/{id}", npdOne), ergoOfp, null).andExpect(status().isNotFound());
 
 		// ERGO RFQ and Admin view every inspection (role sheet "V")
 		for (Login viewer : List.of(ergoRfq, ergoAdmin)) {
-			call(get("/api/quality/inspections"), viewer, null).andExpect(jsonPath("$[*].id", hasItem((int) forB)));
+			call(get("/api/quality/inspections?size=100"), viewer, null).andExpect(jsonPath("$.items[*].id", hasItem((int) forB)));
 			call(get("/api/quality/inspections/{id}", forA), viewer, null).andExpect(status().isOk());
 		}
 		// customer RFQ / supplier RFQ: customers view only customer-visible ones, supplier RFQ has no access at all
@@ -613,6 +614,60 @@ class QualityTests {
 	}
 
 	// ---------------------------------------------------------------- helpers
+
+	@Test
+	void theInspectionListIsPagedFilteredAndSearchedInTheQueryWithoutBreakingTwoWayAnonymity() throws Exception {
+		long a = createPagedInspection("OFP", createOrder(customerA, supplierX), customerA, supplierX, true, "PN-PAGE-A", "LOT-PAGE-A");
+		long b = createPagedInspection("OFP", createOrder(customerB, supplierY), customerB, supplierY, false, "PN-PAGE-B", "LOT-PAGE-B");
+		String customerAName = jdbc.queryForObject("SELECT company_name FROM companies WHERE company_id = ?", String.class, customerA);
+		String customerBName = jdbc.queryForObject("SELECT company_name FROM companies WHERE company_id = ?", String.class, customerB);
+		String supplierXName = jdbc.queryForObject("SELECT company_name FROM companies WHERE company_id = ?", String.class, supplierX);
+
+		// paging: newest first, one row a page; sizes and pages are clamped
+		call(get("/api/quality/inspections?size=1"), ergoQuality, null).andExpect(jsonPath("$.items", hasSize(1)))
+			.andExpect(jsonPath("$.items[0].id").value((int) b)).andExpect(jsonPath("$.size").value(1))
+			.andExpect(jsonPath("$.total").value(org.hamcrest.Matchers.greaterThanOrEqualTo(2)));
+		call(get("/api/quality/inspections?size=1&page=1"), ergoQuality, null).andExpect(jsonPath("$.items[0].id").value((int) a));
+		call(get("/api/quality/inspections?size=100000&page=-3"), ergoQuality, null).andExpect(jsonPath("$.size").value(100)).andExpect(jsonPath("$.page").value(0));
+
+		// each side sees exactly its own (the customer only what is released to it), searching only what its row shows
+		call(get("/api/quality/inspections"), customerAQuality, null).andExpect(jsonPath("$.total").value(1)).andExpect(jsonPath("$.items[0].id").value((int) a));
+		call(get("/api/quality/inspections"), customerBQuality, null).andExpect(jsonPath("$.total").value(0)); // B is not customer-visible
+		call(get("/api/quality/inspections"), supplierXQuality, null).andExpect(jsonPath("$.total").value(1)).andExpect(jsonPath("$.items[0].id").value((int) a));
+		call(get("/api/quality/inspections?q=pn-page-a"), customerAQuality, null).andExpect(jsonPath("$.total").value(1));
+		call(get("/api/quality/inspections?q=lot-page-a"), supplierXQuality, null).andExpect(jsonPath("$.total").value(1));
+		call(get("/api/quality/inspections?q=pn-page-b"), customerAQuality, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/quality/inspections").param("q", supplierXName), customerAQuality, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/quality/inspections").param("q", customerAName), supplierXQuality, null).andExpect(jsonPath("$.total").value(0));
+
+		// ERGO also searches the company names; the account-scoped KAM only within its own accounts
+		call(get("/api/quality/inspections").param("q", customerBName), ergoQuality, null).andExpect(jsonPath("$.items[*].id", hasItem((int) b)))
+			.andExpect(jsonPath("$.items[*].id", not(hasItem((int) a))));
+		call(get("/api/quality/inspections").param("q", customerBName), ergoKam, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/quality/inspections").param("q", "%"), ergoQuality, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/quality/inspections").param("q", "\u0000PN-PAGE-A"), ergoQuality, null).andExpect(status().isOk()).andExpect(jsonPath("$.total").value(1));
+
+		// filters narrow inside the same query (and cannot widen a module-linked role's scope); unknown values are refused
+		call(get("/api/quality/inspections?status=OPEN&q=pn-page-a"), ergoQuality, null).andExpect(jsonPath("$.total").value(1));
+		call(get("/api/quality/inspections?status=PASSED&q=pn-page-a"), ergoQuality, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/quality/inspections?linkedModule=OFP&q=pn-page-a"), ergoQuality, null).andExpect(jsonPath("$.total").value(1));
+		call(get("/api/quality/inspections?linkedModule=NPD&q=pn-page-a"), ergoQuality, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/quality/inspections?linkedModule=NPD&q=pn-page-a"), ergoOfp, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/quality/inspections?status=BOGUS"), ergoQuality, null).andExpect(status().isUnprocessableEntity());
+		call(get("/api/quality/inspections?linkedModule=BOGUS"), ergoQuality, null).andExpect(status().isUnprocessableEntity());
+	}
+
+	private long createPagedInspection(String linkedModule, long linkedRecordId, long customerCompanyId, long supplierCompanyId,
+			boolean customerVisible, String partNumber, String batchLotNo) throws Exception {
+		String body = """
+				{"linkedModule": "%s", "linkedRecordId": %d, "partNumber": "%s", "batchLotNo": "%s",
+				 "customerCompanyId": %d, "supplierCompanyId": %d, "customerVisible": %s}"""
+			.formatted(linkedModule, linkedRecordId, partNumber, batchLotNo, customerCompanyId, supplierCompanyId, customerVisible);
+		return JsonPath
+			.<Number>read(call(post("/api/quality/inspections"), ergoQuality, body).andExpect(status().isCreated())
+				.andReturn().getResponse().getContentAsString(), "$.id")
+			.longValue();
+	}
 
 	private long createAsSupplier(Login supplier, String linkedModule, long linkedRecordId) throws Exception {
 		return JsonPath

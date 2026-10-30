@@ -138,7 +138,7 @@ export const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
  * `who` is the ERGO quality engineer by default; a supplier QA engineer can raise one for their own company.
  */
 export async function inspection({ who = 'quality', module, recordId, part, batch, cust = null, sup = null, visible = true, checked = 200, rejected = 0, defects = [], outcome = 'pass', remarks = null, date = null }) {
-  const have = (await call('admin', 'GET', '/quality/inspections')).find((i) => i.linkedModule === module && i.linkedRecordId === recordId && i.batchLotNo === batch)
+  const have = (await getAll('admin', '/quality/inspections')).find((i) => i.linkedModule === module && i.linkedRecordId === recordId && i.batchLotNo === batch)
   if (have) return { id: have.id } // re-runs must not stack duplicate inspections
   const created = await attempt(`inspection ${part}`, who, 'POST', '/quality/inspections', { linkedModule: module, linkedRecordId: recordId, partNumber: part, batchLotNo: batch, customerCompanyId: cust, supplierCompanyId: sup, customerVisible: visible })
   if (!created || typeof created !== 'object') return null

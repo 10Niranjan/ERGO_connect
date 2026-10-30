@@ -17,6 +17,7 @@ import static com.ergo.connect.common.security.Role.SUPPLIER_OFP;
 import static com.ergo.connect.common.security.Role.SUPPLIER_QUALITY;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.EnumSet;
@@ -28,8 +29,14 @@ import java.util.TreeSet;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import jakarta.persistence.criteria.Predicate;
 
 import com.ergo.connect.common.audit.AuditLogService;
 import com.ergo.connect.common.event.NotificationKind;
@@ -54,6 +61,7 @@ import com.ergo.connect.quality.domain.QualityDtos.InspectionAction;
 import com.ergo.connect.quality.domain.QualityDtos.InspectionDefectView;
 import com.ergo.connect.quality.domain.QualityDtos.InspectionDetail;
 import com.ergo.connect.quality.domain.QualityDtos.InspectionForm;
+import com.ergo.connect.quality.domain.QualityDtos.InspectionPage;
 import com.ergo.connect.quality.domain.QualityDtos.InspectionRow;
 import com.ergo.connect.quality.domain.QualityDtos.InspectionSummary;
 import com.ergo.connect.quality.domain.QualityDtos.InspectionUpdateForm;
@@ -112,6 +120,10 @@ public class InspectionService {
 	 * ("X (no approve)"). */
 	private static final Set<Role> APPROVERS = ModuleAccess.approvers(Module.QUALITY, CompanyType.ERGO);
 
+	private static final int MAX_PAGE_SIZE = 100;
+
+	private static final int MAX_SEARCH_LENGTH = 100;
+
 	private static final Set<Role> SUPPLIER_VIEWERS = ModuleAccess.viewers(Module.QUALITY, CompanyType.SUPPLIER);
 
 	private static final Set<Role> CUSTOMER_VIEWERS = ModuleAccess.viewers(Module.QUALITY, CompanyType.CUSTOMER);
@@ -143,38 +155,107 @@ public class InspectionService {
 
 	// ---------------------------------------------------------------- reads
 
+	/**
+	 * One page of the inspection list, one row shape per caller's audience. The record scope is applied in the query,
+	 * then narrowed by {@code status} (the result status), {@code linkedModule} and {@code q}: part number and batch/lot
+	 * number (all a supplier or customer sees of a row to search on), and for ERGO also the customer's and supplier's
+	 * names. A supplier never matches on the customer (nor a customer on the supplier), the two-way anonymity rule.
+	 */
 	@Transactional(readOnly = true)
-	public List<? extends InspectionSummary> list() {
+	public InspectionPage list(int page, int size, String status, String linkedModule, String q) {
 		CurrentUser me = CurrentUser.get();
-		if (SUPPLIER_VIEWERS.contains(me.role())) {
-			return inspections.findBySupplierCompanyIdOrderByIdDesc(me.companyId()).stream()
-				.map(i -> new SupplierInspectionRow(i.id, i.linkedModule, i.linkedRecordId, i.partNumber,
-						i.batchLotNo, i.resultStatus, i.inspectionDate))
-				.toList();
+		int pageSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+		int pageNo = Math.min(Math.max(page, 0), Integer.MAX_VALUE / pageSize - 1); // the offset must fit an int, else a 500
+		boolean supplier = SUPPLIER_VIEWERS.contains(me.role());
+		boolean customer = !supplier && CUSTOMER_VIEWERS.contains(me.role());
+		Specification<Inspection> spec = scopeOf(me, supplier, customer);
+		if (spec == null) {
+			return new InspectionPage(List.of(), 0, pageNo, pageSize);
 		}
-		if (CUSTOMER_VIEWERS.contains(me.role())) {
-			return inspections.findByCustomerCompanyIdAndCustomerVisibleTrueOrderByIdDesc(me.companyId()).stream()
-				.map(i -> new CustomerInspectionRow(i.id, i.linkedModule, i.linkedRecordId, i.partNumber,
-						i.batchLotNo, i.resultStatus, i.inspectionDate))
-				.toList();
+		if (status != null && !status.isBlank()) {
+			ResultStatus wanted = parseFilter(ResultStatus::valueOf, status);
+			spec = spec.and((root, query, cb) -> cb.equal(root.get("resultStatus"), wanted));
 		}
-		List<Inspection> visible = switch (QualityScope.of(me.role())) {
-			case FULL -> inspections.findAllByOrderByIdDesc();
+		if (linkedModule != null && !linkedModule.isBlank()) {
+			LinkedModule wanted = parseFilter(LinkedModule::valueOf, linkedModule);
+			spec = spec.and((root, query, cb) -> cb.equal(root.get("linkedModule"), wanted));
+		}
+		Specification<Inspection> search = searchOf(supplier, customer, q);
+		if (search != null) {
+			spec = spec.and(search);
+		}
+		Page<Inspection> found = inspections.findAll(spec, PageRequest.of(pageNo, pageSize, Sort.by(Sort.Direction.DESC, "id")));
+		List<Inspection> visible = found.getContent();
+		List<InspectionSummary> rows;
+		if (supplier) {
+			rows = visible.stream().<InspectionSummary>map(i -> new SupplierInspectionRow(i.id, i.linkedModule, i.linkedRecordId,
+					i.partNumber, i.batchLotNo, i.resultStatus, i.inspectionDate)).toList();
+		}
+		else if (customer) {
+			rows = visible.stream().<InspectionSummary>map(i -> new CustomerInspectionRow(i.id, i.linkedModule, i.linkedRecordId,
+					i.partNumber, i.batchLotNo, i.resultStatus, i.inspectionDate)).toList();
+		}
+		else {
+			Map<Long, CompanyRef> customers = directory.companies(ids(visible, i -> i.customerCompanyId));
+			Map<Long, CompanyRef> suppliers = directory.companies(ids(visible, i -> i.supplierCompanyId));
+			rows = visible.stream().<InspectionSummary>map(i -> new InspectionRow(i.id, i.linkedModule, i.linkedRecordId,
+					name(customers, i.customerCompanyId), name(suppliers, i.supplierCompanyId), i.partNumber, i.batchLotNo,
+					i.resultStatus, i.inspectionDate, i.customerVisible)).toList();
+		}
+		return new InspectionPage(rows, found.getTotalElements(), pageNo, pageSize);
+	}
+
+	private static <E> E parseFilter(Function<String, E> parse, String value) {
+		try {
+			return parse.apply(value);
+		}
+		catch (IllegalArgumentException e) {
+			throw ApiException.unprocessable("That value is not one you can filter by");
+		}
+	}
+
+	/** The query form of {@link #inScope}; {@code null} = none (and no query is made). */
+	private Specification<Inspection> scopeOf(CurrentUser me, boolean supplier, boolean customer) {
+		if (supplier) {
+			return (root, query, cb) -> cb.equal(root.get("supplierCompanyId"), me.companyId());
+		}
+		if (customer) { // only the inspections an ERGO editor has released to the customer
+			return (root, query, cb) -> cb.and(cb.isTrue(root.get("customerVisible")),
+					cb.equal(root.get("customerCompanyId"), me.companyId()));
+		}
+		return switch (QualityScope.of(me.role())) {
+			case FULL -> (root, query, cb) -> cb.conjunction();
 			case KAM -> {
 				Set<Long> accounts = directory.accountsOf(me.userId());
-				yield accounts.isEmpty() ? List.of() : inspections.findByCustomerCompanyIdInOrderByIdDesc(accounts);
+				yield accounts.isEmpty() ? null : (root, query, cb) -> root.get("customerCompanyId").in(accounts);
 			}
-			case NPD_LINKED -> inspections.findByLinkedModuleOrderByIdDesc(LinkedModule.NPD);
-			case OFP_LINKED -> inspections.findByLinkedModuleOrderByIdDesc(LinkedModule.OFP);
-			default -> List.of(); // SRS §10.8 X: ERGO RFQ and every other role not handled above/below
+			case NPD_LINKED -> (root, query, cb) -> cb.equal(root.get("linkedModule"), LinkedModule.NPD);
+			case OFP_LINKED -> (root, query, cb) -> cb.equal(root.get("linkedModule"), LinkedModule.OFP);
+			default -> null; // QualityScope.NONE: a role with no Quality access
 		};
-		Map<Long, CompanyRef> customers = directory.companies(ids(visible, i -> i.customerCompanyId));
-		Map<Long, CompanyRef> suppliers = directory.companies(ids(visible, i -> i.supplierCompanyId));
-		return visible.stream()
-			.map(i -> new InspectionRow(i.id, i.linkedModule, i.linkedRecordId, name(customers, i.customerCompanyId),
-					name(suppliers, i.supplierCompanyId), i.partNumber, i.batchLotNo, i.resultStatus,
-					i.inspectionDate, i.customerVisible))
-			.toList();
+	}
+
+	private Specification<Inspection> searchOf(boolean supplier, boolean customer, String q) {
+		String needle = q == null ? "" : q.replaceAll("\\p{Cntrl}", "").strip(); // a NUL makes Postgres reject the query
+		if (needle.isEmpty()) {
+			return null;
+		}
+		if (needle.length() > MAX_SEARCH_LENGTH) {
+			needle = needle.substring(0, MAX_SEARCH_LENGTH);
+		}
+		String pattern = "%" + needle.toLowerCase(java.util.Locale.ROOT).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+		// Company names are for ERGO's search only.
+		Set<Long> companyIds = supplier || customer ? Set.of() : directory.companyIdsByName(needle);
+		return (root, query, cb) -> {
+			List<Predicate> any = new ArrayList<>();
+			any.add(cb.like(cb.lower(root.<String>get("partNumber")), pattern, '\\'));
+			any.add(cb.like(cb.lower(root.<String>get("batchLotNo")), pattern, '\\'));
+			if (!companyIds.isEmpty()) {
+				any.add(root.get("customerCompanyId").in(companyIds));
+				any.add(root.get("supplierCompanyId").in(companyIds));
+			}
+			return cb.or(any.toArray(new Predicate[0]));
+		};
 	}
 
 	@Transactional(readOnly = true)
