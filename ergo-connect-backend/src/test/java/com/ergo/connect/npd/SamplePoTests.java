@@ -676,7 +676,7 @@ class SamplePoTests {
 			.getContentAsString();
 		assertThat(JsonPath.<List<String>>read(ergoView, "$.activities[*].activityName"))
 			.containsExactlyInAnyOrder("ERGO step", "Customer step", "Supplier step");
-		call(get("/api/npd"), ergoNpd, null).andExpect(jsonPath("$[?(@.id == %d)].planStatus".formatted(project)).value(hasItem("ASSIGNED_TO_SUPPLIER")));
+		call(get("/api/npd?size=100"), ergoNpd, null).andExpect(jsonPath("$.items[?(@.id == %d)].planStatus".formatted(project)).value(hasItem("ASSIGNED_TO_SUPPLIER")));
 	}
 
 	@Test
@@ -757,11 +757,11 @@ class SamplePoTests {
 				"$.issuesRisks[?(@.title == 'Late drawing')].id").getFirst().longValue();
 
 		// it sees the projects of its own accounts, with no buttons, and the others do not exist for it
-		call(get("/api/npd"), kamA, null).andExpect(jsonPath("$[*].id", hasItem((int) project)));
+		call(get("/api/npd?size=100"), kamA, null).andExpect(jsonPath("$.items[*].id", hasItem((int) project)));
 		call(get("/api/npd/{id}", project), kamA, null).andExpect(status().isOk())
 			.andExpect(jsonPath("$.actions", empty()))
 			.andExpect(jsonPath("$.activities[0].actions", empty()));
-		call(get("/api/npd"), kamB, null).andExpect(jsonPath("$[*].id", not(hasItem((int) project))));
+		call(get("/api/npd?size=100"), kamB, null).andExpect(jsonPath("$.items").isArray()).andExpect(jsonPath("$.items[*].id", not(hasItem((int) project))));
 		call(get("/api/npd/{id}", project), kamB, null).andExpect(status().isNotFound());
 
 		// level A on NPD covers the Sample PO decision only: no project change is possible

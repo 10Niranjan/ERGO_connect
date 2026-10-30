@@ -132,6 +132,41 @@ class NpdTests {
 	}
 
 	@Test
+	void theProjectListIsPagedFilteredAndSearchedInTheQuery() throws Exception {
+		long projectA = convert(approvedRfq(buyerA, "91"));
+		long projectB = convertFor(npdCustomerB, approvedRfq(buyerB, "92"));
+		String numberA = jdbc.queryForObject("SELECT npd_number FROM npd_projects WHERE npd_project_id = ?", String.class, projectA);
+		String customerBName = jdbc.queryForObject("SELECT company_name FROM companies WHERE company_id = ?", String.class, customerB);
+
+		// paging: one row per page, the total counts every project, newest first
+		call(get("/api/npd?size=1"), ergoNpd, null).andExpect(status().isOk()).andExpect(jsonPath("$.items", hasSize(1)))
+			.andExpect(jsonPath("$.items[0].id").value((int) projectB)).andExpect(jsonPath("$.size").value(1))
+			.andExpect(jsonPath("$.total").value(org.hamcrest.Matchers.greaterThanOrEqualTo(2)));
+		call(get("/api/npd?size=1&page=1"), ergoNpd, null).andExpect(jsonPath("$.items[0].id").value((int) projectA));
+		call(get("/api/npd?size=100000&page=-4"), ergoNpd, null).andExpect(jsonPath("$.size").value(100)).andExpect(jsonPath("$.page").value(0));
+
+		// search: by NPD number (and case-insensitively), by customer name, never by a wildcard
+		call(get("/api/npd?q=" + numberA.toLowerCase()), ergoNpd, null).andExpect(jsonPath("$.total").value(1))
+			.andExpect(jsonPath("$.items[0].id").value((int) projectA));
+		call(get("/api/npd").param("q", customerBName), ergoNpd, null).andExpect(jsonPath("$.items[*].id", hasItem((int) projectB)))
+			.andExpect(jsonPath("$.items[*].id", not(hasItem((int) projectA))));
+		call(get("/api/npd").param("q", "%"), ergoNpd, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/npd").param("q", "\u0000" + numberA), ergoNpd, null).andExpect(status().isOk()).andExpect(jsonPath("$.total").value(1));
+
+		// filters narrow inside the same query; an unknown value is refused, not ignored
+		call(get("/api/npd?stage=PLANNING&q=" + numberA), ergoNpd, null).andExpect(jsonPath("$.total").value(1));
+		call(get("/api/npd?stage=CLOSED&q=" + numberA), ergoNpd, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/npd?stage=BOGUS"), ergoNpd, null).andExpect(status().isUnprocessableEntity());
+		call(get("/api/npd?risk=BOGUS"), ergoNpd, null).andExpect(status().isUnprocessableEntity());
+
+		// the account-scoped KAM's search cannot reach another customer's project, not even by name
+		Login kamA = users.login(users.company("ERGO"), "ERGO_KAM");
+		users.assignAccounts(kamA.userId(), customerA);
+		call(get("/api/npd").param("q", customerBName), kamA, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/npd?q=" + numberA), kamA, null).andExpect(jsonPath("$.items[*].id", hasItem((int) projectA)));
+	}
+
+	@Test
 	void keyAccountManagersSeeOnlyTheirAssignedCustomersProjectsAndOfpQualityViewEverythingButReleaseNoPlan() throws Exception {
 		long projectA = convert(approvedRfq(buyerA, "90"));
 		long projectB = convertFor(npdCustomerB, approvedRfq(buyerB, "95"));
@@ -140,15 +175,15 @@ class NpdTests {
 		Login ofp = users.login(users.company("ERGO"), "ERGO_OFP");
 		Login quality = users.login(users.company("ERGO"), "ERGO_QUALITY");
 
-		call(get("/api/npd"), kam, null).andExpect(jsonPath("$[*].id", hasItem((int) projectA)))
-			.andExpect(jsonPath("$[*].id", not(hasItem((int) projectB))));
+		call(get("/api/npd?size=100"), kam, null).andExpect(jsonPath("$.items[*].id", hasItem((int) projectA)))
+			.andExpect(jsonPath("$.items[*].id", not(hasItem((int) projectB))));
 		call(get("/api/npd/{id}", projectA), kam, null).andExpect(status().isOk());
 		call(get("/api/npd/{id}", projectB), kam, null).andExpect(status().isNotFound());
 
 		// role sheet: ERGO OFP (V) and ERGO Quality (A) see every project, but only the O roles release a plan
 		for (Login viewer : List.of(ofp, quality)) {
-			call(get("/api/npd"), viewer, null).andExpect(jsonPath("$[*].id", hasItem((int) projectA)))
-				.andExpect(jsonPath("$[*].id", hasItem((int) projectB)));
+			call(get("/api/npd?size=100"), viewer, null).andExpect(jsonPath("$.items[*].id", hasItem((int) projectA)))
+				.andExpect(jsonPath("$.items[*].id", hasItem((int) projectB)));
 			call(get("/api/npd/{id}", projectB), viewer, null).andExpect(status().isOk());
 		}
 		call(post("/api/npd/{id}/plan/assign", projectA), quality, "{}").andExpect(status().isForbidden());
@@ -160,7 +195,7 @@ class NpdTests {
 		// role ever reaches this endpoint at all, checked above and in the RFQ-side anonymity tests
 		String supplierName = jdbc.queryForObject("SELECT company_name FROM companies WHERE company_id = ?",
 				String.class, supplier);
-		call(get("/api/npd"), ergoNpd, null).andExpect(jsonPath("$[*].supplierName", hasItem(supplierName)));
+		call(get("/api/npd?size=100"), ergoNpd, null).andExpect(jsonPath("$.items[*].supplierName", hasItem(supplierName)));
 	}
 
 	@Test
@@ -302,8 +337,8 @@ class NpdTests {
 			.andExpect(jsonPath("$.actualSampleSubmissionDate").value(LocalDate.now().toString()));
 
 		// the ERGO-internal list row carries the same fields (SRS §12.8.1)
-		call(get("/api/npd"), ergoNpd, null)
-			.andExpect(jsonPath("$[?(@.id == " + projectId + ")].riskLevel", contains("HIGH")));
+		call(get("/api/npd?size=100"), ergoNpd, null)
+			.andExpect(jsonPath("$.items[?(@.id == " + projectId + ")].riskLevel", contains("HIGH")));
 	}
 
 	// ---------------------------------------------------------------- Phase 3b

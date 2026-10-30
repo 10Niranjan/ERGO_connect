@@ -299,7 +299,7 @@ class PermissionAdminTests {
 		mvc.perform(get("/api/npd").header(HttpHeaders.AUTHORIZATION, kam.bearer())).andExpect(status().isOk());
 		save("ERGO", version(), "no NPD for KAM", change("ERGO_KAM", "NPD", "NV")).andExpect(status().isOk());
 		// the KAM keeps A on OFP (production orders), so the endpoint opens, but no sample project exists for it any more
-		mvc.perform(get("/api/npd").header(HttpHeaders.AUTHORIZATION, kam.bearer())).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+		mvc.perform(get("/api/npd").header(HttpHeaders.AUTHORIZATION, kam.bearer())).andExpect(status().isOk()).andExpect(jsonPath("$.total").value(0));
 		mvc.perform(get("/api/npd/1").header(HttpHeaders.AUTHORIZATION, kam.bearer())).andExpect(status().isNotFound());
 	}
 

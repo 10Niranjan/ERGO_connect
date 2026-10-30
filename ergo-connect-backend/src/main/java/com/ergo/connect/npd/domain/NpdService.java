@@ -29,9 +29,15 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import jakarta.persistence.criteria.Predicate;
 
 import com.ergo.connect.common.audit.AuditLogService;
 import com.ergo.connect.common.audit.AuditLogService.AuditEntry;
@@ -63,6 +69,7 @@ import com.ergo.connect.npd.domain.NpdDtos.IssueStatusForm;
 import com.ergo.connect.npd.domain.NpdDtos.Named;
 import com.ergo.connect.npd.domain.NpdDtos.NpdAction;
 import com.ergo.connect.npd.domain.NpdDtos.NpdListRow;
+import com.ergo.connect.npd.domain.NpdDtos.NpdPage;
 import com.ergo.connect.npd.domain.NpdDtos.NpdOwnProjectRow;
 import com.ergo.connect.npd.domain.NpdDtos.NpdProjectForm;
 import com.ergo.connect.npd.domain.NpdDtos.NpdView;
@@ -97,6 +104,10 @@ import com.ergo.connect.rfq.api.RfqApi.ItemRef;
 public class NpdService {
 
 	/** The three customer-facing approval types (SRS §13.4.7); a supplier's view never queries approvals at all. */
+	private static final int MAX_PAGE_SIZE = 100;
+
+	private static final int MAX_SEARCH_LENGTH = 100;
+
 	private static final Set<ApprovalType> CUSTOMER_APPROVAL_TYPES = EnumSet.of(ApprovalType.CUSTOMER_SAMPLE_APPROVAL,
 			ApprovalType.CUSTOMER_MILESTONE_ACKNOWLEDGMENT, ApprovalType.CUSTOMER_QUALITY_ACCEPTANCE);
 
@@ -372,30 +383,104 @@ public class NpdService {
 
 	// ---------------------------------------------------------------- reads
 
+	/**
+	 * The ERGO project list, one page. The record scope (role, project kind, KAM's accounts) is applied in the query,
+	 * then narrowed by {@code stage}, {@code risk} and {@code q}: NPD number, part number, customer or supplier name
+	 * and RFQ number or part. Customers and suppliers reach their projects through {@link #myProjects()} instead.
+	 */
 	@Transactional(readOnly = true)
-	public List<NpdListRow> list() {
+	public NpdPage list(int page, int size, String stage, String risk, String q) {
 		CurrentUser me = CurrentUser.get();
-		List<NpdProject> candidates;
-		if (me.companyType() != CompanyType.ERGO) {
-			candidates = List.of(); // the customer and supplier lists are /mine
+		int pageSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+		int pageNo = Math.min(Math.max(page, 0), Integer.MAX_VALUE / pageSize - 1); // the offset must fit an int, else a 500
+		Specification<NpdProject> spec = scopeOf(me);
+		if (spec == null) {
+			return new NpdPage(List.of(), 0, pageNo, pageSize);
 		}
-		else if (me.role() == ERGO_KAM) {
-			Set<Long> accounts = directory.accountsOf(me.userId());
-			candidates = accounts.isEmpty() ? List.of() : projects.findByCustomerCompanyIdInOrderByIdDesc(accounts);
+		if (stage != null && !stage.isBlank()) {
+			NpdStage wanted = parseFilter(NpdStage::valueOf, stage);
+			spec = spec.and((root, query, cb) -> cb.equal(root.get("stage"), wanted));
 		}
-		else {
-			candidates = projects.findAllByOrderByIdDesc();
+		if (risk != null && !risk.isBlank()) {
+			RiskLevel wanted = parseFilter(RiskLevel::valueOf, risk);
+			spec = spec.and((root, query, cb) -> cb.equal(root.get("riskLevel"), wanted));
 		}
-		// the record scope decides, per project and its kind
-		List<NpdProject> visible = candidates.stream().filter(p -> inScope(me, p)).toList();
+		Specification<NpdProject> search = searchOf(q);
+		if (search != null) {
+			spec = spec.and(search);
+		}
+		Page<NpdProject> found = projects.findAll(spec, PageRequest.of(pageNo, pageSize, Sort.by(Sort.Direction.DESC, "id")));
+		List<NpdProject> visible = found.getContent();
 		Map<Long, CompanyRef> customers = directory.companies(ids(visible, p -> p.customerCompanyId));
 		Map<Long, CompanyRef> suppliers = directory.companies(ids(visible, p -> p.supplierCompanyId));
 		Map<Long, UserRef> owners = directory.users(ids(visible, p -> p.ownerUserId));
-		return visible.stream()
+		List<NpdListRow> rows = visible.stream()
 			.map(p -> new NpdListRow(p.id, p.npdNumber, p.kind, rfqNumber(p.sourceRfqId), name(customers, p.customerCompanyId),
 					name(suppliers, p.supplierCompanyId), p.partNumber, p.stage, p.targetSampleDate, delayDays(p),
 					userName(owners, p.ownerUserId), p.riskLevel, p.planStatus))
 			.toList();
+		return new NpdPage(rows, found.getTotalElements(), pageNo, pageSize);
+	}
+
+	private static <E> E parseFilter(Function<String, E> parse, String value) {
+		try {
+			return parse.apply(value);
+		}
+		catch (IllegalArgumentException e) {
+			throw ApiException.unprocessable("That value is not one you can filter by");
+		}
+	}
+
+	/** The query form of {@link #inScope(CurrentUser, NpdProject)} for the ERGO list; {@code null} = none (and no query is made). */
+	private Specification<NpdProject> scopeOf(CurrentUser me) {
+		if (me.companyType() != CompanyType.ERGO || !ModuleSwitch.readable(Module.NPD)) {
+			return null; // the customer and supplier lists are /mine
+		}
+		boolean kam = me.role() == ERGO_KAM;
+		Set<Long> accounts = kam ? directory.accountsOf(me.userId()) : Set.of();
+		if (kam && accounts.isEmpty()) {
+			return null;
+		}
+		// the role sheet decides per project kind; a production project also needs OFP to be readable
+		List<ProjectKind> kinds = new ArrayList<>();
+		for (ProjectKind kind : ProjectKind.values()) {
+			NpdRights r = kind == ProjectKind.PRODUCTION ? NpdRights.PRODUCTION : NpdRights.SAMPLE;
+			boolean open = kind != ProjectKind.PRODUCTION || ModuleSwitch.readable(Module.OFP);
+			if (open && r.canView(me.role()) && (kam || r.fullViewers.contains(me.role()))) {
+				kinds.add(kind);
+			}
+		}
+		if (kinds.isEmpty()) {
+			return null;
+		}
+		return (root, query, cb) -> kam ? cb.and(root.get("kind").in(kinds), root.get("customerCompanyId").in(accounts))
+				: root.get("kind").in(kinds);
+	}
+
+	private Specification<NpdProject> searchOf(String q) {
+		String needle = q == null ? "" : q.replaceAll("\\p{Cntrl}", "").strip(); // a NUL makes Postgres reject the query
+		if (needle.isEmpty()) {
+			return null;
+		}
+		if (needle.length() > MAX_SEARCH_LENGTH) {
+			needle = needle.substring(0, MAX_SEARCH_LENGTH);
+		}
+		String pattern = "%" + needle.toLowerCase(java.util.Locale.ROOT).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+		Set<Long> companyIds = directory.companyIdsByName(needle);
+		Set<Long> rfqItems = rfqApi.matchingItems(projects.sourceRfqItemIds(), needle); // RFQ number or part
+		return (root, query, cb) -> {
+			List<Predicate> any = new ArrayList<>();
+			any.add(cb.like(cb.lower(root.<String>get("npdNumber")), pattern, '\\'));
+			any.add(cb.like(cb.lower(root.<String>get("partNumber")), pattern, '\\'));
+			if (!companyIds.isEmpty()) {
+				any.add(root.get("customerCompanyId").in(companyIds));
+				any.add(root.get("supplierCompanyId").in(companyIds));
+			}
+			if (!rfqItems.isEmpty()) {
+				any.add(root.get("sourceRfqItemId").in(rfqItems));
+			}
+			return cb.or(any.toArray(new Predicate[0]));
+		};
 	}
 
 	/** SRS §12.15's customer "NPD" / supplier "NPD Tasks" nav entry point: the caller's own company's projects, with

@@ -142,6 +142,22 @@ export interface NpdListRow {
   planStatus: PlanStatus
 }
 
+/** One page of the project list; `total` counts every match, not just this page. */
+export interface NpdPage {
+  items: NpdListRow[]
+  total: number
+  page: number
+  size: number
+}
+
+export interface NpdListArgs {
+  page: number
+  size: number
+  stage?: string
+  risk?: string
+  q?: string
+}
+
 /** SRS §12.15's customer "NPD" / supplier "NPD Tasks" nav entry: the caller's own company's projects only, with no
  * field naming the other company (safe for both audiences). Feeds `/npd/mine` -> reach a project by id. */
 export interface NpdOwnProjectRow {
@@ -406,7 +422,14 @@ export type NpdView = ErgoNpdView | CustomerNpdView | SupplierNpdView
 
 const npdApi = api.enhanceEndpoints({ addTagTypes: ['Npd'] }).injectEndpoints({
   endpoints: (build) => ({
-    npdList: build.query<NpdListRow[], void>({ query: () => '/npd', providesTags: ['Npd'] }),
+    // One page, newest first; filtered and searched by the server.
+    npdList: build.query<NpdPage, NpdListArgs>({
+      query: ({ page, size, stage, risk, q }) => ({
+        url: '/npd',
+        params: { page, size, ...(stage ? { stage } : {}), ...(risk ? { risk } : {}), ...(q ? { q } : {}) },
+      }),
+      providesTags: ['Npd'],
+    }),
     /** SRS §12.15's customer "NPD" / supplier "NPD Tasks" nav entry. */
     myNpdProjects: build.query<NpdOwnProjectRow[], void>({ query: () => '/npd/mine', providesTags: ['Npd'] }),
     npdProject: build.query<NpdView, number>({

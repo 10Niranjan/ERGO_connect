@@ -90,6 +90,10 @@ public final class NpdDtos {
 			RiskLevel riskLevel, PlanStatus planStatus) {
 	}
 
+	/** One page of the project list; {@code total} counts every match, not just this page. */
+	public record NpdPage(List<NpdListRow> items, long total, int page, int size) {
+	}
+
 	/** SRS §12.15's customer "NPD" / supplier "NPD Tasks" nav entry: the caller's own company's projects, with no
 	 * field for the other company at all (safe for both audiences, unlike NpdListRow). Feeds the "reach a project by
 	 * id" detail view — every other 3b field lives there instead of being duplicated onto this row. */

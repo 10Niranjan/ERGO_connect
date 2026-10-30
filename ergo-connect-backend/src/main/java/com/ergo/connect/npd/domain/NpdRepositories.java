@@ -17,6 +17,14 @@ interface NpdProjectRepository extends Repository<NpdProject, Long> {
 
 	List<NpdProject> findByIdIn(Collection<Long> ids);
 
+	/** The list page. The only Specification method on purpose (JpaSpecificationExecutor would bring bulk update/delete that skip @Version and audit). */
+	org.springframework.data.domain.Page<NpdProject> findAll(org.springframework.data.jpa.domain.Specification<NpdProject> spec,
+			org.springframework.data.domain.Pageable pageable);
+
+	/** Ids only, to ask the RFQ module which of them match a search text. */
+	@org.springframework.data.jpa.repository.Query("select p.sourceRfqItemId from NpdProject p where p.sourceRfqItemId is not null")
+	List<Long> sourceRfqItemIds();
+
 	List<NpdProject> findAllByOrderByIdDesc();
 
 	List<NpdProject> findByCustomerCompanyIdInOrderByIdDesc(Collection<Long> customerCompanyIds);

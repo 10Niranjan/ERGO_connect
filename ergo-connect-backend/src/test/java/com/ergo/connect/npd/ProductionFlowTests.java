@@ -392,7 +392,7 @@ class ProductionFlowTests {
 
 		// OFP hidden: the OFP project is gone from every list and from the dashboard, the sample project stays
 		cap("OFP", "NV");
-		call(get("/api/npd"), ergoNpd, null).andExpect(jsonPath("$[*].id", not(hasItem((int) project)))).andExpect(jsonPath("$[*].id", hasItem((int) sample)));
+		call(get("/api/npd?size=100"), ergoNpd, null).andExpect(jsonPath("$.items[*].id", not(hasItem((int) project)))).andExpect(jsonPath("$.items[*].id", hasItem((int) sample)));
 		call(get("/api/dashboard"), ergoManagement, null).andExpect(status().isOk());
 		assertThat(call(get("/api/dashboard"), ergoManagement, null).andReturn().getResponse().getContentAsString()).doesNotContain("OFP-");
 	}
