@@ -342,11 +342,34 @@ export interface CustomerOrderView {
   updatedAt: string
 }
 
+export interface OrderPage {
+  items: OrderSummary[]
+  /** Every order that matches, not just this page. */
+  total: number
+  page: number
+  size: number
+}
+
+export interface OrderListArgs {
+  page: number
+  size: number
+  status?: string
+  q?: string
+  delayed?: boolean
+}
+
 export type OrderDetail = OrderView | SupplierOrderView | CustomerOrderView
 
 const ofpApi = api.enhanceEndpoints({ addTagTypes: ['Ofp', 'Npd'] }).injectEndpoints({
   endpoints: (build) => ({
-    ofpOrders: build.query<OrderSummary[], void>({ query: () => '/ofp/orders', providesTags: ['Ofp'] }),
+    // One page, newest first; filtered and searched by the server.
+    ofpOrders: build.query<OrderPage, OrderListArgs>({
+      query: ({ page, size, status, q, delayed }) => ({
+        url: '/ofp/orders',
+        params: { page, size, ...(status ? { status } : {}), ...(q ? { q } : {}), ...(delayed ? { delayed: true } : {}) },
+      }),
+      providesTags: ['Ofp'],
+    }),
     ofpOrder: build.query<OrderDetail, number>({
       query: (id) => `/ofp/orders/${id}`,
       providesTags: (_r, _e, id) => [{ type: 'Ofp', id }],

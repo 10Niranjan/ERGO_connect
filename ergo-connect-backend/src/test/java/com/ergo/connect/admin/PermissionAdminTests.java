@@ -290,7 +290,7 @@ class PermissionAdminTests {
 		// a fresh supplier company owns no orders: it lists none (never another company's)
 		mvc.perform(get("/api/ofp/orders").header(HttpHeaders.AUTHORIZATION, supplierQuality.bearer()))
 			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.length()").value(0));
+			.andExpect(jsonPath("$.total").value(0));
 	}
 
 	@Test

@@ -13,6 +13,10 @@ interface OrderRepository extends Repository<Order, Long> {
 
 	Optional<Order> findById(Long id);
 
+	/** The list page. The only Specification method on purpose (JpaSpecificationExecutor would bring bulk update/delete that skip @Version and audit). */
+	org.springframework.data.domain.Page<Order> findAll(org.springframework.data.jpa.domain.Specification<Order> spec,
+			org.springframework.data.domain.Pageable pageable);
+
 	List<Order> findAllByOrderByIdDesc();
 
 	List<Order> findByCustomerCompanyIdInOrderByIdDesc(Collection<Long> customerCompanyIds);

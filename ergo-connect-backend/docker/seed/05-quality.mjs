@@ -1,10 +1,10 @@
 // Phase 5: inspections in every result state, NCRs at every stage with CAPA actions and evidence, and deviations
 // through the ERGO -> customer approval chain. Maker-checker rules respected (Management decides, creators never do).
-import { PERSONA, attempt, files, get, inDays, inspection, log, upload } from './lib.mjs'
+import { PERSONA, attempt, files, get, getAll, inDays, inspection, log, upload } from './lib.mjs'
 
 export async function run(ctx) {
   const C = ctx.companyIds
-  const orders = Object.fromEntries((await get('ofp', '/ofp/orders')).map((o) => [o.partNumber, o.id]))
+  const orders = Object.fromEntries((await getAll('ofp', '/ofp/orders')).map((o) => [o.partNumber, o.id]))
   const npds = Object.fromEntries((await get('npdLead', '/npd')).map((n) => [n.partNumber, n.id]))
   const cust = { 'ACM-KNUCKLE-01': C.acme, 'ACM-GEARBLANK-09': C.acme, 'ACM-SHAFT-20': C.acme, 'ACM-BUSH-21': C.acme, 'ACM-GASKET-23': C.acme, 'BHM-HUB-12': C.bharat, 'BHM-FLYWHEEL-22': C.bharat, 'SAH-SPRING-15': C.sahyadri, 'SAH-LINK-24': C.sahyadri }
   const sup = (part) => (part.startsWith('BHM') ? C.shakti : C.precision)

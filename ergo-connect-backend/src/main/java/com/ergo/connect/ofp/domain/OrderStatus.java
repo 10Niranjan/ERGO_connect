@@ -1,6 +1,8 @@
 package com.ergo.connect.ofp.domain;
 
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * SRS §13.5.1/§14.6 order lifecycle. Phase 4a drives the linear sequence up to {@link #PACKAGING_IN_PROGRESS} only
@@ -14,6 +16,9 @@ public enum OrderStatus {
 
 	ORDER_CREATED, MATERIAL_ORDERED, MATERIAL_RECEIVED, PRODUCTION_STARTED, IN_INSPECTION, PACKAGING_IN_PROGRESS,
 	DISPATCH_READY, DISPATCHED, IN_TRANSIT, DELIVERED, CLOSED, ON_HOLD;
+
+	/** Still with the supplier: the list's "delayed" filter and the dashboard's "at risk" flag both read this. */
+	static final Set<OrderStatus> NOT_YET_DISPATCHED = EnumSet.complementOf(EnumSet.of(DISPATCHED, IN_TRANSIT, DELIVERED, CLOSED));
 
 	/** The forward-only path 4a actually drives (ERGO OFP/Admin, one step at a time via {@code advance}). */
 	static final List<OrderStatus> SEQUENCE = List.of(ORDER_CREATED, MATERIAL_ORDERED, MATERIAL_RECEIVED,

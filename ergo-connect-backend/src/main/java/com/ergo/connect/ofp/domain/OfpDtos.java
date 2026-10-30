@@ -135,6 +135,10 @@ public final class OfpDtos {
 	public sealed interface OrderDetail permits OrderView, SupplierOrderView, CustomerOrderView {
 	}
 
+	/** One page of the order list; {@code total} counts every match, not just this page. */
+	public record OrderPage(List<? extends OrderSummary> items, long total, int page, int size) {
+	}
+
 	/** ERGO's list row: both companies. */
 	public record OrderRow(long id, String orderNumber, String customer, String supplier, String partNumber,
 			String revision, BigDecimal orderedQuantity, LocalDate dueDate, OrderStatus currentStatus, String owner)

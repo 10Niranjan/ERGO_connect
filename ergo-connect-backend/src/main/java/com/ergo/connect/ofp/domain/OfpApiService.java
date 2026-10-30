@@ -11,14 +11,10 @@ import static com.ergo.connect.common.security.Role.SUPPLIER_NPD;
 import static com.ergo.connect.common.security.Role.SUPPLIER_OFP;
 import static com.ergo.connect.common.security.Role.SUPPLIER_QUALITY;
 import static com.ergo.connect.ofp.domain.OrderStatus.CLOSED;
-import static com.ergo.connect.ofp.domain.OrderStatus.DELIVERED;
-import static com.ergo.connect.ofp.domain.OrderStatus.DISPATCHED;
-import static com.ergo.connect.ofp.domain.OrderStatus.IN_TRANSIT;
 import static com.ergo.connect.ofp.domain.OrderStatus.PACKAGING_IN_PROGRESS;
 import static com.ergo.connect.ofp.domain.OrderStatus.PRODUCTION_STARTED;
 
 import java.time.LocalDate;
-import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -45,9 +41,6 @@ import com.ergo.connect.ofp.api.OfpApi;
 @Service
 @Transactional
 class OfpApiService implements OfpApi {
-
-	private static final Set<OrderStatus> NOT_YET_DISPATCHED = EnumSet.complementOf(
-			EnumSet.of(DISPATCHED, IN_TRANSIT, DELIVERED, CLOSED));
 
 	/** The role sheet (ModuleAccess), OFP column: the supplier roles with access to their own orders. */
 	private static final Set<Role> SUPPLIER_VIEWERS = ModuleAccess.viewers(Module.OFP, CompanyType.SUPPLIER);
@@ -153,7 +146,7 @@ class OfpApiService implements OfpApi {
 	/** Client-chosen formula (ARCHITECTURE.md §8, 2026-10-05 Phase 7c): the SRS gives none. */
 	private static boolean atRisk(Order o, LocalDate today) {
 		return o.committedDispatchDate != null && o.committedDispatchDate.isBefore(today)
-				&& NOT_YET_DISPATCHED.contains(o.currentStatus);
+				&& OrderStatus.NOT_YET_DISPATCHED.contains(o.currentStatus);
 	}
 
 	/** This module's own judgment call on whose turn it is to act (ARCHITECTURE.md §8, 2026-10-05 Phase 7c) - the

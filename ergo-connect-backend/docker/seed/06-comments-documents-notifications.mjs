@@ -1,12 +1,12 @@
 // Phase 6: comment threads on every module, extra files, document-library actions, notification read-states, and
 // timestamps spread over the past weeks (notifications and comments only; the audit trail stays append-only).
 import { execFileSync } from 'node:child_process'
-import { API, PERSONA, attempt, files, get, log, upload } from './lib.mjs'
+import { API, PERSONA, attempt, files, get, getAll, log, upload } from './lib.mjs'
 
 export async function run(ctx) {
   const rfqs = Object.fromEntries((await get('admin', '/rfqs')).map((r) => [r.partNumber, r.id]))
   const npds = Object.fromEntries((await get('npdLead', '/npd')).map((n) => [n.partNumber, n.id]))
-  const orders = Object.fromEntries((await get('ofp', '/ofp/orders')).map((o) => [o.partNumber, o.id]))
+  const orders = Object.fromEntries((await getAll('ofp', '/ofp/orders')).map((o) => [o.partNumber, o.id]))
   const asc = (a, b) => a - b
   const insp = (await get('quality', '/quality/inspections')).map((i) => i.id).sort(asc)
   const ncrs = (await get('quality', '/quality/ncrs')).map((n) => n.id).sort(asc)

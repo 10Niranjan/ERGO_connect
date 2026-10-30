@@ -194,7 +194,8 @@ class AccessIsolationTests {
 	private void listMustNotContain(List<String> leaks, String who, String path, String bearer, long id) throws Exception {
 		MockHttpServletResponse r = mvc.perform(get(path).header(HttpHeaders.AUTHORIZATION, bearer)).andReturn().getResponse();
 		if (r.getStatus() == 200) {
-			List<Number> ids = JsonPath.read(r.getContentAsString(), "$[*].id");
+			JsonPath.read(r.getContentAsString(), "$.items"); // a definite path: fails loudly if the page shape changes again
+			List<Number> ids = JsonPath.read(r.getContentAsString(), "$.items[*].id");
 			if (ids.stream().anyMatch(n -> n.longValue() == id)) {
 				leaks.add(who + " GET " + path + " lists the other company's record " + id);
 			}

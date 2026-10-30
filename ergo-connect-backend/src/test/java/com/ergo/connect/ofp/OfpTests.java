@@ -5,6 +5,7 @@ import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -193,15 +194,15 @@ class OfpTests {
 		advanceToHandoverReady(projectId);
 		long handoverOrder = handover(projectId);
 
-		call(get("/api/ofp/orders"), ergoKam, null).andExpect(jsonPath("$[*].id", hasItem((int) orderA)))
-			.andExpect(jsonPath("$[*].id", not(hasItem((int) orderB))));
+		call(get("/api/ofp/orders"), ergoKam, null).andExpect(jsonPath("$.items[*].id", hasItem((int) orderA)))
+			.andExpect(jsonPath("$.items[*].id", not(hasItem((int) orderB))));
 		call(get("/api/ofp/orders/{id}", orderA), ergoKam, null).andExpect(status().isOk());
 		call(get("/api/ofp/orders/{id}", orderB), ergoKam, null).andExpect(status().isNotFound());
 
 		// ERGO NPD: only the order that came out of an NPD project, not the standalone ones
-		call(get("/api/ofp/orders"), ergoNpd, null).andExpect(jsonPath("$[*].id", hasItem((int) handoverOrder)))
-			.andExpect(jsonPath("$[*].id", not(hasItem((int) orderA))))
-			.andExpect(jsonPath("$[*].id", not(hasItem((int) orderB))));
+		call(get("/api/ofp/orders"), ergoNpd, null).andExpect(jsonPath("$.items[*].id", hasItem((int) handoverOrder)))
+			.andExpect(jsonPath("$.items[*].id", not(hasItem((int) orderA))))
+			.andExpect(jsonPath("$.items[*].id", not(hasItem((int) orderB))));
 		call(get("/api/ofp/orders/{id}", orderA), ergoNpd, null).andExpect(status().isNotFound());
 		call(get("/api/ofp/orders/{id}", handoverOrder), ergoNpd, null).andExpect(status().isOk());
 
@@ -212,15 +213,15 @@ class OfpTests {
 		}
 		// ERGO RFQ and ERGO Quality view every order but write nothing
 		for (Login viewer : List.of(ergoRfq, ergoQuality)) {
-			call(get("/api/ofp/orders"), viewer, null).andExpect(jsonPath("$[*].id", hasItem((int) orderB)));
+			call(get("/api/ofp/orders"), viewer, null).andExpect(jsonPath("$.items[*].id", hasItem((int) orderB)));
 			call(get("/api/ofp/orders/{id}", orderA), viewer, null).andExpect(status().isOk());
 		}
 		call(post("/api/ofp/orders/{id}/advance", orderA), ergoRfq, "{}").andExpect(status().isForbidden());
 		call(post("/api/ofp/orders/{id}/advance", orderA), ergoQuality, "{}").andExpect(status().isForbidden());
 
 		// ERGO Admin sees everything but cannot write (role sheet "V")
-		call(get("/api/ofp/orders"), ergoAdmin, null).andExpect(jsonPath("$[*].id", hasItem((int) orderA)))
-			.andExpect(jsonPath("$[*].id", hasItem((int) orderB)));
+		call(get("/api/ofp/orders"), ergoAdmin, null).andExpect(jsonPath("$.items[*].id", hasItem((int) orderA)))
+			.andExpect(jsonPath("$.items[*].id", hasItem((int) orderB)));
 	}
 
 	@Test
@@ -347,7 +348,7 @@ class OfpTests {
 		Login otherSupplierOfp = users.login(otherSupplier, "SUPPLIER_OFP");
 
 		// the assigned supplier sees its own order and may update production progress / packaging & dispatch
-		call(get("/api/ofp/orders"), supplierOfp, null).andExpect(jsonPath("$[*].id", hasItem((int) orderId)));
+		call(get("/api/ofp/orders"), supplierOfp, null).andExpect(jsonPath("$.items[*].id", hasItem((int) orderId)));
 		call(get("/api/ofp/orders/{id}", orderId), supplierOfp, null).andExpect(status().isOk());
 
 		String withProgress = call(post("/api/ofp/orders/{id}/production-progress", orderId), supplierOfp,
@@ -381,7 +382,7 @@ class OfpTests {
 			.andExpect(status().isNotFound());
 		call(put("/api/ofp/packaging-dispatch/{id}", dispatchId), otherSupplierOfp, packagingDispatchForm("PACKED", true))
 			.andExpect(status().isNotFound());
-		call(get("/api/ofp/orders"), otherSupplierOfp, null).andExpect(jsonPath("$[*].id", not(hasItem((int) orderId))));
+		call(get("/api/ofp/orders"), otherSupplierOfp, null).andExpect(jsonPath("$.items[*].id", not(hasItem((int) orderId))));
 	}
 
 	@Test
@@ -599,6 +600,82 @@ class OfpTests {
 	}
 
 	@Test
+	void theOrderListIsPagedFilteredAndSearchedInTheQueryWithoutBreakingTwoWayAnonymity() throws Exception {
+		// All totals below are read as callers whose scope holds only this test's two orders (the database is shared with
+		// other tests): a KAM on exactly customers A and B, the fresh supplier, and customer A.
+		long orderA = createStandalone(customerA);
+		long orderB = createStandalone(customerB);
+		call(put("/api/ofp/orders/{id}", orderA), ergoOfp, "{\"customerPoNo\": \"CUSTPO-QX1\", \"supplierPoNo\": \"SUPPO-QX2\"}")
+			.andExpect(status().isOk());
+		String customerName = jdbc.queryForObject("SELECT company_name FROM companies WHERE company_id = ?", String.class, customerA);
+		String supplierName = jdbc.queryForObject("SELECT company_name FROM companies WHERE company_id = ?", String.class, supplier);
+		users.assignAccounts(ergoKam.userId(), customerB); // customer A is already its account (setUp)
+		Login supplierOfp = users.login(supplier, "SUPPLIER_OFP");
+		Login customerOfp = users.login(customerA, "CUSTOMER_OFP");
+
+		// pages: total counts every match, newest first, size and page are clamped
+		call(get("/api/ofp/orders?size=1&page=0"), ergoKam, null).andExpect(jsonPath("$.total").value(2))
+			.andExpect(jsonPath("$.items", hasSize(1))).andExpect(jsonPath("$.items[0].id").value((int) orderB));
+		call(get("/api/ofp/orders?size=1&page=1"), ergoKam, null).andExpect(jsonPath("$.items[0].id").value((int) orderA));
+		call(get("/api/ofp/orders?size=1&page=9"), ergoKam, null).andExpect(jsonPath("$.items", hasSize(0)))
+			.andExpect(jsonPath("$.total").value(2));
+		call(get("/api/ofp/orders?size=100000&page=-3"), ergoOfp, null).andExpect(jsonPath("$.size").value(100))
+			.andExpect(jsonPath("$.page").value(0));
+		call(get("/api/ofp/orders?page=2147483647&size=100"), ergoOfp, null).andExpect(status().isOk());
+
+		// delayed: not shipped and past its due date; B is moved into the past, A stays on time
+		call(get("/api/ofp/orders?delayed=true"), ergoKam, null).andExpect(jsonPath("$.total").value(0));
+		call(put("/api/ofp/orders/{id}", orderB), ergoOfp, "{\"dueDate\": \"" + LocalDate.now().minusDays(3) + "\"}")
+			.andExpect(status().isOk());
+		call(get("/api/ofp/orders?delayed=true"), ergoKam, null).andExpect(jsonPath("$.total").value(1))
+			.andExpect(jsonPath("$.items[0].id").value((int) orderB));
+		call(get("/api/ofp/orders?delayed=true"), supplierOfp, null).andExpect(jsonPath("$.total").value(1));
+		call(get("/api/ofp/orders?delayed=true"), customerOfp, null).andExpect(jsonPath("$.total").value(0)); // B is not its order
+		call(put("/api/ofp/orders/{id}", orderA), ergoOfp, "{\"customerPoNo\": \"CUSTPO-QX1\", \"supplierPoNo\": \"SUPPO-QX2\", \"dueDate\": \""
+				+ LocalDate.now().minusDays(1) + "\"}")
+			.andExpect(status().isOk());
+		call(get("/api/ofp/orders?delayed=true"), customerOfp, null).andExpect(jsonPath("$.total").value(1))
+			.andExpect(jsonPath("$.items[0].id").value((int) orderA));
+		call(get("/api/ofp/orders?delayed=true"), ergoKam, null).andExpect(jsonPath("$.total").value(2));
+
+		// status: a known one filters, an unknown one is refused
+		call(get("/api/ofp/orders?status=ORDER_CREATED"), ergoKam, null).andExpect(jsonPath("$.total").value(2));
+		call(get("/api/ofp/orders?status=CLOSED"), ergoKam, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/ofp/orders?status=NOPE"), ergoOfp, null).andExpect(status().isUnprocessableEntity());
+
+		// ERGO searches both POs and both company names; wildcards are literal, control characters stripped
+		call(get("/api/ofp/orders?q=custpo-qx1"), ergoKam, null).andExpect(jsonPath("$.total").value(1));
+		call(get("/api/ofp/orders?q=SUPPO-QX2"), ergoKam, null).andExpect(jsonPath("$.total").value(1));
+		call(get("/api/ofp/orders").param("q", customerName), ergoKam, null).andExpect(jsonPath("$.total").value(1))
+			.andExpect(jsonPath("$.items[0].id").value((int) orderA));
+		call(get("/api/ofp/orders").param("q", supplierName), ergoKam, null).andExpect(jsonPath("$.total").value(2));
+		call(get("/api/ofp/orders").param("q", "%"), ergoKam, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/ofp/orders").param("q", "CUSTPO-QX1\u0000"), ergoKam, null).andExpect(jsonPath("$.total").value(1));
+
+		// the supplier finds its own PO, never the customer's PO or name
+		call(get("/api/ofp/orders?q=SUPPO-QX2"), supplierOfp, null).andExpect(jsonPath("$.total").value(1));
+		call(get("/api/ofp/orders?q=CUSTPO-QX1"), supplierOfp, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/ofp/orders").param("q", customerName), supplierOfp, null).andExpect(jsonPath("$.total").value(0));
+		// the customer finds its own PO and only its own orders, never the supplier's PO or name
+		call(get("/api/ofp/orders?q=CUSTPO-QX1"), customerOfp, null).andExpect(jsonPath("$.total").value(1));
+		call(get("/api/ofp/orders?q=SUPPO-QX2"), customerOfp, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/ofp/orders").param("q", supplierName), customerOfp, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/ofp/orders"), customerOfp, null).andExpect(jsonPath("$.total").value(1))
+			.andExpect(jsonPath("$.items[0].id").value((int) orderA));
+
+		// a KAM on customer A alone never reaches customer B's orders, by list or by searching B's name
+		Login kamA = users.login(users.company("ERGO"), "ERGO_KAM");
+		users.assignAccounts(kamA.userId(), customerA);
+		call(get("/api/ofp/orders"), kamA, null).andExpect(jsonPath("$.total").value(1))
+			.andExpect(jsonPath("$.items[0].id").value((int) orderA));
+		String customerBName = jdbc.queryForObject("SELECT company_name FROM companies WHERE company_id = ?", String.class, customerB);
+		call(get("/api/ofp/orders").param("q", customerBName), kamA, null).andExpect(jsonPath("$.total").value(0));
+		// another supplier sees none of it
+		call(get("/api/ofp/orders").param("q", customerName), users.login(users.company("SUPPLIER"), "SUPPLIER_OFP"), null)
+			.andExpect(jsonPath("$.total").value(0));
+	}
+
+	@Test
 	void supplierListAndDetailNeverIdentifyTheCustomer() throws Exception {
 		long orderId = createStandalone(customerA);
 		String customerName = jdbc.queryForObject("SELECT company_name FROM companies WHERE company_id = ?",
@@ -613,11 +690,11 @@ class OfpTests {
 		Login supplierOfp = users.login(supplier, "SUPPLIER_OFP");
 
 		String list = call(get("/api/ofp/orders"), supplierOfp, null).andExpect(status().isOk())
-			.andExpect(jsonPath("$[0].id").value((int) orderId))
-			.andExpect(jsonPath("$[0].supplierPoNo").value("SPO-7"))
-			.andExpect(jsonPath("$[0].customer").doesNotExist())
-			.andExpect(jsonPath("$[0].customerPoNo").doesNotExist())
-			.andExpect(jsonPath("$[0].owner").doesNotExist())
+			.andExpect(jsonPath("$.items[0].id").value((int) orderId))
+			.andExpect(jsonPath("$.items[0].supplierPoNo").value("SPO-7"))
+			.andExpect(jsonPath("$.items[0].customer").doesNotExist())
+			.andExpect(jsonPath("$.items[0].customerPoNo").doesNotExist())
+			.andExpect(jsonPath("$.items[0].owner").doesNotExist())
 			.andReturn()
 			.getResponse()
 			.getContentAsString();
@@ -666,9 +743,9 @@ class OfpTests {
 		Login customerOfp = users.login(customerA, "CUSTOMER_OFP");
 
 		String list = call(get("/api/ofp/orders"), customerOfp, null).andExpect(status().isOk())
-			.andExpect(jsonPath("$[*].id", hasItem((int) orderId)))
-			.andExpect(jsonPath("$[*].id", not(hasItem((int) otherOrder))))
-			.andExpect(jsonPath("$[0].customerPoNo").value("PO-4C"))
+			.andExpect(jsonPath("$.items[*].id", hasItem((int) orderId)))
+			.andExpect(jsonPath("$.items[*].id", not(hasItem((int) otherOrder))))
+			.andExpect(jsonPath("$.items[0].customerPoNo").value("PO-4C"))
 			.andReturn()
 			.getResponse()
 			.getContentAsString();

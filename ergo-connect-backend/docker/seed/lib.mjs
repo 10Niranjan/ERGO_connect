@@ -93,6 +93,15 @@ export async function upload(who, path, file, extra = {}, category = null) {
 let categoryCache = null
 
 export const get = (who, path) => call(who, 'GET', path)
+/** Every row of a paged list ({ items, total }), page by page. */
+export async function getAll(who, path) {
+  const out = []
+  for (let page = 0; ; page++) {
+    const r = await get(who, `${path}${path.includes('?') ? '&' : '?'}page=${page}&size=100`)
+    out.push(...r.items)
+    if (out.length >= r.total || r.items.length === 0) return out
+  }
+}
 export const stat = () => ({ ...stats })
 
 // ------------------------------------------------------------------ dates

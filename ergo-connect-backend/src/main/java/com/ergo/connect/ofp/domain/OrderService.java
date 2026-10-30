@@ -15,6 +15,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.Year;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.EnumSet;
@@ -25,9 +26,15 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import jakarta.persistence.criteria.Predicate;
 
 import com.ergo.connect.common.audit.AuditLogService;
 import com.ergo.connect.common.audit.AuditLogService.AuditEntry;
@@ -60,6 +67,7 @@ import com.ergo.connect.ofp.domain.OfpDtos.MaterialStatusForm;
 import com.ergo.connect.ofp.domain.OfpDtos.MaterialStatusView;
 import com.ergo.connect.ofp.domain.OfpDtos.OrderAction;
 import com.ergo.connect.ofp.domain.OfpDtos.OrderDetail;
+import com.ergo.connect.ofp.domain.OfpDtos.OrderPage;
 import com.ergo.connect.ofp.domain.OfpDtos.OrderSummary;
 import com.ergo.connect.ofp.domain.OfpDtos.ShipmentForm;
 import com.ergo.connect.ofp.domain.OfpDtos.ShipmentView;
@@ -102,6 +110,9 @@ import jakarta.persistence.PersistenceContext;
 @Service
 @Transactional
 public class OrderService {
+
+	private static final int MAX_PAGE_SIZE = 100;
+	private static final int MAX_SEARCH_LENGTH = 100;
 
 	/** The role sheet (ModuleAccess), OFP column. ERGO's owning roles ("O"): full create / edit / workflow rights. */
 	private static final Set<Role> EDITORS = ModuleAccess.approvers(Module.OFP, CompanyType.ERGO);
@@ -178,42 +189,115 @@ public class OrderService {
 
 	// ---------------------------------------------------------------- reads
 
+	/**
+	 * One page of the caller's orders, newest first. The record scope is the same as ever (the supplier's own, the
+	 * customer's own, ERGO KAM's accounts, ERGO NPD's handed-over orders, every order for the other ERGO roles) but
+	 * applied in the query, then narrowed by {@code status} and {@code q}: order number, part number and the PO number
+	 * the caller may see; for ERGO also the customer's or supplier's name. A customer never matches on the supplier
+	 * (nor a supplier on the customer), the two-way anonymity rule.
+	 */
 	@Transactional(readOnly = true)
-	public List<? extends OrderSummary> list() {
+	public OrderPage list(int page, int size, String status, String q, boolean delayed) {
 		CurrentUser me = CurrentUser.get();
-		if (SUPPLIER_VIEWERS.contains(me.role())) {
+		int pageSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+		int pageNo = Math.min(Math.max(page, 0), Integer.MAX_VALUE / pageSize - 1); // the offset must fit an int, else a 500
+		boolean supplier = SUPPLIER_VIEWERS.contains(me.role());
+		boolean customer = !supplier && CUSTOMER_VIEWERS.contains(me.role());
+		Specification<Order> spec = scopeOf(me, supplier, customer);
+		if (spec == null) {
+			return new OrderPage(List.of(), 0, pageNo, pageSize);
+		}
+		if (status != null && !status.isBlank()) {
+			OrderStatus wanted;
+			try {
+				wanted = OrderStatus.valueOf(status);
+			}
+			catch (IllegalArgumentException e) {
+				throw ApiException.unprocessable("That status is not one you can filter by");
+			}
+			spec = spec.and((root, query, cb) -> cb.equal(root.get("currentStatus"), wanted));
+		}
+		if (delayed) { // same rule as the UI's "delayed" flag: not yet shipped and past its due date
+			LocalDate today = LocalDate.now();
+			spec = spec.and((root, query, cb) -> cb.and(cb.lessThan(root.<LocalDate>get("dueDate"), today),
+					root.get("currentStatus").in(OrderStatus.NOT_YET_DISPATCHED)));
+		}
+		Specification<Order> search = searchOf(supplier, customer, q);
+		if (search != null) {
+			spec = spec.and(search);
+		}
+		Page<Order> found = orders.findAll(spec, PageRequest.of(pageNo, pageSize, Sort.by(Sort.Direction.DESC, "id")));
+		List<Order> visible = found.getContent();
+		List<OrderSummary> rows;
+		if (supplier) {
 			// Two-way anonymity: no customer lookup is ever made building the supplier's rows.
-			return orders.findBySupplierCompanyIdOrderByIdDesc(me.companyId()).stream()
-				.map(o -> new SupplierOrderRow(o.id, o.orderNumber, o.supplierPoNo, o.partNumber, o.revision,
-						o.orderedQuantity, o.dueDate, o.currentStatus))
-				.toList();
+			rows = visible.stream().<OrderSummary>map(o -> new SupplierOrderRow(o.id, o.orderNumber, o.supplierPoNo,
+					o.partNumber, o.revision, o.orderedQuantity, o.dueDate, o.currentStatus)).toList();
 		}
-		if (CUSTOMER_VIEWERS.contains(me.role())) {
-			// Phase 4c, same two-way anonymity rule: no supplier lookup is ever made building the customer's rows.
-			return orders.findByCustomerCompanyIdInOrderByIdDesc(Set.of(me.companyId())).stream()
-				.map(o -> new CustomerOrderRow(o.id, o.orderNumber, o.customerPoNo, o.partNumber, o.revision,
-						o.orderedQuantity, o.dueDate, o.currentStatus))
-				.toList();
+		else if (customer) {
+			// Phase 4c, same rule: no supplier lookup is ever made building the customer's rows.
+			rows = visible.stream().<OrderSummary>map(o -> new CustomerOrderRow(o.id, o.orderNumber, o.customerPoNo,
+					o.partNumber, o.revision, o.orderedQuantity, o.dueDate, o.currentStatus)).toList();
 		}
-		if (me.companyType() != CompanyType.ERGO) {
-			return List.of(); // only ERGO roles reach the unrestricted branches below
+		else {
+			Map<Long, CompanyRef> customers = directory.companies(ids(visible, o -> o.customerCompanyId));
+			Map<Long, CompanyRef> suppliers = directory.companies(ids(visible, o -> o.supplierCompanyId));
+			Map<Long, UserRef> owners = directory.users(ids(visible, o -> o.ownerUserId));
+			rows = visible.stream().<OrderSummary>map(o -> new OrderRow(o.id, o.orderNumber,
+					name(customers, o.customerCompanyId), name(suppliers, o.supplierCompanyId), o.partNumber, o.revision,
+					o.orderedQuantity, o.dueDate, o.currentStatus, userName(owners, o.ownerUserId))).toList();
 		}
-		List<Order> visible = !ModuleAccess.canView(me.role(), Module.OFP) ? List.<Order>of() : switch (me.role()) {
+		return new OrderPage(rows, found.getTotalElements(), pageNo, pageSize);
+	}
+
+	/** Which orders the caller may see at all; {@code null} = none (and no query is made). */
+	private Specification<Order> scopeOf(CurrentUser me, boolean supplier, boolean customer) {
+		if (supplier) {
+			return (root, query, cb) -> cb.equal(root.get("supplierCompanyId"), me.companyId());
+		}
+		if (customer) {
+			return (root, query, cb) -> cb.equal(root.get("customerCompanyId"), me.companyId());
+		}
+		if (me.companyType() != CompanyType.ERGO || !ModuleAccess.canView(me.role(), Module.OFP)) {
+			return null; // only ERGO roles reach the unrestricted branches below
+		}
+		return switch (me.role()) {
 			case ERGO_KAM -> {
 				Set<Long> accounts = directory.accountsOf(me.userId());
-				yield accounts.isEmpty() ? List.of() : orders.findByCustomerCompanyIdInOrderByIdDesc(accounts);
+				yield accounts.isEmpty() ? null : (root, query, cb) -> root.get("customerCompanyId").in(accounts);
 			}
-			case ERGO_NPD -> orders.findByLinkedNpdProjectIdIsNotNullOrderByIdDesc();
-			default -> orders.findAllByOrderByIdDesc(); // the other ERGO roles with OFP access see every order
+			case ERGO_NPD -> (root, query, cb) -> cb.isNotNull(root.get("linkedNpdProjectId"));
+			default -> (root, query, cb) -> cb.conjunction(); // the other ERGO roles with OFP access see every order
 		};
-		Map<Long, CompanyRef> customers = directory.companies(ids(visible, o -> o.customerCompanyId));
-		Map<Long, CompanyRef> suppliers = directory.companies(ids(visible, o -> o.supplierCompanyId));
-		Map<Long, UserRef> owners = directory.users(ids(visible, o -> o.ownerUserId));
-		return visible.stream()
-			.map(o -> new OrderRow(o.id, o.orderNumber, name(customers, o.customerCompanyId),
-					name(suppliers, o.supplierCompanyId), o.partNumber, o.revision, o.orderedQuantity, o.dueDate,
-					o.currentStatus, userName(owners, o.ownerUserId)))
-			.toList();
+	}
+
+	private Specification<Order> searchOf(boolean supplier, boolean customer, String q) {
+		String needle = q == null ? "" : q.replaceAll("\\p{Cntrl}", "").strip(); // a NUL makes Postgres reject the query
+		if (needle.isEmpty()) {
+			return null;
+		}
+		if (needle.length() > MAX_SEARCH_LENGTH) {
+			needle = needle.substring(0, MAX_SEARCH_LENGTH);
+		}
+		String pattern = "%" + needle.toLowerCase(java.util.Locale.ROOT).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+		// Company names are for ERGO's search only.
+		Set<Long> companyIds = supplier || customer ? Set.of() : directory.companyIdsByName(needle);
+		return (root, query, cb) -> {
+			List<Predicate> any = new ArrayList<>();
+			any.add(cb.like(cb.lower(root.<String>get("orderNumber")), pattern, '\\'));
+			any.add(cb.like(cb.lower(root.<String>get("partNumber")), pattern, '\\'));
+			if (!supplier) {
+				any.add(cb.like(cb.lower(root.<String>get("customerPoNo")), pattern, '\\'));
+			}
+			if (!customer) {
+				any.add(cb.like(cb.lower(root.<String>get("supplierPoNo")), pattern, '\\'));
+			}
+			if (!companyIds.isEmpty()) {
+				any.add(root.get("customerCompanyId").in(companyIds));
+				any.add(root.get("supplierCompanyId").in(companyIds));
+			}
+			return cb.or(any.toArray(new Predicate[0]));
+		};
 	}
 
 	@Transactional(readOnly = true)

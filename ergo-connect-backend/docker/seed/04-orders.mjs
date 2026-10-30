@@ -1,6 +1,6 @@
 // Phase 4: nine orders across the whole lifecycle with material status, production progress, packaging, shipments,
 // proof of delivery, a hold, a delayed order and an NPD handover. Quality gates are satisfied through real inspections.
-import { PERSONA, attempt, call, files, get, inDays, inspection, log, upload } from './lib.mjs'
+import { PERSONA, attempt, call, files, get, getAll, inDays, inspection, log, upload } from './lib.mjs'
 
 const SEQUENCE = ['ORDER_CREATED', 'MATERIAL_ORDERED', 'MATERIAL_RECEIVED', 'PRODUCTION_STARTED', 'IN_INSPECTION', 'PACKAGING_IN_PROGRESS']
 const SUPPLIER_OFP = { precision: 'precOfp', shakti: 'shaktiOfp' }
@@ -26,7 +26,7 @@ export async function run(ctx) {
 
   for (const o of ORDERS) {
     try {
-      const existing = (await get('ofp', '/ofp/orders')).find((x) => x.partNumber === o.part)
+      const existing = (await getAll('ofp', '/ofp/orders')).find((x) => x.partNumber === o.part)
       let id = existing?.id
       if (!id) {
         let detail

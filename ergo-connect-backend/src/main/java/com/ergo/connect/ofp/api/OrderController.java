@@ -26,7 +26,7 @@ import com.ergo.connect.ofp.domain.OfpDtos.MaterialStatusForm;
 import com.ergo.connect.ofp.domain.OfpDtos.OrderForm;
 import com.ergo.connect.ofp.domain.OfpDtos.OrderHandoverForm;
 import com.ergo.connect.ofp.domain.OfpDtos.OrderDetail;
-import com.ergo.connect.ofp.domain.OfpDtos.OrderSummary;
+import com.ergo.connect.ofp.domain.OfpDtos.OrderPage;
 import com.ergo.connect.ofp.domain.OfpDtos.OrderUpdateForm;
 import com.ergo.connect.ofp.domain.OfpDtos.PackagingDispatchForm;
 import com.ergo.connect.ofp.domain.OfpDtos.ProductionProgressForm;
@@ -82,8 +82,10 @@ class OrderController {
 
 	@GetMapping("/orders")
 	@PreAuthorize(VIEWERS)
-	List<? extends OrderSummary> list() {
-		return orders.list();
+	OrderPage list(@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "25") int size,
+			@RequestParam(required = false) String status, @RequestParam(required = false) String q,
+			@RequestParam(defaultValue = "false") boolean delayed) {
+		return orders.list(page, size, status, q, delayed);
 	}
 
 	@GetMapping("/orders/{id}")

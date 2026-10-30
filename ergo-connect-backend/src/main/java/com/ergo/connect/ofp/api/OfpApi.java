@@ -49,9 +49,9 @@ public interface OfpApi {
 
 	/**
 	 * SRS §12.5.1/§12.5.2 dashboards: the caller's own in-scope, still-open (not CLOSED) orders - same scope as
-	 * {@code OrderService.list()} (ERGO's full-viewer/KAM/NPD roles, the supplier's own company, or the customer's
+	 * the order list (ERGO's full-viewer/KAM/NPD roles, the supplier's own company, or the customer's
 	 * own company). {@code customerName}/{@code supplierName} are null for a customer/supplier caller (never
-	 * reveal the other party - two-way anonymity, same as {@code OrderService.list()}). {@code atRisk}/
+	 * reveal the other party - two-way anonymity, same as the order list). {@code atRisk}/
 	 * {@link Awaiting} are this module's own judgment call (ARCHITECTURE.md §8, 2026-10-05): the SRS gives no
 	 * formula for either - {@code atRisk} = committed dispatch date passed and not yet dispatched.
 	 */
