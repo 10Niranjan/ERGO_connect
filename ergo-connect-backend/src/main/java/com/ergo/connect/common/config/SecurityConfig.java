@@ -24,12 +24,14 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import com.ergo.connect.common.security.SecurityProperties;
+import com.ergo.connect.common.security.ViewOnlyFilter;
 import com.ergo.connect.common.security.jwt.AccessTokens;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -73,6 +75,8 @@ class SecurityConfig {
 				.jwt(jwt -> jwt.jwtAuthenticationConverter(
 						token -> new JwtAuthenticationToken(token, AccessTokens.authorities(token), token.getSubject())))
 				.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
+			// right after the bearer token is read: a Super Admin's "Login as" session may only read
+			.addFilterAfter(new ViewOnlyFilter(), BearerTokenAuthenticationFilter.class)
 			.exceptionHandling(e -> e.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))
 				.accessDeniedHandler(SecurityConfig::forbidden))
 			.build();

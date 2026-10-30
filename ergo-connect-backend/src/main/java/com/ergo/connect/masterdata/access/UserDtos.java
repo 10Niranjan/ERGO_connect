@@ -21,7 +21,7 @@ public final class UserDtos {
 
 	/** What the caller may do with this user now, so the UI shows only valid buttons (empty for all but ERGO Admin). */
 	public enum UserAction {
-		DEACTIVATE, ACTIVATE, DELETE
+		DEACTIVATE, ACTIVATE, DELETE, LOGIN_AS
 	}
 
 	public record UserResponse(long id, long companyId, String companyName, CompanyType companyType,
@@ -45,6 +45,10 @@ public final class UserDtos {
 
 	/** Why an account is deleted; stored in the audit trail with the deletion. */
 	public record DeleteRequest(@NotInvisiblyBlank @Size(max = 500) String reason) {
+	}
+
+	/** Why a Super Admin logs in as this user (view only); stored in the audit trail with the start. */
+	public record LoginAsRequest(@NotInvisiblyBlank @Size(min = 5, max = 500) String reason) {
 	}
 
 	public record ActiveRequest(@NotNull Boolean active) {

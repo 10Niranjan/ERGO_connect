@@ -12,7 +12,18 @@ import com.ergo.connect.common.security.jwt.AccessTokens;
  * The authenticated caller, read from the verified access token. A session works in exactly one role at a time
  * (ARCHITECTURE.md §8), so {@link #role()} is the only role that counts for this request.
  */
-public record CurrentUser(long userId, long companyId, CompanyType companyType, Role role, long sessionId) {
+public record CurrentUser(long userId, long companyId, CompanyType companyType, Role role, long sessionId,
+		Long impersonatorId) {
+
+	/** A normal (non-shadow) session. */
+	public CurrentUser(long userId, long companyId, CompanyType companyType, Role role, long sessionId) {
+		this(userId, companyId, companyType, role, sessionId, null);
+	}
+
+	/** True for a Super Admin's view-only "Login as" session: it may read what this user reads and change nothing. */
+	public boolean viewOnly() {
+		return impersonatorId != null;
+	}
 
 	public static CurrentUser get() {
 		return find().orElseThrow(() -> new IllegalStateException("No authenticated user"));
@@ -23,7 +34,8 @@ public record CurrentUser(long userId, long companyId, CompanyType companyType, 
 	/**
 	 * Runs a server-side, read-only check as another user (e.g. "could this person read that record?" - the same
 	 * module probes that scope the real caller). Never reachable from a request: only code in this codebase calls it,
-	 * and the override is cleared on the way out. Do not use it to write.
+	 * and the override is cleared on the way out. Do not use it to change data; the one write it carries is the audit row that
+	 * ends a "Login as" view, recorded as the admin because a view-only session may not write one.
 	 */
 	public static <T> T runAs(CurrentUser user, Supplier<T> action) {
 		CurrentUser previous = ACTING_AS.get();

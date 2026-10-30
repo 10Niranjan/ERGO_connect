@@ -219,7 +219,7 @@ class AccountManagementTests {
 		User admin = accounts.user(ergo, Role.ERGO_ADMIN);
 		String adminToken = accounts.bearer(admin);
 		mvc.perform(get("/api/users/{id}", other.id).header(HttpHeaders.AUTHORIZATION, adminToken))
-			.andExpect(jsonPath("$.actions", containsInAnyOrder("DELETE", "DEACTIVATE")));
+			.andExpect(jsonPath("$.actions", containsInAnyOrder("DELETE", "DEACTIVATE", "LOGIN_AS")));
 		mvc.perform(get("/api/users/{id}", admin.id).header(HttpHeaders.AUTHORIZATION, adminToken))
 			.andExpect(jsonPath("$.actions", empty()));
 		mvc.perform(get("/api/users/{id}", other.id).header(HttpHeaders.AUTHORIZATION, asRfq))

@@ -12,6 +12,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
+import com.ergo.connect.common.exception.ApiException;
 import com.ergo.connect.common.security.CurrentUser;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -90,6 +91,11 @@ public class AuditLogService {
 	private void insert(String module, String entity, long recordId, String eventType, String field, String oldValue,
 			String newValue, String channel, String ip) {
 		Optional<CurrentUser> actor = CurrentUser.find();
+		if (actor.map(CurrentUser::viewOnly).orElse(false)) {
+			// backstop for the "Login as" rule (the guarantee is ViewOnlyFilter): refusing the audit row rolls back an
+			// audited write in a service that rolls back on ApiException. It cannot stop un-audited writes.
+			throw ApiException.forbidden("View-only session: nothing can be changed while viewing as another user.");
+		}
 		jdbc.update("""
 				INSERT INTO audit_logs (module_name, entity_name, record_id, event_type, field_name, old_value, new_value,
 				                        action_reason, changed_by_user_id, changed_by_role_code, changed_by_company_id,

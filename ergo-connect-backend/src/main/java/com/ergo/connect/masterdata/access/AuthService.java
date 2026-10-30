@@ -24,6 +24,7 @@ import com.ergo.connect.common.security.CurrentUser;
 import com.ergo.connect.common.security.Role;
 import com.ergo.connect.common.security.SecurityProperties;
 import com.ergo.connect.common.security.jwt.AccessTokens;
+import com.ergo.connect.masterdata.access.AuthDtos.Impersonation;
 import com.ergo.connect.masterdata.access.AuthDtos.RoleOption;
 import com.ergo.connect.masterdata.access.AuthDtos.SessionResponse;
 import com.ergo.connect.masterdata.access.AuthDtos.SessionUser;
@@ -50,6 +51,9 @@ public class AuthService {
 	private static final String INVALID_CODE = "Invalid or expired code. Please sign in again.";
 
 	private static final Duration OTP_TTL = Duration.ofMinutes(5);
+
+	/** A Super Admin's view-only "Login as" lasts this long at most; there is no extension, start a new one. */
+	static final Duration SHADOW_TTL = Duration.ofMinutes(30);
 
 	/** A new login: the session payload plus the raw session token for the HttpOnly cookie - unless the account has
 	 * 2FA enabled, in which case {@code otpRequired} is true and every other field is null (Phase 8g). */
@@ -215,7 +219,7 @@ public class AuthService {
 		Role role = startingRole(user, null);
 		user.lastLoginAt = now;
 		SessionStore.NewSession session = sessions.create(user.id, role, now.plus(sessionTtl), ip);
-		return LoginResult.ofSession(response(user, company, role, session.id()), session.token(), sessionTtl);
+		return LoginResult.ofSession(response(user, company, role, session.id(), null), session.token(), sessionTtl);
 	}
 
 	/**
@@ -257,9 +261,24 @@ public class AuthService {
 		}
 	}
 
-	/** Fresh access token for an existing login. Re-checks everything that may have changed since. */
-	public SessionResponse refresh(String sessionToken) {
+	/**
+	 * Fresh access token for an existing login. Re-checks everything that may have changed since. While the browser
+	 * holds a live "Login as" cookie the view-only session wins; once it has ended or can no longer be trusted it is
+	 * revoked and the Super Admin's own session answers instead, so Exit and the 30-minute end land back on their own
+	 * account without a new login.
+	 */
+	public SessionResponse refresh(String sessionToken, String shadowToken) {
+		if (shadowToken != null) {
+			SessionResponse shadow = refreshShadow(shadowToken, sessionToken);
+			if (shadow != null) {
+				return shadow;
+			}
+		}
+		if (sessionToken == null) {
+			throw ApiException.unauthorized("Not signed in");
+		}
 		SessionStore.Session session = sessions.findActive(sessionToken)
+			.filter(s -> s.impersonatedBy() == null) // a shadow token belongs in the shadow cookie only
 			.orElseThrow(() -> ApiException.unauthorized(SESSION_EXPIRED));
 		User user = users.findById(session.userId()).orElseThrow();
 		Company company = companyOf(user);
@@ -271,19 +290,135 @@ public class AuthService {
 		if (role != session.role()) {
 			sessions.setRole(session.id(), user.id, role);
 		}
-		return response(user, company, role, session.id());
+		return response(user, company, role, session.id(), null);
+	}
+
+	/** The view-only session, or null (after ending it) when it may no longer stand. */
+	private SessionResponse refreshShadow(String shadowToken, String adminToken) {
+		SessionStore.Session shadow = sessions.findActive(shadowToken).orElse(null);
+		if (shadow == null || shadow.impersonatedBy() == null) {
+			return null;
+		}
+		SessionStore.Session parent = adminToken == null ? null : sessions.findActive(adminToken).orElse(null);
+		User admin = parent == null ? null : users.findById(parent.userId()).orElse(null);
+		User target = users.findById(shadow.userId()).orElse(null);
+		boolean standing = parent != null && admin != null && parent.id() == shadow.parentSessionId()
+				&& parent.impersonatedBy() == null && parent.userId() == shadow.impersonatedBy()
+				&& parent.role() == Role.ERGO_ADMIN && admin.active && admin.deletedAt == null
+				&& admin.roles.contains(Role.ERGO_ADMIN) && companyOf(admin).status == CompanyStatus.ACTIVE
+				&& target != null && canShadow(target, companyOf(target));
+		Role role = null;
+		if (standing) {
+			try {
+				role = startingRole(target, shadow.role());
+			}
+			catch (ApiException e) {
+				standing = false; // the viewed user lost every active role
+			}
+		}
+		if (!standing) {
+			sessions.revokeById(shadow.id());
+			users.findById(shadow.impersonatedBy()).ifPresent(a -> auditEnded(a, shadow.userId(), "NO_LONGER_VALID"));
+			return null;
+		}
+		if (role != shadow.role()) {
+			sessions.setRole(shadow.id(), target.id, role);
+		}
+		return response(target, companyOf(target), role, shadow.id(), admin.id);
+	}
+
+	/** Who a Super Admin may log in as: an active, undeleted user of an active company who is not a Super Admin. */
+	static boolean canShadow(User target, Company company) {
+		return target.active && target.deletedAt == null && company.status == CompanyStatus.ACTIVE
+				&& !target.roles.contains(Role.ERGO_ADMIN);
+	}
+
+	/**
+	 * Super Admin "Login as" (docs/PERMISSIONS.md section 13): a view-only session for another user, started from the
+	 * admin's own session, for a stated reason, audited. The admin's own session is untouched.
+	 */
+	public LoginResult startImpersonation(long targetUserId, String reason, String ip) {
+		CurrentUser me = CurrentUser.get();
+		if (me.viewOnly() || me.role() != Role.ERGO_ADMIN) {
+			throw ApiException.forbidden("Only a Super Admin can log in as another user");
+		}
+		User admin = users.findById(me.userId()).orElseThrow();
+		if (!admin.roles.contains(Role.ERGO_ADMIN)) {
+			throw ApiException.forbidden("Only a Super Admin can log in as another user");
+		}
+		String why = reason == null ? "" : reason.trim();
+		if (why.length() < 5 || why.length() > 500) {
+			throw ApiException.unprocessable("A reason of 5 to 500 characters is required to log in as another user");
+		}
+		User target = users.findById(targetUserId).filter(u -> u.deletedAt == null)
+			.orElseThrow(() -> ApiException.notFound("User"));
+		if (target.id == admin.id) {
+			throw ApiException.unprocessable("You cannot log in as yourself");
+		}
+		if (target.roles.contains(Role.ERGO_ADMIN)) {
+			throw ApiException.unprocessable("A Super Admin account cannot be viewed this way");
+		}
+		Company company = companyOf(target);
+		if (!canShadow(target, company)) {
+			throw ApiException.unprocessable("This user or their company is not active");
+		}
+		Role role;
+		try {
+			role = startingRole(target, null);
+		}
+		catch (ApiException e) {
+			throw ApiException.unprocessable("This user has no active role, so there is nothing to view");
+		}
+		Instant now = Instant.now();
+		// the admin's own session must be live and currently acting as Super Admin (not just an older token saying so)
+		SessionStore.Session own = sessions.findLiveById(me.sessionId())
+			.filter(s -> s.role() == Role.ERGO_ADMIN && s.impersonatedBy() == null)
+			.orElseThrow(() -> ApiException.forbidden("Only a Super Admin can log in as another user"));
+		Instant parentEnds = own.expiresAt();
+		Instant ends = now.plus(SHADOW_TTL).isBefore(parentEnds) ? now.plus(SHADOW_TTL) : parentEnds;
+		for (long replaced : sessions.revokeShadowsOf(admin.id)) { // one view at a time: the open one ends
+			auditEnded(admin, replaced, "REPLACED");
+		}
+		SessionStore.NewSession session = sessions.createShadow(target.id, role, ends, ip, admin.id, me.sessionId(), why);
+		audit.reason(why);
+		audit.record(User.class, target.id, "IMPERSONATION_STARTED", null, null, null); // actor: the admin
+		return LoginResult.ofSession(response(target, company, role, session.id(), admin.id), session.token(),
+				Duration.between(now, ends));
+	}
+
+	/** Leaves a view-only session (called with the shadow token); the admin's own session carries on. */
+	public void endImpersonation() {
+		CurrentUser me = CurrentUser.get();
+		if (!me.viewOnly()) {
+			throw ApiException.unprocessable("You are not viewing as another user");
+		}
+		sessions.revokeById(me.sessionId());
+		auditEnded(users.findById(me.impersonatorId()).orElseThrow(), me.userId(), "EXIT");
+	}
+
+	/**
+	 * Records the end of a view as the admin's own act (a view-only session can't write audit rows, and logout and
+	 * refresh have no signed-in caller). {@code cause}: EXIT, REPLACED, LOGOUT or NO_LONGER_VALID. A view that simply
+	 * runs out after 30 minutes writes nothing; the session row shows when it stopped.
+	 */
+	private void auditEnded(User admin, long viewedUserId, String cause) {
+		CurrentUser.runAs(new CurrentUser(admin.id, admin.companyId, CompanyType.ERGO, Role.ERGO_ADMIN, 0L), () -> {
+			audit.record(User.class, viewedUserId, "IMPERSONATION_ENDED", "cause", null, cause);
+			return null;
+		});
 	}
 
 	public SessionResponse switchRole(Role role) {
 		CurrentUser me = CurrentUser.get();
 		User user = users.findById(me.userId()).orElseThrow();
-		if (user.mustChangePassword || !assignableRoles(user).contains(role)) {
+		if ((user.mustChangePassword && !me.viewOnly()) || !assignableRoles(user).contains(role)
+				|| (me.viewOnly() && role == Role.ERGO_ADMIN)) { // never another Super Admin, even if granted mid-view
 			throw ApiException.forbidden("This role is not available to you");
 		}
 		if (!sessions.setRole(me.sessionId(), me.userId(), role)) {
 			throw ApiException.unauthorized(SESSION_EXPIRED);
 		}
-		return response(user, companyOf(user), role, me.sessionId());
+		return response(user, companyOf(user), role, me.sessionId(), me.impersonatorId());
 	}
 
 	public SessionResponse changePassword(String currentPassword, String newPassword) {
@@ -318,7 +453,7 @@ public class AuthService {
 		otpCodes.invalidateAllFor(user.id); // a code sent under the old password must not still complete a login
 		mailer.sendPasswordChangedNotice(user.email);
 		sessions.revokeAll(user.id, me.sessionId()); // sign out every other device
-		return response(user, companyOf(user), startingRole(user, me.role()), me.sessionId());
+		return response(user, companyOf(user), startingRole(user, me.role()), me.sessionId(), null);
 	}
 
 	/**
@@ -370,8 +505,21 @@ public class AuthService {
 		sessions.revokeAll(user.id, null); // a recovery flow, not a self-service change: every device signed out
 	}
 
-	public void logout(String sessionToken) {
-		sessions.revoke(sessionToken);
+	/** Ends the login, and with it any "Login as" session the admin had open (and the one the browser holds). */
+	public void logout(String sessionToken, String shadowToken) {
+		if (sessionToken != null) {
+			sessions.findActive(sessionToken).ifPresent(s -> {
+				List<Long> viewed = sessions.revokeShadowsOf(s.userId());
+				if (!viewed.isEmpty()) {
+					User admin = users.findById(s.userId()).orElseThrow();
+					viewed.forEach(id -> auditEnded(admin, id, "LOGOUT"));
+				}
+			});
+			sessions.revoke(sessionToken);
+		}
+		if (shadowToken != null) {
+			sessions.revoke(shadowToken);
+		}
 	}
 
 	/** Mapped roles that are currently active in the catalogue, in enum order. */
@@ -400,19 +548,27 @@ public class AuthService {
 		return companies.findById(user.companyId).orElseThrow();
 	}
 
-	private SessionResponse response(User user, Company company, Role role, long sessionId) {
+	private SessionResponse response(User user, Company company, Role role, long sessionId, Long impersonatorId) {
 		Map<Role, String> catalog = roleCatalog.activeRoles();
 		List<RoleOption> roles = user.roles.stream()
 			.filter(catalog::containsKey)
 			.sorted()
 			.map(r -> new RoleOption(r, catalog.get(r), r.companyType()))
 			.toList();
-		String token = accessTokens.issue(new CurrentUser(user.id, company.id, company.type, role, sessionId),
-				user.mustChangePassword);
+		// a view-only session never has to change the viewed user's password (it could not anyway)
+		boolean mustChange = impersonatorId == null && user.mustChangePassword;
+		Impersonation impersonation = null;
+		if (impersonatorId != null) {
+			User admin = users.findById(impersonatorId).orElseThrow();
+			impersonation = new Impersonation(admin.firstName + " " + admin.lastName,
+					sessions.expiryOf(sessionId).orElseThrow());
+		}
+		String token = accessTokens.issue(
+				new CurrentUser(user.id, company.id, company.type, role, sessionId, impersonatorId), mustChange);
 		return new SessionResponse(token, accessTokens.ttl().toSeconds(),
 				new SessionUser(user.id, user.firstName, user.lastName, user.email, company.id, company.name,
 						company.type, user.twoFactorEnabled),
-				role, roles, user.mustChangePassword, AccessPolicy.view(role, company.type));
+				role, roles, mustChange, AccessPolicy.view(role, company.type), impersonation);
 	}
 
 }

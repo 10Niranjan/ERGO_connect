@@ -1,5 +1,6 @@
 package com.ergo.connect.masterdata.access;
 
+import java.time.Instant;
 import java.util.List;
 
 import com.ergo.connect.common.security.AccessPolicy.AccessView;
@@ -56,7 +57,11 @@ public final class AuthDtos {
 
 	/** Everything the client needs for the current session. The access token lives in memory only. */
 	public record SessionResponse(String accessToken, long expiresIn, SessionUser user, Role activeRole,
-			List<RoleOption> roles, boolean mustChangePassword, AccessView access) {
+			List<RoleOption> roles, boolean mustChangePassword, AccessView access, Impersonation impersonation) {
+	}
+
+	/** Set only on a Super Admin's view-only "Login as" session: who is viewing and when the view ends. */
+	public record Impersonation(String adminName, Instant endsAt) {
 	}
 
 }

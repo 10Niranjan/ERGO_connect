@@ -312,6 +312,9 @@ public class UserAdminService {
 		if (CurrentUser.find().map(me -> me.role() == Role.ERGO_ADMIN).orElse(false) && !isSelf(user)) {
 			actions.add(UserAction.DELETE);
 			actions.add(user.active ? UserAction.DEACTIVATE : UserAction.ACTIVATE);
+			if (AuthService.canShadow(user, company)) {
+				actions.add(UserAction.LOGIN_AS);
+			}
 		}
 		return new UserResponse(user.id, company.id, company.name, company.type, user.firstName, user.lastName,
 				user.email, user.mobile, user.active, user.roles.stream().sorted().toList(), user.defaultRole,

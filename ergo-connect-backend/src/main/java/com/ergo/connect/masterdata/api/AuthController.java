@@ -39,6 +39,9 @@ class AuthController {
 	/** HttpOnly + SameSite=Strict + only sent to /api/auth: scripts cannot read it, other sites cannot use it. */
 	static final String SESSION_COOKIE = "ergo_session";
 
+	/** Same flags, set only while a Super Admin is viewing as another user ("Login as"); the admin's own cookie stays. */
+	static final String SHADOW_COOKIE = "ergo_shadow";
+
 	private final AuthService auth;
 
 	AuthController(AuthService auth) {
@@ -71,19 +74,32 @@ class AuthController {
 	}
 
 	@PostMapping("/refresh")
-	SessionResponse refresh(@CookieValue(name = SESSION_COOKIE, required = false) String sessionToken) {
-		if (sessionToken == null) {
-			throw ApiException.unauthorized("Not signed in");
+	ResponseEntity<SessionResponse> refresh(@CookieValue(name = SESSION_COOKIE, required = false) String sessionToken,
+			@CookieValue(name = SHADOW_COOKIE, required = false) String shadowToken) {
+		SessionResponse session = auth.refresh(sessionToken, shadowToken);
+		ResponseEntity.BodyBuilder response = ResponseEntity.ok();
+		if (shadowToken != null && session.impersonation() == null) {
+			// the view-only session has ended or can no longer stand: drop its cookie, the admin's own answered
+			response.header(HttpHeaders.SET_COOKIE, cookie(SHADOW_COOKIE, "", Duration.ZERO));
 		}
-		return auth.refresh(sessionToken);
+		return response.body(session);
 	}
 
 	@PostMapping("/logout")
-	ResponseEntity<Void> logout(@CookieValue(name = SESSION_COOKIE, required = false) String sessionToken) {
-		if (sessionToken != null) {
-			auth.logout(sessionToken);
-		}
-		return ResponseEntity.noContent().header(HttpHeaders.SET_COOKIE, sessionCookie("", Duration.ZERO)).build();
+	ResponseEntity<Void> logout(@CookieValue(name = SESSION_COOKIE, required = false) String sessionToken,
+			@CookieValue(name = SHADOW_COOKIE, required = false) String shadowToken) {
+		auth.logout(sessionToken, shadowToken);
+		return ResponseEntity.noContent()
+			.header(HttpHeaders.SET_COOKIE, cookie(SESSION_COOKIE, "", Duration.ZERO))
+			.header(HttpHeaders.SET_COOKIE, cookie(SHADOW_COOKIE, "", Duration.ZERO))
+			.build();
+	}
+
+	/** Leave a "Login as" view. Called with the view-only token; the cookie is dropped, the admin's own login stays. */
+	@PostMapping("/impersonation/end")
+	ResponseEntity<Void> endImpersonation() {
+		auth.endImpersonation();
+		return ResponseEntity.noContent().header(HttpHeaders.SET_COOKIE, cookie(SHADOW_COOKIE, "", Duration.ZERO)).build();
 	}
 
 	/** The caller's permissions and sidebar, fresh from the live policy (the client refetches when the version changes). */
@@ -118,7 +134,15 @@ class AuthController {
 	}
 
 	private static String sessionCookie(String value, Duration maxAge) {
-		return ResponseCookie.from(SESSION_COOKIE, value)
+		return cookie(SESSION_COOKIE, value, maxAge);
+	}
+
+	static String shadowCookie(String value, Duration maxAge) {
+		return cookie(SHADOW_COOKIE, value, maxAge);
+	}
+
+	private static String cookie(String name, String value, Duration maxAge) {
+		return ResponseCookie.from(name, value)
 			.httpOnly(true)
 			.secure(true) // browsers accept Secure cookies on http://localhost, so this holds in dev too
 			.sameSite("Strict")

@@ -40,6 +40,9 @@ public class AccessTokens {
 
 	private static final String PASSWORD_CHANGE_REQUIRED = "pwc";
 
+	/** Present only on a view-only shadow session: the id of the Super Admin viewing as this user. */
+	private static final String IMPERSONATOR = "imp";
+
 	private final NimbusJwtEncoder encoder;
 
 	private final Duration ttl;
@@ -51,7 +54,7 @@ public class AccessTokens {
 
 	public String issue(CurrentUser user, boolean passwordChangeRequired) {
 		Instant now = Instant.now();
-		JwtClaimsSet claims = JwtClaimsSet.builder()
+		JwtClaimsSet.Builder builder = JwtClaimsSet.builder()
 			.issuer(ISSUER)
 			.subject(String.valueOf(user.userId()))
 			.issuedAt(now)
@@ -60,8 +63,11 @@ public class AccessTokens {
 			.claim(COMPANY_TYPE, user.companyType().name())
 			.claim(ROLE, user.role().name())
 			.claim(SESSION, user.sessionId())
-			.claim(PASSWORD_CHANGE_REQUIRED, passwordChangeRequired)
-			.build();
+			.claim(PASSWORD_CHANGE_REQUIRED, passwordChangeRequired);
+		if (user.impersonatorId() != null) {
+			builder.claim(IMPERSONATOR, user.impersonatorId());
+		}
+		JwtClaimsSet claims = builder.build();
 		return encoder.encode(JwtEncoderParameters.from(JwsHeader.with(MacAlgorithm.HS256).build(), claims))
 			.getTokenValue();
 	}
@@ -73,7 +79,8 @@ public class AccessTokens {
 	public static CurrentUser toCurrentUser(Jwt jwt) {
 		return new CurrentUser(Long.parseLong(jwt.getSubject()), jwt.<Number>getClaim(COMPANY).longValue(),
 				CompanyType.valueOf(jwt.getClaimAsString(COMPANY_TYPE)), Role.valueOf(jwt.getClaimAsString(ROLE)),
-				jwt.<Number>getClaim(SESSION).longValue());
+				jwt.<Number>getClaim(SESSION).longValue(),
+				jwt.<Number>getClaim(IMPERSONATOR) == null ? null : jwt.<Number>getClaim(IMPERSONATOR).longValue());
 	}
 
 	public static Collection<GrantedAuthority> authorities(Jwt jwt) {

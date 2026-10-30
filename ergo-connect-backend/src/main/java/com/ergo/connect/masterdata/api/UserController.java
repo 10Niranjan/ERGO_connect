@@ -2,7 +2,9 @@ package com.ergo.connect.masterdata.api;
 
 import java.util.List;
 
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -14,17 +16,21 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.ergo.connect.masterdata.access.AuthDtos.RoleOption;
+import com.ergo.connect.masterdata.access.AuthDtos.SessionResponse;
+import com.ergo.connect.masterdata.access.AuthService;
 import com.ergo.connect.masterdata.access.UserAdminService;
 import com.ergo.connect.masterdata.access.UserDtos.AccountsRequest;
 import com.ergo.connect.masterdata.access.UserDtos.ActiveRequest;
 import com.ergo.connect.masterdata.access.UserDtos.CreateUserRequest;
 import com.ergo.connect.masterdata.access.UserDtos.CreatedUserResponse;
 import com.ergo.connect.masterdata.access.UserDtos.DeleteRequest;
+import com.ergo.connect.masterdata.access.UserDtos.LoginAsRequest;
 import com.ergo.connect.masterdata.access.UserDtos.RolesRequest;
 import com.ergo.connect.masterdata.access.UserDtos.TemporaryPasswordResponse;
 import com.ergo.connect.masterdata.access.UserDtos.UpdateUserRequest;
 import com.ergo.connect.masterdata.access.UserDtos.UserResponse;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 
 /**
@@ -40,8 +46,11 @@ class UserController {
 
 	private final UserAdminService users;
 
-	UserController(UserAdminService users) {
+	private final AuthService auth;
+
+	UserController(UserAdminService users, AuthService auth) {
 		this.users = users;
+		this.auth = auth;
 	}
 
 	@GetMapping("/users")
@@ -106,6 +115,17 @@ class UserController {
 	@PreAuthorize(ERGO_ADMIN)
 	TemporaryPasswordResponse resetPassword(@PathVariable long id) {
 		return users.resetPassword(id);
+	}
+
+	/** Super Admin "Login as": a view-only session for this user (docs/PERMISSIONS.md section 13). */
+	@PostMapping("/users/{id}/login-as")
+	@PreAuthorize(ERGO_ADMIN)
+	ResponseEntity<SessionResponse> loginAs(@PathVariable long id, @Valid @RequestBody LoginAsRequest body,
+			HttpServletRequest request) {
+		AuthService.LoginResult result = auth.startImpersonation(id, body.reason(), request.getRemoteAddr());
+		return ResponseEntity.ok()
+			.header(HttpHeaders.SET_COOKIE, AuthController.shadowCookie(result.sessionToken(), result.sessionTtl()))
+			.body(result.session());
 	}
 
 }
