@@ -20,6 +20,10 @@ interface DeviationRepository extends Repository<Deviation, Long> {
 	/** ERGO Admin/Management/Quality: unrestricted (SRS §10.8 "V(all)"). */
 	List<Deviation> findAllByOrderByIdDesc();
 
+	/** The list page. The only Specification method on purpose (JpaSpecificationExecutor would bring bulk update/delete that skip @Version and audit). */
+	org.springframework.data.domain.Page<Deviation> findAll(org.springframework.data.jpa.domain.Specification<Deviation> spec,
+			org.springframework.data.domain.Pageable pageable);
+
 	/** ERGO KAM's scope (SRS §8.2): every deviation tagged to one of their assigned customer accounts. */
 	List<Deviation> findByCustomerCompanyIdInOrderByIdDesc(Collection<Long> customerCompanyIds);
 

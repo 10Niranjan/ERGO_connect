@@ -20,6 +20,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.Year;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.EnumSet;
@@ -32,6 +33,10 @@ import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -39,6 +44,8 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.transaction.event.TransactionalEventListener;
+
+import jakarta.persistence.criteria.Predicate;
 
 import com.ergo.connect.common.audit.AuditLogService;
 import com.ergo.connect.common.event.ModuleSwitchChanged;
@@ -63,6 +70,7 @@ import com.ergo.connect.quality.domain.DeviationDtos.CustomerDeviationView;
 import com.ergo.connect.quality.domain.DeviationDtos.DeviationAction;
 import com.ergo.connect.quality.domain.DeviationDtos.DeviationDetail;
 import com.ergo.connect.quality.domain.DeviationDtos.DeviationForm;
+import com.ergo.connect.quality.domain.DeviationDtos.DeviationPage;
 import com.ergo.connect.quality.domain.DeviationDtos.DeviationRow;
 import com.ergo.connect.quality.domain.DeviationDtos.DeviationSummary;
 import com.ergo.connect.quality.domain.DeviationDtos.DeviationUpdateForm;
@@ -134,6 +142,10 @@ public class DeviationService {
 	/** APPROVED/EXPIRED -&gt; CLOSED (brief item 5): the same roles as {@link #REVIEW_STARTERS}. */
 	private static final Set<Role> CLOSERS = REVIEW_STARTERS;
 
+	private static final int MAX_PAGE_SIZE = 100;
+
+	private static final int MAX_SEARCH_LENGTH = 100;
+
 	private static final Set<Role> SUPPLIER_VIEWERS = ModuleAccess.viewers(Module.QUALITY, CompanyType.SUPPLIER);
 
 	private static final Set<Role> CUSTOMER_VIEWERS = ModuleAccess.viewers(Module.QUALITY, CompanyType.CUSTOMER);
@@ -180,38 +192,108 @@ public class DeviationService {
 
 	// ---------------------------------------------------------------- reads
 
+	/**
+	 * One page of the deviation list, one row shape per caller's audience. The record scope is applied in the query,
+	 * then narrowed by {@code status}, {@code linkedModule} and {@code q}: deviation number and part number (all a
+	 * supplier or customer sees of a row), and for ERGO also the customer's and supplier's names. A supplier never
+	 * matches on the customer (nor a customer on the supplier), the two-way anonymity rule.
+	 */
 	@Transactional(readOnly = true)
-	public List<? extends DeviationSummary> list() {
+	public DeviationPage list(int page, int size, String status, String linkedModule, String q) {
 		CurrentUser me = CurrentUser.get();
-		if (SUPPLIER_VIEWERS.contains(me.role())) {
-			return deviations.findBySupplierCompanyIdAndSupplierVisibleTrueOrderByIdDesc(me.companyId()).stream()
-				.map(d -> new SupplierDeviationRow(d.id, d.deviationNumber, d.linkedModule, d.linkedRecordId,
-						d.partNumber, d.currentStatus, d.customerApprovalRequiredFlag, d.validityEndDate))
-				.toList();
+		int pageSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+		int pageNo = Math.min(Math.max(page, 0), Integer.MAX_VALUE / pageSize - 1); // the offset must fit an int, else a 500
+		boolean supplier = SUPPLIER_VIEWERS.contains(me.role());
+		boolean customer = !supplier && CUSTOMER_VIEWERS.contains(me.role());
+		Specification<Deviation> spec = scopeOf(me, supplier, customer);
+		if (spec == null) {
+			return new DeviationPage(List.of(), 0, pageNo, pageSize);
 		}
-		if (CUSTOMER_VIEWERS.contains(me.role())) {
-			return deviations.findByCustomerCompanyIdAndCustomerVisibleTrueOrderByIdDesc(me.companyId()).stream()
-				.map(d -> new CustomerDeviationRow(d.id, d.deviationNumber, d.linkedModule, d.linkedRecordId,
-						d.partNumber, d.currentStatus, d.customerApprovalRequiredFlag, d.validityEndDate))
-				.toList();
+		if (status != null && !status.isBlank()) {
+			DeviationStatus wanted = parseFilter(DeviationStatus::valueOf, status);
+			spec = spec.and((root, query, cb) -> cb.equal(root.get("currentStatus"), wanted));
 		}
-		List<Deviation> visible = switch (QualityScope.of(me.role())) {
-			case FULL -> deviations.findAllByOrderByIdDesc();
+		if (linkedModule != null && !linkedModule.isBlank()) {
+			LinkedModule wanted = parseFilter(LinkedModule::valueOf, linkedModule);
+			spec = spec.and((root, query, cb) -> cb.equal(root.get("linkedModule"), wanted));
+		}
+		Specification<Deviation> search = searchOf(supplier, customer, q);
+		if (search != null) {
+			spec = spec.and(search);
+		}
+		Page<Deviation> found = deviations.findAll(spec, PageRequest.of(pageNo, pageSize, Sort.by(Sort.Direction.DESC, "id")));
+		List<Deviation> visible = found.getContent();
+		List<DeviationSummary> rows;
+		if (supplier) {
+			rows = visible.stream().<DeviationSummary>map(d -> new SupplierDeviationRow(d.id, d.deviationNumber, d.linkedModule,
+					d.linkedRecordId, d.partNumber, d.currentStatus, d.customerApprovalRequiredFlag, d.validityEndDate)).toList();
+		}
+		else if (customer) {
+			rows = visible.stream().<DeviationSummary>map(d -> new CustomerDeviationRow(d.id, d.deviationNumber, d.linkedModule,
+					d.linkedRecordId, d.partNumber, d.currentStatus, d.customerApprovalRequiredFlag, d.validityEndDate)).toList();
+		}
+		else {
+			Map<Long, CompanyRef> customers = directory.companies(ids(visible, d -> d.customerCompanyId));
+			Map<Long, CompanyRef> suppliers = directory.companies(ids(visible, d -> d.supplierCompanyId));
+			rows = visible.stream().<DeviationSummary>map(d -> new DeviationRow(d.id, d.deviationNumber, d.linkedModule,
+					d.linkedRecordId, name(customers, d.customerCompanyId), name(suppliers, d.supplierCompanyId), d.partNumber,
+					d.currentStatus, d.customerApprovalRequiredFlag, d.validityEndDate)).toList();
+		}
+		return new DeviationPage(rows, found.getTotalElements(), pageNo, pageSize);
+	}
+
+	private static <E> E parseFilter(Function<String, E> parse, String value) {
+		try {
+			return parse.apply(value);
+		}
+		catch (IllegalArgumentException e) {
+			throw ApiException.unprocessable("That value is not one you can filter by");
+		}
+	}
+
+	/** The query form of {@link #inScope}; {@code null} = none (and no query is made). */
+	private Specification<Deviation> scopeOf(CurrentUser me, boolean supplier, boolean customer) {
+		if (supplier) { // only the deviations an ERGO editor has released to the supplier
+			return (root, query, cb) -> cb.and(cb.isTrue(root.get("supplierVisible")),
+					cb.equal(root.get("supplierCompanyId"), me.companyId()));
+		}
+		if (customer) { // only the deviations an ERGO editor has released to the customer
+			return (root, query, cb) -> cb.and(cb.isTrue(root.get("customerVisible")),
+					cb.equal(root.get("customerCompanyId"), me.companyId()));
+		}
+		return switch (QualityScope.of(me.role())) {
+			case FULL -> (root, query, cb) -> cb.conjunction();
 			case KAM -> {
 				Set<Long> accounts = directory.accountsOf(me.userId());
-				yield accounts.isEmpty() ? List.of() : deviations.findByCustomerCompanyIdInOrderByIdDesc(accounts);
+				yield accounts.isEmpty() ? null : (root, query, cb) -> root.get("customerCompanyId").in(accounts);
 			}
-			case NPD_LINKED -> deviations.findByLinkedModuleOrderByIdDesc(LinkedModule.NPD);
-			case OFP_LINKED -> deviations.findByLinkedModuleOrderByIdDesc(LinkedModule.OFP);
-			default -> List.of(); // SRS §10.8 X: ERGO RFQ and every other role not handled above/below
+			case NPD_LINKED -> (root, query, cb) -> cb.equal(root.get("linkedModule"), LinkedModule.NPD);
+			case OFP_LINKED -> (root, query, cb) -> cb.equal(root.get("linkedModule"), LinkedModule.OFP);
+			default -> null; // SRS §10.8 X: ERGO RFQ and every other role not handled above
 		};
-		Map<Long, CompanyRef> customers = directory.companies(ids(visible, d -> d.customerCompanyId));
-		Map<Long, CompanyRef> suppliers = directory.companies(ids(visible, d -> d.supplierCompanyId));
-		return visible.stream()
-			.map(d -> new DeviationRow(d.id, d.deviationNumber, d.linkedModule, d.linkedRecordId,
-					name(customers, d.customerCompanyId), name(suppliers, d.supplierCompanyId), d.partNumber,
-					d.currentStatus, d.customerApprovalRequiredFlag, d.validityEndDate))
-			.toList();
+	}
+
+	private Specification<Deviation> searchOf(boolean supplier, boolean customer, String q) {
+		String needle = q == null ? "" : q.replaceAll("\\p{Cntrl}", "").strip(); // a NUL makes Postgres reject the query
+		if (needle.isEmpty()) {
+			return null;
+		}
+		if (needle.length() > MAX_SEARCH_LENGTH) {
+			needle = needle.substring(0, MAX_SEARCH_LENGTH);
+		}
+		String pattern = "%" + needle.toLowerCase(java.util.Locale.ROOT).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+		// Company names are for ERGO's search only.
+		Set<Long> companyIds = supplier || customer ? Set.of() : directory.companyIdsByName(needle);
+		return (root, query, cb) -> {
+			List<Predicate> any = new ArrayList<>();
+			any.add(cb.like(cb.lower(root.<String>get("deviationNumber")), pattern, '\\'));
+			any.add(cb.like(cb.lower(root.<String>get("partNumber")), pattern, '\\'));
+			if (!companyIds.isEmpty()) {
+				any.add(root.get("customerCompanyId").in(companyIds));
+				any.add(root.get("supplierCompanyId").in(companyIds));
+			}
+			return cb.or(any.toArray(new Predicate[0]));
+		};
 	}
 
 	@Transactional(readOnly = true)

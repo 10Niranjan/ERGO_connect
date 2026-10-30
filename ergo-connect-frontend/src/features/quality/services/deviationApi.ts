@@ -113,6 +113,22 @@ export interface CustomerDeviationRow {
 
 export type DeviationSummary = DeviationRow | SupplierDeviationRow | CustomerDeviationRow
 
+/** One page of the deviation list; `total` counts every match, not just this page. */
+export interface DeviationPage {
+  items: DeviationSummary[]
+  total: number
+  page: number
+  size: number
+}
+
+export interface DeviationListArgs {
+  page: number
+  size: number
+  status?: string
+  linkedModule?: string
+  q?: string
+}
+
 /** ERGO's unrestricted detail view: every field, both companies, both approval rows with approver identity. */
 export interface DeviationView {
   id: number
@@ -186,7 +202,14 @@ export type DeviationDetail = DeviationView | SupplierDeviationView | CustomerDe
 
 const deviationApi = api.enhanceEndpoints({ addTagTypes: ['Deviation'] }).injectEndpoints({
   endpoints: (build) => ({
-    deviations: build.query<DeviationSummary[], void>({ query: () => '/quality/deviations', providesTags: ['Deviation'] }),
+    // One page, newest first; filtered and searched by the server.
+    deviations: build.query<DeviationPage, DeviationListArgs>({
+      query: ({ page, size, status, linkedModule, q }) => ({
+        url: '/quality/deviations',
+        params: { page, size, ...(status ? { status } : {}), ...(linkedModule ? { linkedModule } : {}), ...(q ? { q } : {}) },
+      }),
+      providesTags: ['Deviation'],
+    }),
     deviation: build.query<DeviationDetail, number>({
       query: (id) => `/quality/deviations/${id}`,
       providesTags: (_r, _e, id) => [{ type: 'Deviation', id }],

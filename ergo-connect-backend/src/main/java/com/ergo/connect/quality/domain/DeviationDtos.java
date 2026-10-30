@@ -85,6 +85,10 @@ public final class DeviationDtos {
 	public sealed interface DeviationSummary permits DeviationRow, SupplierDeviationRow, CustomerDeviationRow {
 	}
 
+	/** One page of the deviation list; {@code total} counts every match, not just this page. */
+	public record DeviationPage(List<? extends DeviationSummary> items, long total, int page, int size) {
+	}
+
 	/** Per-audience detail view, see {@link DeviationSummary}. */
 	public sealed interface DeviationDetail permits DeviationView, SupplierDeviationView, CustomerDeviationView {
 	}

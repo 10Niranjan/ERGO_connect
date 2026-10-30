@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -190,12 +191,12 @@ class DeviationTests {
 		long id = createAsErgo(ergoQuality, orderId, false);
 
 		call(get("/api/quality/deviations/{id}", id), supplierXQuality, null).andExpect(status().isOk());
-		call(get("/api/quality/deviations"), supplierXQuality, null)
-			.andExpect(jsonPath("$[*].id", hasItem((int) id)));
+		call(get("/api/quality/deviations?size=100"), supplierXQuality, null)
+			.andExpect(jsonPath("$.items[*].id", hasItem((int) id)));
 
 		call(get("/api/quality/deviations/{id}", id), supplierYQuality, null).andExpect(status().isNotFound());
-		call(get("/api/quality/deviations"), supplierYQuality, null)
-			.andExpect(jsonPath("$[*].id", not(hasItem((int) id))));
+		call(get("/api/quality/deviations?size=100"), supplierYQuality, null)
+			.andExpect(jsonPath("$.items").isArray()).andExpect(jsonPath("$.items[*].id", not(hasItem((int) id))));
 	}
 
 	@Test
@@ -207,9 +208,56 @@ class DeviationTests {
 
 		call(get("/api/quality/deviations/{id}", forA), customerAQuality, null).andExpect(status().isOk());
 		call(get("/api/quality/deviations/{id}", forB), customerAQuality, null).andExpect(status().isNotFound());
-		call(get("/api/quality/deviations"), customerAQuality, null)
-			.andExpect(jsonPath("$[*].id", hasItem((int) forA)))
-			.andExpect(jsonPath("$[*].id", not(hasItem((int) forB))));
+		call(get("/api/quality/deviations?size=100"), customerAQuality, null)
+			.andExpect(jsonPath("$.items[*].id", hasItem((int) forA)))
+			.andExpect(jsonPath("$.items[*].id", not(hasItem((int) forB))));
+	}
+
+	@Test
+	void theDeviationListIsPagedFilteredAndSearchedInTheQueryWithoutBreakingTwoWayAnonymity() throws Exception {
+		// A is released to both sides (the supplier at creation, the customer once ERGO Quality approves it); B is not
+		// released to its customer yet
+		long a = createAsErgo(ergoManagement, createOrder(customerA, supplierX), true);
+		call(post("/api/quality/deviations/{id}/start-review", a), ergoQuality, null).andExpect(status().isOk());
+		call(post("/api/quality/deviations/{id}/approve", a), ergoQuality, "{}").andExpect(jsonPath("$.customerVisible").value(true));
+		long b = createAsErgo(ergoManagement, createOrder(customerB, supplierY), true);
+		String numberA = jdbc.queryForObject("SELECT deviation_number FROM deviations WHERE deviation_id = ?", String.class, a);
+		String numberB = jdbc.queryForObject("SELECT deviation_number FROM deviations WHERE deviation_id = ?", String.class, b);
+		String customerAName = jdbc.queryForObject("SELECT company_name FROM companies WHERE company_id = ?", String.class, customerA);
+		String customerBName = jdbc.queryForObject("SELECT company_name FROM companies WHERE company_id = ?", String.class, customerB);
+		String supplierXName = jdbc.queryForObject("SELECT company_name FROM companies WHERE company_id = ?", String.class, supplierX);
+
+		// paging: newest first, one row a page; sizes and pages are clamped
+		call(get("/api/quality/deviations?size=1"), ergoQuality, null).andExpect(jsonPath("$.items", hasSize(1)))
+			.andExpect(jsonPath("$.items[0].id").value((int) b)).andExpect(jsonPath("$.size").value(1))
+			.andExpect(jsonPath("$.total").value(org.hamcrest.Matchers.greaterThanOrEqualTo(2)));
+		call(get("/api/quality/deviations?size=1&page=1"), ergoQuality, null).andExpect(jsonPath("$.items[0].id").value((int) a));
+		call(get("/api/quality/deviations?size=100000&page=-3"), ergoQuality, null).andExpect(jsonPath("$.size").value(100)).andExpect(jsonPath("$.page").value(0));
+
+		// each side sees exactly its own, and only what its row shows is searchable
+		call(get("/api/quality/deviations"), customerAQuality, null).andExpect(jsonPath("$.total").value(1)).andExpect(jsonPath("$.items[0].id").value((int) a));
+		call(get("/api/quality/deviations"), supplierXQuality, null).andExpect(jsonPath("$.total").value(1)).andExpect(jsonPath("$.items[0].id").value((int) a));
+		call(get("/api/quality/deviations"), customerBQuality, null).andExpect(jsonPath("$.total").value(0)); // not released to it yet
+		call(get("/api/quality/deviations?q=" + numberA.toLowerCase()), customerAQuality, null).andExpect(jsonPath("$.total").value(1));
+		call(get("/api/quality/deviations?q=" + numberB), customerAQuality, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/quality/deviations").param("q", supplierXName), customerAQuality, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/quality/deviations").param("q", customerAName), supplierXQuality, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/quality/deviations?q=pn-dev"), supplierXQuality, null).andExpect(jsonPath("$.total").value(1));
+
+		// ERGO also searches the company names; the account-scoped KAM only within its own accounts
+		call(get("/api/quality/deviations").param("q", customerBName), ergoQuality, null).andExpect(jsonPath("$.items[*].id", hasItem((int) b)))
+			.andExpect(jsonPath("$.items[*].id", not(hasItem((int) a))));
+		call(get("/api/quality/deviations").param("q", customerBName), ergoKam, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/quality/deviations").param("q", "%"), ergoQuality, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/quality/deviations").param("q", "\u0000" + numberA), ergoQuality, null).andExpect(status().isOk()).andExpect(jsonPath("$.total").value(1));
+
+		// filters narrow inside the same query (and cannot widen a module-linked role's scope); unknown values are refused
+		call(get("/api/quality/deviations?linkedModule=OFP&q=" + numberA), ergoQuality, null).andExpect(jsonPath("$.total").value(1));
+		call(get("/api/quality/deviations?linkedModule=NPD&q=" + numberA), ergoQuality, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/quality/deviations?linkedModule=NPD&q=" + numberA), ergoOfp, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/quality/deviations?status=CLOSED&q=" + numberA), ergoQuality, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/quality/deviations?status=BOGUS"), ergoQuality, null).andExpect(status().isUnprocessableEntity());
+		call(get("/api/quality/deviations?linkedModule=BOGUS"), ergoQuality, null).andExpect(status().isUnprocessableEntity());
 	}
 
 	@Test
@@ -222,18 +270,18 @@ class DeviationTests {
 		long npdOne = createAsErgoLinked(ergoQuality, "NPD", npdProjectId, false);
 		long ofpOne = createAsErgo(ergoQuality, orderA, false);
 
-		call(get("/api/quality/deviations"), ergoKam, null).andExpect(jsonPath("$[*].id", hasItem((int) forA)))
-			.andExpect(jsonPath("$[*].id", not(hasItem((int) forB))));
+		call(get("/api/quality/deviations?size=100"), ergoKam, null).andExpect(jsonPath("$.items[*].id", hasItem((int) forA)))
+			.andExpect(jsonPath("$.items[*].id", not(hasItem((int) forB))));
 		call(get("/api/quality/deviations/{id}", forB), ergoKam, null).andExpect(status().isNotFound());
 
-		call(get("/api/quality/deviations"), ergoNpd, null).andExpect(jsonPath("$[*].id", hasItem((int) npdOne)))
-			.andExpect(jsonPath("$[*].id", not(hasItem((int) ofpOne))));
-		call(get("/api/quality/deviations"), ergoOfp, null).andExpect(jsonPath("$[*].id", hasItem((int) ofpOne)))
-			.andExpect(jsonPath("$[*].id", not(hasItem((int) npdOne))));
+		call(get("/api/quality/deviations?size=100"), ergoNpd, null).andExpect(jsonPath("$.items[*].id", hasItem((int) npdOne)))
+			.andExpect(jsonPath("$.items[*].id", not(hasItem((int) ofpOne))));
+		call(get("/api/quality/deviations?size=100"), ergoOfp, null).andExpect(jsonPath("$.items[*].id", hasItem((int) ofpOne)))
+			.andExpect(jsonPath("$.items[*].id", not(hasItem((int) npdOne))));
 
 		// ERGO RFQ and Admin view every deviation (role sheet "V")
 		for (Login viewer : List.of(ergoRfq, ergoAdmin)) {
-			call(get("/api/quality/deviations"), viewer, null).andExpect(jsonPath("$[*].id", hasItem((int) forB)));
+			call(get("/api/quality/deviations?size=100"), viewer, null).andExpect(jsonPath("$.items[*].id", hasItem((int) forB)));
 			call(get("/api/quality/deviations/{id}", forA), viewer, null).andExpect(status().isOk());
 		}
 	}
