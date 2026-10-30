@@ -6,10 +6,10 @@ export type Awaiting = 'ERGO' | 'CUSTOMER' | 'SUPPLIER' | 'NONE'
 export interface RfqDashboardItem {
   id: number
   number: string
-  customerName: string
+  customerName: string | null // ERGO only: null for customers and suppliers
   status: string
-  awaiting: Awaiting
-  targetQuoteDate: string
+  awaiting: Awaiting | null // ERGO-internal: null for customers and suppliers
+  targetQuoteDate: string | null
   overdue: boolean
   priority: string
   /** The RFQ's part numbers. */
@@ -19,11 +19,11 @@ export interface RfqDashboardItem {
 export interface NpdDashboardItem {
   id: number
   npdNumber: string
-  customerName: string
+  customerName: string | null // ERGO only: null for customers and suppliers
   supplierName: string | null
   stage: string
-  awaiting: Awaiting
-  targetSampleDate: string
+  awaiting: Awaiting | null // ERGO-internal: null for customers and suppliers
+  targetSampleDate: string | null
   delayDays: number | null
   riskLevel: string | null
 }
@@ -31,33 +31,33 @@ export interface NpdDashboardItem {
 export interface OrderDashboardItem {
   id: number
   orderNumber: string
-  customerName: string
+  customerName: string | null // ERGO only: null for customers and suppliers
   supplierName: string | null
   status: string
-  awaiting: Awaiting
-  committedDispatchDate: string
+  awaiting: Awaiting | null // ERGO-internal: null for customers and suppliers
+  committedDispatchDate: string | null
   atRisk: boolean
 }
 
 export interface NcrDashboardItem {
   id: number
   ncrNumber: string
-  customerName: string
+  customerName: string | null // ERGO only: null for customers and suppliers
   supplierName: string | null
   status: string
-  awaiting: Awaiting
-  targetClosureDate: string
+  awaiting: Awaiting | null // ERGO-internal: null for customers and suppliers
+  targetClosureDate: string | null
   overdue: boolean
 }
 
 export interface DeviationDashboardItem {
   id: number
   deviationNumber: string
-  customerName: string
+  customerName: string | null // ERGO only: null for customers and suppliers
   supplierName: string | null
   status: string
-  validityEndDate: string
-  awaiting: Awaiting
+  validityEndDate: string | null
+  awaiting: Awaiting | null // ERGO-internal: null for customers and suppliers
 }
 
 export interface SupplierQuoteItem {
@@ -65,7 +65,7 @@ export interface SupplierQuoteItem {
   rfqNumber: string
   partNumber: string
   status: string
-  responseDueDate: string
+  responseDueDate: string | null
   overdue: boolean
 }
 

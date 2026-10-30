@@ -20,9 +20,22 @@ import { partStatusLabel } from '../../quotation/utils/labels'
 import { AWAITING, humanize } from '../labels'
 import { ItemsTable, type Column } from './ItemsTable'
 
-function AwaitingChip({ value }: { value: Awaiting }) {
+function AwaitingChip({ value }: { value: Awaiting | null }) {
+  if (value == null) return <>—</>
   const a = AWAITING[value]
   return <Chip size="small" label={a.label} color={a.color} />
+}
+
+/** The customer's name is for ERGO's eyes only (null for a customer, and never shown to a supplier): the column exists
+ * only when some row has a value. */
+function customerColumn<T extends { customerName: string | null }>(rows: T[]): Column<T>[] {
+  return rows.some((r) => r.customerName != null) ? [{ header: 'Customer', render: (r) => r.customerName }] : []
+}
+
+/** Who a row is waiting on is ERGO-internal: the API sends null to customers and suppliers, so the column exists only
+ * when some row has a value. */
+function awaitingColumn<T extends { awaiting: Awaiting | null }>(rows: T[]): Column<T>[] {
+  return rows.some((r) => r.awaiting != null) ? [{ header: 'Awaiting', render: (r) => <AwaitingChip value={r.awaiting} /> }] : []
 }
 
 /** A titled section that disappears entirely when empty (Functional dashboard - SRS §12.5: most single-module
@@ -83,10 +96,10 @@ export function RfqSection({
 }) {
   const columns: Column<RfqDashboardItem>[] = [
     { header: 'RFQ no.', render: (r) => r.number },
-    { header: 'Customer', render: (r) => r.customerName },
+    ...customerColumn(items),
     { header: 'Parts', render: (r) => r.parts.join(', ') || '—' },
     { header: 'Status', render: (r) => humanize(r.status) },
-    { header: 'Awaiting', render: (r) => <AwaitingChip value={r.awaiting} /> },
+    ...awaitingColumn(items),
     {
       header: 'Target quote date',
       render: (r) => `${formatDate(r.targetQuoteDate)}${r.overdue ? ' (overdue)' : ''}`,
@@ -153,10 +166,10 @@ export function NpdSection({
 }) {
   const columns: Column<NpdDashboardItem>[] = [
     { header: 'NPD no.', render: (r) => r.npdNumber },
-    { header: 'Customer', render: (r) => r.customerName },
+    ...customerColumn(items),
     ...(showSupplier ? [{ header: 'Supplier', render: (r: NpdDashboardItem) => r.supplierName ?? '—' }] : []),
     { header: 'Stage', render: (r) => humanize(r.stage) },
-    { header: 'Awaiting', render: (r) => <AwaitingChip value={r.awaiting} /> },
+    ...awaitingColumn(items),
     { header: 'Target sample date', render: (r) => formatDate(r.targetSampleDate) },
     {
       header: 'Delay',
@@ -192,10 +205,10 @@ export function OrderSection({
 }) {
   const columns: Column<OrderDashboardItem>[] = [
     { header: 'Order no.', render: (r) => r.orderNumber },
-    { header: 'Customer', render: (r) => r.customerName },
+    ...customerColumn(items),
     ...(showSupplier ? [{ header: 'Supplier', render: (r: OrderDashboardItem) => r.supplierName ?? '—' }] : []),
     { header: 'Status', render: (r) => humanize(r.status) },
-    { header: 'Awaiting', render: (r) => <AwaitingChip value={r.awaiting} /> },
+    ...awaitingColumn(items),
     {
       header: 'Committed dispatch',
       render: (r) => `${formatDate(r.committedDispatchDate)}${r.atRisk ? ' (at risk)' : ''}`,
@@ -226,10 +239,10 @@ export function NcrSection({
 }) {
   const columns: Column<NcrDashboardItem>[] = [
     { header: 'NCR no.', render: (r) => r.ncrNumber },
-    { header: 'Customer', render: (r) => r.customerName },
+    ...customerColumn(items),
     ...(showSupplier ? [{ header: 'Supplier', render: (r: NcrDashboardItem) => r.supplierName ?? '—' }] : []),
     { header: 'Status', render: (r) => humanize(r.status) },
-    { header: 'Awaiting', render: (r) => <AwaitingChip value={r.awaiting} /> },
+    ...awaitingColumn(items),
     {
       header: 'Target closure date',
       render: (r) => `${formatDate(r.targetClosureDate)}${r.overdue ? ' (overdue)' : ''}`,
@@ -260,10 +273,10 @@ export function DeviationSection({
 }) {
   const columns: Column<DeviationDashboardItem>[] = [
     { header: 'Deviation no.', render: (r) => r.deviationNumber },
-    { header: 'Customer', render: (r) => r.customerName },
+    ...customerColumn(items),
     ...(showSupplier ? [{ header: 'Supplier', render: (r: DeviationDashboardItem) => r.supplierName ?? '—' }] : []),
     { header: 'Status', render: (r) => humanize(r.status) },
-    { header: 'Awaiting', render: (r) => <AwaitingChip value={r.awaiting} /> },
+    ...awaitingColumn(items),
     { header: 'Validity end date', render: (r) => formatDate(r.validityEndDate) },
   ]
   return (

@@ -275,7 +275,15 @@ class DashboardTests {
 			.andExpect(jsonPath("$.npdItems[0].riskLevel").value(nullValue()));
 		Login supplierNpd = users.login(supplier, "SUPPLIER_NPD");
 		mvc.perform(get("/api/dashboard").header(HttpHeaders.AUTHORIZATION, supplierNpd.bearer()))
-			.andExpect(jsonPath("$.npdItems[0].riskLevel").value(nullValue()));
+			.andExpect(jsonPath("$.npdItems[0].riskLevel").value(nullValue()))
+			// two-way anonymity and ERGO-internal state: the supplier's row names neither party nor who it waits on
+			.andExpect(jsonPath("$.npdItems[0].customerName").value(nullValue()))
+			.andExpect(jsonPath("$.npdItems[0].supplierName").value(nullValue()))
+			.andExpect(jsonPath("$.npdItems[0].awaiting").value(nullValue()));
+		// and the customer's row never names the supplier
+		mvc.perform(get("/api/dashboard").header(HttpHeaders.AUTHORIZATION, customerNpdA.bearer()))
+			.andExpect(jsonPath("$.npdItems[0].supplierName").value(nullValue()))
+			.andExpect(jsonPath("$.npdItems[0].awaiting").value(nullValue()));
 	}
 
 	/** The supplier's quote widget is built from a slim path (invitations plus a slim RFQ lookup, no quote versions or part
