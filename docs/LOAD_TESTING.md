@@ -1,8 +1,10 @@
 # Load testing (Phase 8o)
 
-Tooling, a first local run, and what it found. **Status (2026-10-29): the first local run is done; the staging run is not (nothing is deployed). The thresholds below were
-NOT met by the dashboard and the RFQ list (finding 1). A fix is built but UNCOMMITTED and not yet re-measured (see "Fix in
-progress"). Do not loosen the thresholds to make them pass.**
+Tooling, the local runs, and what they found. **Status (2026-10-30): local runs done; the staging run is not (nothing is
+deployed). The first run failed on the dashboard and the RFQ list (finding 1); both are fixed (`c958e0e`) and every work list is
+now paged. On the latest local run (warm JVM, 50 users) every threshold holds except the unread-count poll (379 ms against
+300 ms, queueing on the laptop, see "Re-run after the list paging"). The newly paged lists other than RFQs were not exercised:
+the load data holds RFQs only. Do not loosen the thresholds to make them pass.**
 
 ## Tooling
 
@@ -121,4 +123,51 @@ Same machine, same 5,020-RFQ database, same script, 50 users at peak, default lo
 - **Two failures** were `dial: i/o timeout` on the supplier's `/api/quotes` (connection level, none in the backend log). That list is still unbounded; watch it on the staging run.
 - Still unmeasured: real hardware (see above) and the other unbounded lists.
 
-**Still to do:** (1) the staging run; (2) the lists that are **still unbounded**, in the order they are likely to hurt: ~~the supplier quote list `/api/quotes`~~ (paged, done: `QuoteService.mine`, search through `RfqApi.matchingItems`; not yet re-measured), ~~OFP orders~~ (paged, done: `OrderService.list`, with a server-side `delayed` filter; not yet re-measured), ~~NPD projects~~ (paged, done: `NpdService.list`, ERGO list only; `/mine` stays small per company; not yet re-measured; a search still reads every project's RFQ item id once to ask `RfqApi.matchingItems`, ids only; the RFQ match also covers item description), ~~sample and production POs~~ (paged, done: `SamplePoService.list`, `ProductionPoService.list`; not yet re-measured), ~~NCRs~~ (paged, done: `NcrService.list`, one row shape per audience; not yet re-measured), ~~deviations~~ (paged, done: `DeviationService.list`; not yet re-measured), ~~inspections~~ (paged, done: `InspectionService.list`; not yet re-measured). Use the RFQ list as the pattern (declare only `findAll(Specification, Pageable)` on the repository).
+## The other lists (2026-10-30)
+
+Every work list now returns `{ items, total, page, size }` with record scope, filters and search in the query, the same pattern
+as the RFQ list (only `findAll(Specification, Pageable)` declared on each repository; 422 on an unknown filter value; size
+capped at 100; `%` `_` `\` literal; company names searched for ERGO only, never across the two-way anonymity line):
+
+| List | Commit | Service |
+|---|---|---|
+| Supplier quotes `/api/quotes` | `bcc070d` | `QuoteService.mine` (search through `RfqApi.matchingItems`) |
+| OFP orders | `4481871` | `OrderService.list` (server-side `delayed` filter) |
+| ERGO NPD projects | `7188ccf` | `NpdService.list` (`/mine` stays unpaged, small per company; a search reads every project's RFQ item id once, ids only, to ask `RfqApi.matchingItems`, whose match also covers the item description) |
+| Sample and production POs | `a25c9be` | `SamplePoService.list`, `ProductionPoService.list` |
+| NCRs | `fa0fc49` | `NcrService.list` |
+| Deviations | `16cd952` | `DeviationService.list` |
+| Inspections | `d12fede` | `InspectionService.list` |
+
+The supplier's dashboard quote widget (`d7ddba3`) no longer builds full list rows (quote versions, sub-RFQ numbers, part detail,
+master data) for every invitation: it reads the invitations plus a slim RFQ lookup, `RfqApi.supplierItemRefs`. Like every
+dashboard section it still reads all in-scope rows, slim, because the KPI counts need them; `DashboardService` caps the response.
+
+## Re-run after the list paging (2026-10-30)
+
+Same laptop, same `ergo_load` database (5,020 RFQs, 15,060 parts, 35,175 audit rows), same script, 50 users at peak, default
+login limiter. Backend jar built from `d7ddba3` (the committed tree, full verify green, 774 tests). Two runs back to back:
+the first right after the backend started, the second with the JVM warm.
+
+| p95 | Previous re-run (10-29) | Cold JVM | Warm JVM | Threshold |
+|---|---|---|---|---|
+| Dashboard | 818 ms | 1.07 s | **878 ms** | 1 s ok |
+| Work list (RFQs / quotes) | 318 ms | 606 ms | **375 ms** | 1 s ok |
+| Unread-count poll | 375 ms | 536 ms | **379 ms** | 300 ms **crossed** |
+| Whole browse scenario | 543 ms | 717 ms | **550 ms** | 800 ms ok |
+| Login, 5 a second | 256 ms | 402 ms | **180 ms**, 226 of 226 ok | 1.5 s ok |
+| Errors | 0.01% (2 of 11,875) | 0% (0 of 11,156) | **0%** (0 of 12,080) | 1% ok |
+
+- **Warm, it matches the previous re-run:** no regression on the measured paths. The cold run was slower on everything,
+  login included, whose code did not change: JIT warm-up. Judge staging on a warm instance (or a run long enough that the
+  first minute does not dominate the p95).
+- **Unread-count 379 ms vs 300 ms**, same as before, with a 6 ms median: queueing on a laptop running k6, Postgres, Redis and the
+  JVM together. Still not a code finding; judge it on staging and look at `hikaricp_connections_pending` there.
+- **Not measured by this run, and why:** `ergo_load` holds RFQs only (no supplier invitations, orders, NPD projects, POs, NCRs,
+  deviations or inspections), and `hot-paths.js` exercises the dashboard, the RFQ list, `/api/quotes`, documents, notifications
+  and login. So the supplier's quote list and dashboard widget ran on **empty** data, and the other newly paged lists were not
+  called at all. The two `dial: i/o timeout` failures of the previous re-run were also on that empty `/api/quotes`, connection
+  level; their absence here proves nothing.
+
+**Still to do:** (1) the staging run; (2) before it, if the other lists should be measured with volume: extend `seed.js` to
+send RFQs to suppliers and create orders, NPD projects and quality records, and give `hot-paths.js` those lists per audience.
