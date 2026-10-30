@@ -25,6 +25,7 @@ interface Props {
   onResetPassword: (user: User) => void
   onToggleActive: (user: User) => void
   onDelete: (user: User) => void
+  onLoginAs: (user: User) => void
 }
 
 /** The user rows and their per-row actions. Every button comes from the server's `user.actions`, not from the UI. */
@@ -38,6 +39,7 @@ export function UserTable({
   onResetPassword,
   onToggleActive,
   onDelete,
+  onLoginAs,
 }: Props) {
   return (
     // Only the table scrolls sideways when it is wider than its space, never the page.
@@ -86,6 +88,11 @@ export function UserTable({
                 <Button size="small" onClick={() => onResetPassword(user)}>
                   Reset password
                 </Button>
+                {user.actions.includes('LOGIN_AS') && (
+                  <Button size="small" onClick={() => onLoginAs(user)}>
+                    Login as
+                  </Button>
+                )}
                 {(user.actions.includes('DEACTIVATE') || user.actions.includes('ACTIVATE')) && (
                   <Button size="small" color={user.active ? 'error' : 'primary'} onClick={() => onToggleActive(user)}>
                     {user.active ? 'Deactivate' : 'Activate'}

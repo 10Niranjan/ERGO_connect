@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Outlet } from 'react-router'
 import { useAppSelector } from '@/hooks/useAppSelector'
 import { useAccessQuery } from '@/features/auth/services/authApi'
+import { ImpersonationBanner } from './ImpersonationBanner'
 import { Navbar } from './Navbar'
 import { Sidebar } from './Sidebar'
 
@@ -15,7 +16,9 @@ export function MainLayout() {
   if (!session) return null
 
   return (
-    <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: 'background.default' }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', bgcolor: 'background.default' }}>
+      {session.impersonation && <ImpersonationBanner session={session} />}
+      <Box sx={{ display: 'flex', flexGrow: 1, minHeight: 0 }}>
       {/* Sidebar Navigation */}
       <Sidebar
         session={session}
@@ -33,6 +36,7 @@ export function MainLayout() {
         <Box component="main" sx={{ p: 3, flexGrow: 1 }}>
           <Outlet />
         </Box>
+      </Box>
       </Box>
     </Box>
   )

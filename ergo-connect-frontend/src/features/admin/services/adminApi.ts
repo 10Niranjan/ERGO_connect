@@ -2,7 +2,7 @@ import { api } from '@/services/baseApi'
 import type { CompanyType, Role, RoleOption } from '@/features/auth/store/authSlice'
 import type { MasterOption } from '@/utils/masterData'
 
-export type UserAction = 'DEACTIVATE' | 'ACTIVATE' | 'DELETE'
+export type UserAction = 'DEACTIVATE' | 'ACTIVATE' | 'DELETE' | 'LOGIN_AS'
 
 export interface User {
   id: number

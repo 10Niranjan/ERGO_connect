@@ -71,6 +71,20 @@ export const authApi = api.injectEndpoints({
         }
       },
     }),
+    /** Super Admin "Login as": a view-only session as another user. The admin's own login is kept by the server. */
+    loginAs: build.mutation<Session, { id: number; reason: string }>({
+      query: ({ id, reason }) => ({ url: `/users/${id}/login-as`, method: 'POST', body: { reason } }),
+      ...startsSession,
+    }),
+    /** Leave a view: end it on the server, then pick the admin's own session back up. */
+    endImpersonation: build.mutation<void, void>({
+      query: () => ({ url: '/auth/impersonation/end', method: 'POST' }),
+      async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
+        await queryFulfilled.catch(() => undefined) // if it already ended, the refresh below lands on the admin anyway
+        dispatch(api.util.resetApiState()) // nothing loaded as the viewed user may show under the admin
+        await dispatch(authApi.endpoints.refresh.initiate())
+      },
+    }),
     /** The caller's permissions and sidebar, fresh from the server. */
     access: build.query<AccessView, void>({
       query: () => '/auth/access',
@@ -102,6 +116,8 @@ export const {
   useForgotPasswordMutation,
   useResetPasswordMutation,
   useRefreshMutation,
+  useLoginAsMutation,
+  useEndImpersonationMutation,
   useAccessQuery,
   useLogoutMutation,
 } = authApi

@@ -1,6 +1,6 @@
 import { Alert, Button, MenuItem, Paper, Stack, Tab, Tabs, TextField, Typography } from '@mui/material'
 import { useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router'
+import { useNavigate, useSearchParams } from 'react-router'
 import { problemMessage } from '../../../shared/problem'
 import { STATUS_LABELS, useCompaniesQuery } from '../../companies/companiesApi'
 import type { CompanyType } from '../../auth/store/authSlice'
@@ -12,6 +12,7 @@ import {
   type User,
 } from '../adminApi'
 import { DeleteUserDialog } from '../components/DeleteUserDialog'
+import { LoginAsDialog } from '../components/LoginAsDialog'
 import { TemporaryPasswordDialog } from '../components/TemporaryPasswordDialog'
 import { UserDialog } from '../components/UserDialog'
 import { UserTable } from '../components/UserTable'
@@ -39,6 +40,8 @@ export function UsersPage() {
   // 'new' creates anywhere; { companyId } creates inside that company; a User edits
   const [editing, setEditing] = useState<User | 'new' | { companyId: number } | null>(null)
   const [deleting, setDeleting] = useState<User | null>(null)
+  const [viewing, setViewing] = useState<User | null>(null)
+  const navigate = useNavigate()
   const [issued, setIssued] = useState<{ email: string; password: string } | null>(null)
   const [actionError, setActionError] = useState<unknown>(null)
   const [confirm, confirmDialog] = useConfirm()
@@ -88,6 +91,7 @@ export function UsersPage() {
     onResetPassword: (user: User) => void resetPassword(user),
     onToggleActive: (user: User) => void toggleActive(user),
     onDelete: (user: User) => setDeleting(user),
+    onLoginAs: (user: User) => setViewing(user),
   }
 
   const dialogUser = editing && editing !== 'new' && 'id' in editing ? editing : null
@@ -183,6 +187,7 @@ export function UsersPage() {
         />
       )}
       {deleting && <DeleteUserDialog user={deleting} onClose={() => setDeleting(null)} />}
+      {viewing && <LoginAsDialog user={viewing} onClose={() => setViewing(null)} onStarted={() => void navigate('/')} />}
       {issued && <TemporaryPasswordDialog {...issued} onClose={() => setIssued(null)} />}
       {confirmDialog}
     </Stack>

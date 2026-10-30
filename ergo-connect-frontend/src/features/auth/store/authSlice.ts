@@ -73,6 +73,8 @@ export interface Session {
   mustChangePassword: boolean
   /** Absent only on a stored demo session; the app shell then fetches it. */
   access?: AccessView
+  /** Set only while a Super Admin is viewing as this user ("Login as"): the session is view-only. */
+  impersonation?: { adminName: string; endsAt: string } | null
 }
 
 export interface AuthState {
