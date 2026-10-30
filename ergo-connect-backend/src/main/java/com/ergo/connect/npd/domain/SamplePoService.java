@@ -4,6 +4,7 @@ import static com.ergo.connect.common.security.Role.ERGO_KAM;
 import static com.ergo.connect.common.security.Role.ERGO_MANAGEMENT;
 
 import java.time.Year;
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
@@ -13,9 +14,15 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import jakarta.persistence.criteria.Predicate;
 
 import com.ergo.connect.common.audit.AuditLogService;
 import com.ergo.connect.common.event.NotificationKind;
@@ -36,6 +43,7 @@ import com.ergo.connect.npd.domain.SamplePoDtos.Assignees;
 import com.ergo.connect.npd.domain.SamplePoDtos.CreateProjectForm;
 import com.ergo.connect.npd.domain.SamplePoDtos.EligiblePart;
 import com.ergo.connect.npd.domain.SamplePoDtos.SamplePoAction;
+import com.ergo.connect.npd.domain.SamplePoDtos.SamplePoPage;
 import com.ergo.connect.npd.domain.SamplePoDtos.SamplePoEditForm;
 import com.ergo.connect.npd.domain.SamplePoDtos.SamplePoForm;
 import com.ergo.connect.npd.domain.SamplePoDtos.SamplePoView;
@@ -57,6 +65,10 @@ public class SamplePoService {
 
 	/** Customer roles that raise a Sample PO: the customer-side final-approval role of NPD (a PO is a commitment). */
 	private static final Set<Role> RAISERS = ModuleAccess.approvers(Module.NPD, CompanyType.CUSTOMER);
+
+	private static final int MAX_PAGE_SIZE = 100;
+
+	private static final int MAX_SEARCH_LENGTH = 100;
 
 	private static final Set<Role> CUSTOMER_VIEWERS = ModuleAccess.viewers(Module.NPD, CompanyType.CUSTOMER);
 
@@ -97,24 +109,77 @@ public class SamplePoService {
 
 	// ---------------------------------------------------------------- reads
 
+	/**
+	 * One page of the Sample PO list. The record scope (own company, every account for ERGO, the KAM's accounts) is
+	 * applied in the query, then narrowed by {@code status} and {@code q}: PO number, part number, the customer's PO
+	 * number and, for ERGO only, the customer's name.
+	 */
 	@Transactional(readOnly = true)
-	public List<SamplePoView> list() {
+	public SamplePoPage list(int page, int size, String status, String q) {
 		CurrentUser me = CurrentUser.get();
-		List<SamplePo> visible;
+		int pageSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+		int pageNo = Math.min(Math.max(page, 0), Integer.MAX_VALUE / pageSize - 1); // the offset must fit an int, else a 500
+		Specification<SamplePo> spec = scopeOf(me);
+		if (spec == null) {
+			return new SamplePoPage(List.of(), 0, pageNo, pageSize);
+		}
+		if (status != null && !status.isBlank()) {
+			SamplePoStatus wanted;
+			try {
+				wanted = SamplePoStatus.valueOf(status);
+			}
+			catch (IllegalArgumentException e) {
+				throw ApiException.unprocessable("That status is not one you can filter by");
+			}
+			spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), wanted));
+		}
+		Specification<SamplePo> search = searchOf(me, q);
+		if (search != null) {
+			spec = spec.and(search);
+		}
+		Page<SamplePo> found = samplePos.findAll(spec, PageRequest.of(pageNo, pageSize, Sort.by(Sort.Direction.DESC, "id")));
+		return new SamplePoPage(views(me, found.getContent()), found.getTotalElements(), pageNo, pageSize);
+	}
+
+	/** The query form of {@link #inScope}; {@code null} = none (and no query is made). */
+	private Specification<SamplePo> scopeOf(CurrentUser me) {
+		if (!ModuleAccess.canView(me.role(), Module.NPD) || !ModuleSwitch.readable(Module.NPD)) {
+			return null;
+		}
 		if (CUSTOMER_VIEWERS.contains(me.role())) {
-			visible = samplePos.findByCustomerCompanyIdInOrderByIdDesc(Set.of(me.companyId()));
+			return (root, query, cb) -> cb.equal(root.get("customerCompanyId"), me.companyId());
 		}
-		else if (FULL_VIEWERS.contains(me.role())) {
-			visible = samplePos.findAllByOrderByIdDesc();
+		if (FULL_VIEWERS.contains(me.role())) {
+			return (root, query, cb) -> cb.conjunction();
 		}
-		else if (me.role() == ERGO_KAM && ModuleAccess.canView(me.role(), Module.NPD)) {
+		if (me.role() == ERGO_KAM) {
 			Set<Long> accounts = directory.accountsOf(me.userId());
-			visible = accounts.isEmpty() ? List.of() : samplePos.findByCustomerCompanyIdInOrderByIdDesc(accounts);
+			return accounts.isEmpty() ? null : (root, query, cb) -> root.get("customerCompanyId").in(accounts);
 		}
-		else {
-			visible = List.of();
+		return null;
+	}
+
+	private Specification<SamplePo> searchOf(CurrentUser me, String q) {
+		String needle = q == null ? "" : q.replaceAll("\\p{Cntrl}", "").strip(); // a NUL makes Postgres reject the query
+		if (needle.isEmpty()) {
+			return null;
 		}
-		return views(me, visible);
+		if (needle.length() > MAX_SEARCH_LENGTH) {
+			needle = needle.substring(0, MAX_SEARCH_LENGTH);
+		}
+		String pattern = "%" + needle.toLowerCase(java.util.Locale.ROOT).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+		// a customer already knows its own name; company names are searched for ERGO only
+		Set<Long> companyIds = me.companyType() == CompanyType.ERGO ? directory.companyIdsByName(needle) : Set.of();
+		return (root, query, cb) -> {
+			List<Predicate> any = new ArrayList<>();
+			any.add(cb.like(cb.lower(root.<String>get("samplePoNumber")), pattern, '\\'));
+			any.add(cb.like(cb.lower(root.<String>get("partNumber")), pattern, '\\'));
+			any.add(cb.like(cb.lower(root.<String>get("customerPoNumber")), pattern, '\\'));
+			if (!companyIds.isEmpty()) {
+				any.add(root.get("customerCompanyId").in(companyIds));
+			}
+			return cb.or(any.toArray(new Predicate[0]));
+		};
 	}
 
 	@Transactional(readOnly = true)

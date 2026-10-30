@@ -220,6 +220,37 @@ class SamplePoTests {
 	}
 
 	@Test
+	void theSamplePoListIsPagedFilteredAndSearchedInTheQuery() throws Exception {
+		long poA = TestNpd.raise(mvc, npdCustomerA, approvedPart(buyerA, "PN-PAGE-A"));
+		long poB = TestNpd.raise(mvc, npdCustomerB, approvedPart(buyerB, "PN-PAGE-B"));
+		String numberA = jdbc.queryForObject("SELECT sample_po_number FROM sample_pos WHERE sample_po_id = ?", String.class, poA);
+		String customerBName = nameOf(customerB);
+
+		// newest first, one row a page; a customer sees only its own, ERGO sees both
+		call(get("/api/npd/sample-pos?size=1"), npdCustomerA, null).andExpect(jsonPath("$.items", hasSize(1)))
+			.andExpect(jsonPath("$.items[0].id").value((int) poA)).andExpect(jsonPath("$.total").value(1)).andExpect(jsonPath("$.size").value(1));
+		call(get("/api/npd/sample-pos?size=1"), ergoManagement, null).andExpect(jsonPath("$.items[0].id").value((int) poB))
+			.andExpect(jsonPath("$.total").value(org.hamcrest.Matchers.greaterThanOrEqualTo(2)));
+		call(get("/api/npd/sample-pos?size=100000&page=-3"), npdCustomerA, null).andExpect(jsonPath("$.size").value(100)).andExpect(jsonPath("$.page").value(0));
+
+		// search: number (any case), customer name for ERGO only, never a wildcard, NUL stripped
+		call(get("/api/npd/sample-pos?q=" + numberA.toLowerCase()), npdCustomerA, null).andExpect(jsonPath("$.total").value(1));
+		call(get("/api/npd/sample-pos?q=" + numberA), kamA, null).andExpect(jsonPath("$.total").value(1));
+		call(get("/api/npd/sample-pos?q=" + numberA), npdCustomerB, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/npd/sample-pos").param("q", customerBName), ergoManagement, null).andExpect(jsonPath("$.items[*].id", hasItem((int) poB)))
+			.andExpect(jsonPath("$.items[*].id", not(hasItem((int) poA))));
+		call(get("/api/npd/sample-pos").param("q", customerBName), kamA, null).andExpect(jsonPath("$.total").value(0)); // not an assigned account
+		call(get("/api/npd/sample-pos").param("q", customerBName), npdCustomerA, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/npd/sample-pos").param("q", "%"), npdCustomerA, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/npd/sample-pos").param("q", "\u0000" + numberA), npdCustomerA, null).andExpect(status().isOk()).andExpect(jsonPath("$.total").value(1));
+
+		// status filter; an unknown value is refused, not ignored
+		call(get("/api/npd/sample-pos?status=SUBMITTED"), npdCustomerA, null).andExpect(jsonPath("$.total").value(1));
+		call(get("/api/npd/sample-pos?status=ACCEPTED"), npdCustomerA, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/npd/sample-pos?status=BOGUS"), npdCustomerA, null).andExpect(status().isUnprocessableEntity());
+	}
+
+	@Test
 	void anotherCustomerNeverRaisesSeesOrChangesASamplePoItDoesNotOwn() throws Exception {
 		long partA = approvedPart(buyerA, "PN-ISO");
 		long po = TestNpd.raise(mvc, npdCustomerA, partA);
@@ -228,7 +259,7 @@ class SamplePoTests {
 		call(get("/api/npd/sample-pos/{id}", po), npdCustomerB, null).andExpect(status().isNotFound());
 		call(get("/api/npd/sample-pos/{id}", po), buyerB, null).andExpect(status().isNotFound());
 		call(put("/api/npd/sample-pos/{id}", po), npdCustomerB, editForm()).andExpect(status().isNotFound());
-		call(get("/api/npd/sample-pos"), npdCustomerB, null).andExpect(jsonPath("$[*].id", not(hasItem((int) po))));
+		call(get("/api/npd/sample-pos?size=100"), npdCustomerB, null).andExpect(jsonPath("$.items").isArray()).andExpect(jsonPath("$.items[*].id", not(hasItem((int) po))));
 		call(get("/api/npd/sample-pos/{id}/history", po), npdCustomerB, null).andExpect(status().isNotFound());
 		// a customer decides nothing
 		call(post("/api/npd/sample-pos/{id}/return", po), npdCustomerB, "{\"comment\": \"no\"}")
@@ -320,8 +351,8 @@ class SamplePoTests {
 		// the customer's own roles with NPD access, ERGO's account-scoped KAM and the ERGO roles with NPD access
 		for (Login viewer : List.of(npdCustomerA, qualityCustomerA, buyerA, kamA, ergoManagement, ergoNpd,
 				ergoQuality, ergoOfp)) {
-			call(get("/api/npd/sample-pos"), viewer, null).andExpect(status().isOk())
-				.andExpect(jsonPath("$[*].id", hasItem((int) po)));
+			call(get("/api/npd/sample-pos?size=100"), viewer, null).andExpect(status().isOk())
+				.andExpect(jsonPath("$.items[*].id", hasItem((int) po)));
 			String json = call(get("/api/npd/sample-pos/{id}", po), viewer, null).andExpect(status().isOk())
 				.andReturn()
 				.getResponse()
@@ -330,7 +361,7 @@ class SamplePoTests {
 		}
 		// another KAM (not assigned to this customer) and another customer see nothing of it
 		for (Login outsider : List.of(kamB, npdCustomerB, buyerB)) {
-			call(get("/api/npd/sample-pos"), outsider, null).andExpect(jsonPath("$[*].id", not(hasItem((int) po))));
+			call(get("/api/npd/sample-pos?size=100"), outsider, null).andExpect(jsonPath("$.items").isArray()).andExpect(jsonPath("$.items[*].id", not(hasItem((int) po))));
 			call(get("/api/npd/sample-pos/{id}", po), outsider, null).andExpect(status().isNotFound());
 		}
 		// a supplier role has no access to Sample POs at all

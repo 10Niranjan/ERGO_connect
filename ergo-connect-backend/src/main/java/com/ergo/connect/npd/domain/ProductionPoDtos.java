@@ -63,4 +63,8 @@ public final class ProductionPoDtos {
 			Long projectId, String projectNumber, Instant createdAt, Instant updatedAt, Set<ProductionPoAction> actions) {
 	}
 
+	/** One page of the list; {@code total} counts every match, not just this page. */
+	public record ProductionPoPage(List<ProductionPoView> items, long total, int page, int size) {
+	}
+
 }

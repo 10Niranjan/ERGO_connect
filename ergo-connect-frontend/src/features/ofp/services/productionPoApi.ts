@@ -70,10 +70,32 @@ export interface OfpAssignees {
   quality: OfpAssigneeUser[]
 }
 
+/** One page of the list; `total` counts every match, not just this page. */
+export interface ProductionPoPage {
+  items: ProductionPoView[]
+  total: number
+  page: number
+  size: number
+}
+
+export interface ProductionPoListArgs {
+  page: number
+  size: number
+  status?: string
+  q?: string
+}
+
 // Accepting a production order creates an OFP project, so it invalidates both tags.
 const productionPoApi = api.enhanceEndpoints({ addTagTypes: ['ProductionPo', 'Npd'] }).injectEndpoints({
   endpoints: (build) => ({
-    productionPos: build.query<ProductionPoView[], void>({ query: () => '/ofp/production-pos', providesTags: ['ProductionPo'] }),
+    // One page, newest first; filtered and searched by the server.
+    productionPos: build.query<ProductionPoPage, ProductionPoListArgs>({
+      query: ({ page, size, status, q }) => ({
+        url: '/ofp/production-pos',
+        params: { page, size, ...(status ? { status } : {}), ...(q ? { q } : {}) },
+      }),
+      providesTags: ['ProductionPo'],
+    }),
     eligibleProjects: build.query<EligibleProject[], void>({ query: () => '/ofp/production-pos/eligible-projects', providesTags: ['ProductionPo'] }),
     ofpAssignees: build.query<OfpAssignees, void>({ query: () => '/ofp/production-pos/assignees' }),
     productionPo: build.query<ProductionPoView, number>({

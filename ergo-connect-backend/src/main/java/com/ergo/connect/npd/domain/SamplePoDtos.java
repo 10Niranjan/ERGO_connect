@@ -2,6 +2,7 @@ package com.ergo.connect.npd.domain;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Set;
 
 import com.ergo.connect.common.validation.NotInvisiblyBlank;
@@ -59,6 +60,10 @@ public final class SamplePoDtos {
 			String customerName, String partNumber, String revision, String description, String customerPoNumber,
 			int quantity, LocalDate requiredDate, String remarks, SamplePoStatus status, String returnComment,
 			Long npdProjectId, String npdNumber, Instant createdAt, Instant updatedAt, Set<SamplePoAction> actions) {
+	}
+
+	/** One page of the list; {@code total} counts every match, not just this page. */
+	public record SamplePoPage(List<SamplePoView> items, long total, int page, int size) {
 	}
 
 }

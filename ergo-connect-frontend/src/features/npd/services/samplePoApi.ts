@@ -72,10 +72,32 @@ export interface Assignees {
   quality: AssigneeUser[]
 }
 
+/** One page of the list; `total` counts every match, not just this page. */
+export interface SamplePoPage {
+  items: SamplePoView[]
+  total: number
+  page: number
+  size: number
+}
+
+export interface SamplePoListArgs {
+  page: number
+  size: number
+  status?: string
+  q?: string
+}
+
 // Accepting a Sample PO creates an NPD project, so it invalidates both tags.
 const samplePoApi = api.enhanceEndpoints({ addTagTypes: ['SamplePo', 'Npd'] }).injectEndpoints({
   endpoints: (build) => ({
-    samplePos: build.query<SamplePoView[], void>({ query: () => '/npd/sample-pos', providesTags: ['SamplePo'] }),
+    // One page, newest first; filtered and searched by the server.
+    samplePos: build.query<SamplePoPage, SamplePoListArgs>({
+      query: ({ page, size, status, q }) => ({
+        url: '/npd/sample-pos',
+        params: { page, size, ...(status ? { status } : {}), ...(q ? { q } : {}) },
+      }),
+      providesTags: ['SamplePo'],
+    }),
     eligibleParts: build.query<EligiblePart[], void>({ query: () => '/npd/sample-pos/eligible-parts', providesTags: ['SamplePo'] }),
     assignees: build.query<Assignees, void>({ query: () => '/npd/sample-pos/assignees' }),
     samplePo: build.query<SamplePoView, number>({

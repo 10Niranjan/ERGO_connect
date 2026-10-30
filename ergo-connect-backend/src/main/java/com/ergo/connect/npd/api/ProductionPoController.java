@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -20,6 +21,7 @@ import com.ergo.connect.npd.domain.ProductionPoDtos.CreateProjectForm;
 import com.ergo.connect.npd.domain.ProductionPoDtos.EligibleProject;
 import com.ergo.connect.npd.domain.ProductionPoDtos.ProductionPoEditForm;
 import com.ergo.connect.npd.domain.ProductionPoDtos.ProductionPoForm;
+import com.ergo.connect.npd.domain.ProductionPoDtos.ProductionPoPage;
 import com.ergo.connect.npd.domain.ProductionPoDtos.ProductionPoView;
 import com.ergo.connect.npd.domain.ProductionPoDtos.ReturnForm;
 import com.ergo.connect.npd.domain.ProductionPoService;
@@ -53,8 +55,9 @@ class ProductionPoController {
 
 	@GetMapping
 	@PreAuthorize(VIEWERS)
-	List<ProductionPoView> list() {
-		return productionPos.list();
+	ProductionPoPage list(@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "25") int size,
+			@RequestParam(required = false) String status, @RequestParam(required = false) String q) {
+		return productionPos.list(page, size, status, q);
 	}
 
 	/** The customer's approved sample projects that still need a production order. */

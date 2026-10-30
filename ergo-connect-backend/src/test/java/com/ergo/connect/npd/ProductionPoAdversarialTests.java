@@ -331,9 +331,9 @@ class ProductionPoAdversarialTests extends ProductionPoSupport {
 			ok(404, code("POST", PO + "/{id}/create-project", kam, assign(), po), "create-project by a KAM of another account");
 		}
 		for (Login kam : List.of(kamB, kamNone)) {
-			assertThat(text(get(PO), kam, null)).as("a KAM's list").doesNotContain("\"id\":" + po + ",");
+			assertThat(text(get(PO + "?size=100"), kam, null)).as("a KAM's list").doesNotContain("\"id\":" + po + ",");
 		}
-		assertThat(text(get(PO), ofpB, null)).doesNotContain("\"id\":" + po + ",");
+		assertThat(text(get(PO + "?size=100"), ofpB, null)).doesNotContain("\"id\":" + po + ",");
 		assertThat(poStatus(po)).isEqualTo("RETURNED");
 		assertThat(auditRows(po)).isEqualTo(rows);
 		// bad ids
@@ -349,16 +349,16 @@ class ProductionPoAdversarialTests extends ProductionPoSupport {
 	void listsHoldOnlyTheCallersOwnScopeAndOneKamCannotSeeAnotherAccount() throws Exception {
 		long poA = raise(ofpA, sampleA());
 		long poB = raise(ofpB, sampleB());
-		assertThat(ids(text(get(PO), ofpA, null))).contains(poA).doesNotContain(poB);
-		assertThat(ids(text(get(PO), ofpB, null))).contains(poB).doesNotContain(poA);
-		assertThat(ids(text(get(PO), kamA, null))).contains(poA).doesNotContain(poB);
-		assertThat(ids(text(get(PO), kamB, null))).contains(poB).doesNotContain(poA);
-		assertThat(ids(text(get(PO), kamNone, null))).isEmpty();
-		assertThat(ids(text(get(PO), ergoMgmt, null))).contains(poA, poB);
-		assertThat(ids(text(get(PO), ergoOfp, null))).contains(poA, poB);
+		assertThat(ids(text(get(PO + "?size=100"), ofpA, null))).contains(poA).doesNotContain(poB);
+		assertThat(ids(text(get(PO + "?size=100"), ofpB, null))).contains(poB).doesNotContain(poA);
+		assertThat(ids(text(get(PO + "?size=100"), kamA, null))).contains(poA).doesNotContain(poB);
+		assertThat(ids(text(get(PO + "?size=100"), kamB, null))).contains(poB).doesNotContain(poA);
+		assertThat(ids(text(get(PO + "?size=100"), kamNone, null))).isEmpty();
+		assertThat(ids(text(get(PO + "?size=100"), ergoMgmt, null))).contains(poA, poB);
+		assertThat(ids(text(get(PO + "?size=100"), ergoOfp, null))).contains(poA, poB);
 		// a KAM gets a second account: the list follows at once
 		users.assignAccounts(kamNone.userId(), customer);
-		assertThat(ids(text(get(PO), kamNone, null))).containsExactly(poA);
+		assertThat(ids(text(get(PO + "?size=100"), kamNone, null))).containsExactly(poA);
 
 		// Customer A's colleagues of another role in the company read the order, B's staff do not know A's project
 		call(get(PO + "/eligible-projects"), ofpB, null).andExpect(status().isOk());
@@ -758,7 +758,7 @@ class ProductionPoAdversarialTests extends ProductionPoSupport {
 	// ---------------------------------------------------------------- helpers
 
 	private static List<Long> ids(String json) {
-		List<Number> ids = JsonPath.read(json, "$[*].id");
+		List<Number> ids = JsonPath.read(json, "$.items[*].id");
 		return ids.stream().map(Number::longValue).toList();
 	}
 

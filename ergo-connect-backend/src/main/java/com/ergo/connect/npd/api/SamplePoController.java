@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -21,6 +22,7 @@ import com.ergo.connect.npd.domain.SamplePoDtos.EligiblePart;
 import com.ergo.connect.npd.domain.SamplePoDtos.ReturnForm;
 import com.ergo.connect.npd.domain.SamplePoDtos.SamplePoEditForm;
 import com.ergo.connect.npd.domain.SamplePoDtos.SamplePoForm;
+import com.ergo.connect.npd.domain.SamplePoDtos.SamplePoPage;
 import com.ergo.connect.npd.domain.SamplePoDtos.SamplePoView;
 import com.ergo.connect.npd.domain.SamplePoService;
 
@@ -52,8 +54,9 @@ class SamplePoController {
 
 	@GetMapping
 	@PreAuthorize(VIEWERS)
-	List<SamplePoView> list() {
-		return samplePos.list();
+	SamplePoPage list(@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "25") int size,
+			@RequestParam(required = false) String status, @RequestParam(required = false) String q) {
+		return samplePos.list(page, size, status, q);
 	}
 
 	/** The customer's approved parts that still need a Sample PO. */

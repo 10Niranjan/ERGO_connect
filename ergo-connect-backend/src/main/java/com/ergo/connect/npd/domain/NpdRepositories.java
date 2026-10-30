@@ -51,7 +51,9 @@ interface SamplePoRepository extends Repository<SamplePo, Long> {
 
 	Optional<SamplePo> findById(Long id);
 
-	List<SamplePo> findAllByOrderByIdDesc();
+	/** The list page. The only Specification method on purpose (JpaSpecificationExecutor would bring bulk update/delete that skip @Version and audit). */
+	org.springframework.data.domain.Page<SamplePo> findAll(org.springframework.data.jpa.domain.Specification<SamplePo> spec,
+			org.springframework.data.domain.Pageable pageable);
 
 	List<SamplePo> findByCustomerCompanyIdInOrderByIdDesc(Collection<Long> customerCompanyIds);
 
@@ -182,7 +184,9 @@ interface ProductionPoRepository extends Repository<ProductionPo, Long> {
 
 	Optional<ProductionPo> findById(Long id);
 
-	List<ProductionPo> findAllByOrderByIdDesc();
+	/** The list page. The only Specification method on purpose (JpaSpecificationExecutor would bring bulk update/delete that skip @Version and audit). */
+	org.springframework.data.domain.Page<ProductionPo> findAll(org.springframework.data.jpa.domain.Specification<ProductionPo> spec,
+			org.springframework.data.domain.Pageable pageable);
 
 	List<ProductionPo> findByCustomerCompanyIdInOrderByIdDesc(Collection<Long> customerCompanyIds);
 

@@ -240,7 +240,21 @@ class ProductionFlowTests {
 		call(get("/api/ofp/production-pos"), ofpSupplier, null).andExpect(status().isForbidden());
 		// another customer does not know it exists
 		call(get("/api/ofp/production-pos/{id}", po), ofpCustomerB, null).andExpect(status().isNotFound());
-		call(get("/api/ofp/production-pos"), ofpCustomerB, null).andExpect(jsonPath("$[*].id", not(hasItem((int) po))));
+		call(get("/api/ofp/production-pos?size=100"), ofpCustomerB, null).andExpect(jsonPath("$.items").isArray()).andExpect(jsonPath("$.items[*].id", not(hasItem((int) po))));
+
+		// the list is paged, filtered and searched in the query; another customer's search finds nothing of it
+		String number = jdbc.queryForObject("SELECT production_po_number FROM production_pos WHERE production_po_id = ?", String.class, po);
+		call(get("/api/ofp/production-pos?size=1"), ofpCustomerA, null).andExpect(jsonPath("$.items", org.hamcrest.Matchers.hasSize(1)))
+			.andExpect(jsonPath("$.items[0].id").value((int) po)).andExpect(jsonPath("$.total").value(1)).andExpect(jsonPath("$.size").value(1));
+		call(get("/api/ofp/production-pos?size=100000&page=-3"), ofpCustomerA, null).andExpect(jsonPath("$.size").value(100)).andExpect(jsonPath("$.page").value(0));
+		call(get("/api/ofp/production-pos?q=" + number.toLowerCase()), ofpCustomerA, null).andExpect(jsonPath("$.total").value(1));
+		call(get("/api/ofp/production-pos?q=" + number), kamA, null).andExpect(jsonPath("$.total").value(1));
+		call(get("/api/ofp/production-pos?q=" + number), ofpCustomerB, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/ofp/production-pos").param("q", "%"), ofpCustomerA, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/ofp/production-pos").param("q", "\u0000" + number), ofpCustomerA, null).andExpect(status().isOk()).andExpect(jsonPath("$.total").value(1));
+		call(get("/api/ofp/production-pos?status=SUBMITTED"), ofpCustomerA, null).andExpect(jsonPath("$.total").value(1));
+		call(get("/api/ofp/production-pos?status=ACCEPTED"), ofpCustomerA, null).andExpect(jsonPath("$.total").value(0));
+		call(get("/api/ofp/production-pos?status=BOGUS"), ofpCustomerA, null).andExpect(status().isUnprocessableEntity());
 	}
 
 	@Test

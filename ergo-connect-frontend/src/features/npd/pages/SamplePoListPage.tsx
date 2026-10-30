@@ -1,5 +1,5 @@
-import { Alert, Button, Chip, LinearProgress, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from '@mui/material'
-import { useState } from 'react'
+import { Alert, Button, Chip, LinearProgress, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TablePagination, TableRow, TextField, MenuItem, Typography } from '@mui/material'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { SAMPLE_PO_RAISE, useCan } from '@/features/permissions'
 import { useAppSelector } from '@/hooks/useAppSelector'
@@ -9,16 +9,38 @@ import { EditSamplePoDialog, RaiseSamplePoDialog } from '../components/SamplePoD
 import { SAMPLE_PO_STATUS } from '../labels'
 import { useEligiblePartsQuery, useSamplePosQuery, type EligiblePart, type SamplePoView } from '../services/samplePoApi'
 
+const PAGE_SIZES = [25, 50, 100]
+
 // Flow doc steps 6-7. The customer raises a Sample PO for each approved part; the ERGO KAM decides it (open one to act).
 export function SamplePoListPage() {
   const navigate = useNavigate()
   const canRaise = useCan(SAMPLE_PO_RAISE)
-  const { data: rows = [], isLoading, error } = useSamplePosQuery()
+  const [page, setPage] = useState(0)
+  const [size, setSize] = useState(PAGE_SIZES[0])
+  const [status, setStatus] = useState('')
+  const [search, setSearch] = useState('')
+  const [q, setQ] = useState('') // what the server is asked, a moment after typing stops
+  const { data, isLoading, error } = useSamplePosQuery({ page, size, status, q })
+  const rows = data?.items ?? []
+  const total = data?.total ?? 0
   // Only the customer's NPD owner role may raise; the endpoint refuses everyone else, so it is not asked.
   const { data: parts = [], error: partsError } = useEligiblePartsQuery(undefined, { skip: !canRaise })
   const [raising, setRaising] = useState<EligiblePart | null>(null)
   const [editing, setEditing] = useState<SamplePoView | null>(null)
   const showCustomer = useAppSelector((state) => state.auth.session?.user.companyType) === 'ERGO'
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setQ(search.trim())
+      setPage(0)
+    }, 300)
+    return () => window.clearTimeout(timer)
+  }, [search])
+
+  // If rows vanished from under us (a filter, another user), fall back to the last page that still exists.
+  useEffect(() => {
+    if (data && data.items.length === 0 && data.total > 0 && page > 0) setPage(Math.max(Math.ceil(data.total / size) - 1, 0))
+  }, [data, page, size])
 
   return (
     <Stack spacing={2}>
@@ -79,6 +101,27 @@ export function SamplePoListPage() {
         </>
       )}
 
+      <Stack direction="row" spacing={2}>
+        <TextField size="small" label="Search" value={search} onChange={(e) => setSearch(e.target.value)} sx={{ minWidth: 260 }} />
+        <TextField
+          select
+          size="small"
+          label="Status"
+          value={status}
+          onChange={(e) => {
+            setStatus(e.target.value)
+            setPage(0)
+          }}
+          sx={{ minWidth: 200 }}
+        >
+          <MenuItem value="">All</MenuItem>
+          {Object.keys(SAMPLE_PO_STATUS).map((s) => (
+            <MenuItem key={s} value={s}>
+              {SAMPLE_PO_STATUS[s as keyof typeof SAMPLE_PO_STATUS].label}
+            </MenuItem>
+          ))}
+        </TextField>
+      </Stack>
       <TableContainer component={Paper} variant="outlined">
         {isLoading && <LinearProgress />}
         <Table size="small">
@@ -127,12 +170,24 @@ export function SamplePoListPage() {
             {!isLoading && rows.length === 0 && (
               <TableRow>
                 <TableCell colSpan={showCustomer ? 9 : 8} sx={{ color: 'text.secondary' }}>
-                  No Sample POs yet.
+                  No Sample POs found.
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
+        <TablePagination
+          component="div"
+          count={total}
+          page={page}
+          rowsPerPage={size}
+          rowsPerPageOptions={PAGE_SIZES}
+          onPageChange={(_e, p) => setPage(p)}
+          onRowsPerPageChange={(e) => {
+            setSize(Number(e.target.value))
+            setPage(0)
+          }}
+        />
       </TableContainer>
 
       {raising && <RaiseSamplePoDialog part={raising} onClose={() => setRaising(null)} />}
