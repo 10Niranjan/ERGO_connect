@@ -18,9 +18,11 @@ import {
 
 const rawBaseQuery = fetchBaseQuery({
   baseUrl: API_BASE_URL,
-  prepareHeaders: (headers, { getState }) => {
+  prepareHeaders: (headers, { getState, arg }) => {
     const token = (getState() as { auth: AuthState }).auth?.session?.accessToken
-    if (token) headers.set('Authorization', `Bearer ${token}`)
+    // refresh and logout work from the session cookie alone; a stale token sent with them is refused outright
+    const url = typeof arg === 'string' ? arg : arg.url
+    if (token && url !== '/auth/refresh' && url !== '/auth/logout') headers.set('Authorization', `Bearer ${token}`)
     headers.set('X-Ergo-Client', 'web') // audit trail channel (UI vs API)
     return headers
   },
