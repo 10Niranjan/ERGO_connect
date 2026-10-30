@@ -557,6 +557,10 @@ public class NpdService {
 	public NpdView closeStage(long id, String comment) {
 		CurrentUser me = CurrentUser.get();
 		NpdProject project = visible(me, id);
+		NpdRights rights = NpdRights.of(project);
+		if (awaitingHandover(project) && rights.owners.contains(me.role()) && rights.writable()) {
+			throw ApiException.conflict("Hand this OFP project over first: once its last stage is closed, no order can be created from it");
+		}
 		require(NpdAction.CLOSE_STAGE, me, project);
 		NpdStage current = project.stage;
 		List<String> open = openMandatory(project);
@@ -986,9 +990,13 @@ public class NpdService {
 		boolean editor = r.editors.contains(me.role());
 		return switch (action) {
 			case UPDATE_PROJECT -> editor;
-			// a project moves on only once the plan is agreed (flow doc step 8)
+			// a project moves on only once the plan is agreed (flow doc step 8); an OFP project's last stage closes only
+			// after its handover, since a closed project can no longer yield the order
 			case CLOSE_STAGE -> r.owners.contains(me.role()) && project.stage != NpdStage.CLOSED
-					&& project.planStatus == PlanStatus.AGREED;
+					&& project.planStatus == PlanStatus.AGREED && !awaitingHandover(project);
+			// the same checks NpdApiService.handover and OrderController's handover endpoint enforce
+			case HANDOVER -> awaitingHandover(project) && me.companyType() == CompanyType.ERGO
+					&& ModuleAccess.approvers(Module.OFP, CompanyType.ERGO).contains(me.role());
 			case ADD_ACTIVITY -> editor && project.stage != NpdStage.CLOSED && !planUnderReview(project) && !underValidation(project);
 			case MANAGE_PROMPT_CHECKLIST -> editor && project.stage != NpdStage.CLOSED && !planUnderReview(project) && !underValidation(project);
 			case RAISE_ISSUE -> editor && project.stage != NpdStage.CLOSED;
@@ -1046,6 +1054,12 @@ public class NpdService {
 	private static boolean frozenByValidation(NpdProject project, NpdActivity activity) {
 		return activity.phaseName == NpdStage.FINAL_SAMPLE_READINESS && (project.validationStatus == ValidationStatus.IN_VALIDATION
 				|| project.validationStatus == ValidationStatus.VALIDATED || project.validationStatus == ValidationStatus.IN_CUSTOMER_REVIEW);
+	}
+
+	/** An OFP project approved for production whose order has not been created yet. */
+	private static boolean awaitingHandover(NpdProject project) {
+		return project.kind == ProjectKind.PRODUCTION && project.stage == NpdStage.APPROVED_FOR_PRODUCTION_HANDOVER
+				&& !project.handoverReadyFlag;
 	}
 
 	/** Execution has started: the plan is agreed (projects from before the plan flow count as agreed). */

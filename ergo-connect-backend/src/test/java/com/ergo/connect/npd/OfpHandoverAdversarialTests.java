@@ -58,6 +58,63 @@ class OfpHandoverAdversarialTests extends ProductionPoSupport {
 		ok(404, code("POST", HANDOVER, ergoOfp, QTY, 987654321L), "unknown project");
 	}
 
+	private List<String> actions(long project, Login who) throws Exception {
+		return JsonPath.read(text(get("/api/npd/{id}", project), who, null), "$.actions");
+	}
+
+	private static String standaloneOrder(long customerCompanyId, long supplierCompanyId) {
+		return """
+				{"customerCompanyId": %d, "supplierCompanyId": %d, "partNumber": "PN-STD", "revision": "A",
+				 "orderedQuantity": 1000, "dueDate": "%s"}""".formatted(customerCompanyId, supplierCompanyId,
+				java.time.LocalDate.now().plusDays(30));
+	}
+
+	@Test
+	void theHandoverIsOfferedExactlyWhereItWouldWorkAndTheLastStageWaitsForIt() throws Exception {
+		long project = finishedProject();
+		// the OFP approvers are offered the handover, and nobody may close the last stage before it
+		for (Login approver : List.of(ergoOfp, ergoMgmt)) {
+			assertThat(actions(project, approver)).as("approver " + approver.userId()).contains("HANDOVER").doesNotContain("CLOSE_STAGE");
+		}
+		for (Login other : List.of(ergoNpd, ergoQuality, kamA)) {
+			assertThat(actions(project, other)).as("non-approver " + other.userId()).doesNotContain("HANDOVER", "CLOSE_STAGE");
+		}
+		ok(409, code("POST", "/api/npd/{id}/close-stage", ergoNpd, "{}", project), "closing before the handover");
+		// a module that does not accept changes, or approve rights capped to act, takes the offer away
+		for (String module : List.of("NPD", "OFP")) {
+			cap(module, "V");
+			assertThat(actions(project, ergoOfp)).as(module + " view-only").doesNotContain("HANDOVER");
+			cap(module, "O");
+		}
+		cap("OFP", "A");
+		assertThat(actions(project, ergoOfp)).as("OFP capped at A").doesNotContain("HANDOVER");
+		cap("OFP", "O");
+		// once handed over: no second offer, and the project can be closed
+		order(project);
+		assertThat(actions(project, ergoOfp)).doesNotContain("HANDOVER").contains("CLOSE_STAGE");
+		// a sample project at the same stage closes as before and is never handed over
+		long sample = sampleA();
+		assertThat(actions(sample, ergoNpd)).contains("CLOSE_STAGE").doesNotContain("HANDOVER");
+		assertThat(actions(sample, ergoOfp)).doesNotContain("HANDOVER");
+	}
+
+	/** Security review M1 (2026-10-30): the handover and the standalone create stay inside the caller's own record scope,
+	 * even for a KAM that the role sheet raises to O on OFP. */
+	@Test
+	void aKamRaisedToOwnerOnOfpHandsOverAndCreatesOrdersOnlyForItsOwnAccounts() throws Exception {
+		long project = finishedProject(); // customer A's
+		level(com.ergo.connect.common.security.Role.ERGO_KAM, "OFP", "O");
+		ok(404, code("POST", HANDOVER, kamB, QTY, project), "the KAM of another account");
+		assertThat(orders(project)).isZero();
+		assertThat(handedOver(project)).isFalse();
+		ok(403, code("POST", "/api/ofp/orders", kamB, standaloneOrder(customer, supplierX)), "a standalone order for another account");
+		ok(201, code("POST", "/api/ofp/orders", kamB, standaloneOrder(customerB, supplierX)), "a standalone order for its own account");
+		// the account's own KAM is offered the handover and may make it
+		assertThat(actions(project, kamA)).contains("HANDOVER");
+		ok(201, code("POST", HANDOVER, kamA, QTY, project), "the KAM of the account");
+		assertThat(orders(project)).isOne();
+	}
+
 	@Test
 	void aBadFormNeverConsumesTheOneTimeHandover() throws Exception {
 		long project = finishedProject();

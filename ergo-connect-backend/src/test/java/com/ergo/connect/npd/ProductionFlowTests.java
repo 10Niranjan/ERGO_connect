@@ -204,12 +204,24 @@ class ProductionFlowTests {
 		TestNpd.customerApprove(mvc, npdCustomerA, qualityCustomerA, project);
 		call(post("/api/npd/{id}/close-stage", project), ergoOfp, "{}").andExpect(jsonPath("$.stage").value("APPROVED_FOR_PRODUCTION_HANDOVER"));
 
+		// before the order exists: ERGO OFP is offered the handover, not the close (closing first would strand the project)
+		call(get("/api/npd/{id}", project), ergoOfp, null).andExpect(jsonPath("$.actions", hasItem("HANDOVER")))
+			.andExpect(jsonPath("$.actions", not(hasItem("CLOSE_STAGE"))));
+		call(post("/api/npd/{id}/close-stage", project), ergoOfp, "{}").andExpect(status().isConflict())
+			.andExpect(jsonPath("$.detail", org.hamcrest.Matchers.containsString("Hand this OFP project over first")));
+		call(get("/api/npd/{id}", project), ofpSupplier, null).andExpect(jsonPath("$.actions", not(hasItem("HANDOVER"))));
+		call(get("/api/npd/{id}", project), ofpCustomerA, null).andExpect(jsonPath("$.actions", not(hasItem("HANDOVER"))));
+
 		// the order is created from the finished OFP project, carrying the customer's production PO
 		String poNumber = jdbc.queryForObject("SELECT customer_po_number FROM production_pos WHERE production_po_id = ?", String.class, po);
 		call(post("/api/ofp/orders/handover/{id}", project), ergoOfp, "{\"orderedQuantity\": 1000}").andExpect(status().isCreated())
 			.andExpect(jsonPath("$.linkedNpdProjectId").value((int) project))
 			.andExpect(jsonPath("$.customerPoNo").value(poNumber));
 		call(post("/api/ofp/orders/handover/{id}", project), ergoOfp, "{\"orderedQuantity\": 1000}").andExpect(status().isConflict());
+		// once handed over, the handover is no longer offered and the project can be closed
+		call(get("/api/npd/{id}", project), ergoOfp, null).andExpect(jsonPath("$.actions", not(hasItem("HANDOVER"))))
+			.andExpect(jsonPath("$.actions", hasItem("CLOSE_STAGE")));
+		call(post("/api/npd/{id}/close-stage", project), ergoOfp, "{}").andExpect(jsonPath("$.stage").value("CLOSED"));
 		// a sample project never yields an order
 		call(post("/api/ofp/orders/handover/{id}", sample), ergoOfp, "{\"orderedQuantity\": 1000}").andExpect(status().isConflict());
 	}

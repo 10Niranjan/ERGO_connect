@@ -37,10 +37,9 @@ import com.ergo.connect.masterdata.api.Directory.CompanyRef;
 import com.ergo.connect.npd.api.NpdApi;
 
 /**
- * Implements {@link NpdApi} for OFP's "Handover to OFP" action. Deliberately narrower than {@link NpdService}'s own
- * record scope (which restricts most ERGO roles' NPD visibility): any ERGO caller may read a specific project's own
- * handover data by id (the OFP controller's own {@code @PreAuthorize} already confines who actually reaches this),
- * the same "narrow, purpose-built cross-module read" shape as {@code QuotationApiService.selectedQuoteFor}.
+ * Implements {@link NpdApi} for OFP's "Handover to OFP" action: a narrow, purpose-built cross-module read, the same
+ * shape as {@code QuotationApiService.selectedQuoteFor}. The handover enforces the caller's own record scope
+ * ({@link NpdService#inScope}, e.g. a KAM: its accounts), so a project outside it is a 404.
  */
 @Service
 @Transactional
@@ -119,6 +118,10 @@ class NpdApiService implements NpdApi {
 			throw ApiException.notFound("NPD project");
 		}
 		NpdProject project = projects.findById(npdProjectId).orElseThrow(() -> ApiException.notFound("NPD project"));
+		// the caller's own record scope (a KAM: its accounts), as for every other read of the project
+		if (!npdService.inScope(me, project)) {
+			throw ApiException.notFound("NPD project");
+		}
 		// Security review M1 (ARCHITECTURE.md §8 2026-09-29): a project must actually have reached the stage that
 		// gates production handover before OFP can create an order from it, not just "any ERGO-visible project".
 		// flow doc step 11: production starts from the customer's production order, so the order is created from the OFP project

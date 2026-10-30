@@ -101,7 +101,7 @@ export function AssignedRfqsPage() {
             {!isLoading && shown.length === 0 && (
               <TableRow>
                 <TableCell colSpan={8} sx={{ color: 'text.secondary' }}>
-                  No RFQs assigned to your company yet.
+                  {q ? 'No assigned RFQs match.' : 'No RFQs assigned to your company yet.'}
                 </TableCell>
               </TableRow>
             )}

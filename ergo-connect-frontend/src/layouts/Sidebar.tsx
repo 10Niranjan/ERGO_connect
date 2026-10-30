@@ -29,7 +29,7 @@ import {
   Typography,
 } from '@mui/material'
 import type { ElementType } from 'react'
-import { NavLink } from 'react-router'
+import { Link, useLocation } from 'react-router'
 import { BrandLogo } from '@/components/ui/BrandLogo'
 import type { Session } from '@/features/auth/store/authSlice'
 
@@ -63,6 +63,12 @@ interface SidebarProps {
 
 export function Sidebar({ session, mobileOpen, onCloseMobile }: SidebarProps) {
   const initials = `${session.user.firstName[0] ?? ''}${session.user.lastName[0] ?? ''}`
+  const { pathname } = useLocation()
+  // The longest item path the page sits under is the active one: /quality/ncrs is NCR / CAPA, not Inspections (/quality) too.
+  const activePath = (session.access?.menu ?? [])
+    .flatMap((section) => section.items.map((item) => item.path))
+    .filter((path) => (path === '/' ? pathname === '/' : pathname === path || pathname.startsWith(`${path}/`)))
+    .sort((a, b) => b.length - a.length)[0]
 
   const drawerContent = (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', bgcolor: 'chrome.navBg', color: 'chrome.navText' }}>
@@ -122,9 +128,10 @@ export function Sidebar({ session, mobileOpen, onCloseMobile }: SidebarProps) {
                 return (
                 <ListItem key={item.key} disablePadding sx={{ display: 'block', mb: 0.3 }}>
                   <ListItemButton
-                    component={NavLink}
+                    component={Link}
                     to={item.path}
-                    end={item.path === '/'}
+                    className={item.path === activePath ? 'active' : undefined}
+                    aria-current={item.path === activePath ? 'page' : undefined}
                     onClick={onCloseMobile}
                     sx={{
                       mx: 1.5,

@@ -24,6 +24,7 @@ export type NpdAction =
   | 'UPDATE_ISSUE'
   | 'REQUEST_APPROVAL'
   | 'DECIDE_APPROVAL'
+  | 'HANDOVER'
 
 /** SRS §14.5's fixed, forward-only 9-stage sequence (PENDING_CONVERSION is never a real project's stage). */
 export type NpdStage =

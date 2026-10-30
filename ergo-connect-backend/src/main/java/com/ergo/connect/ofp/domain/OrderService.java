@@ -327,6 +327,9 @@ public class OrderService {
 		order.orderNumber = nextOrderNumber();
 		order.customerCompanyId = requireCompany(form.customerCompanyId(), CompanyType.CUSTOMER, "Customer");
 		order.supplierCompanyId = requireCompany(form.supplierCompanyId(), CompanyType.SUPPLIER, "Supplier");
+		if (!inScope(me, order)) { // never create what the caller could not then see (a KAM: only its own accounts)
+			throw ApiException.forbidden("This order would be outside your own accounts");
+		}
 		order.customerPoNo = text(form.customerPoNo());
 		order.supplierPoNo = text(form.supplierPoNo());
 		order.partNumber = form.partNumber().trim();

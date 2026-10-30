@@ -28,7 +28,6 @@ import {
   Typography,
 } from '@mui/material'
 import { useState, type ReactNode } from 'react'
-import { OFP_CREATE, useCan } from '@/features/permissions'
 import { HandoverDialog } from '../../ofp/components/HandoverDialog'
 import { Link as RouterLink, useParams } from 'react-router'
 import { CommentsPanel } from '../../communication/components/CommentsPanel'
@@ -113,8 +112,8 @@ function NpdDetail({ npd }: { npd: NpdView }) {
   const [closing, setClosing] = useState(false)
   const [assigning, setAssigning] = useState(false)
   const [handingOver, setHandingOver] = useState(false)
-  // Server enforces stage + role + once-only; this only avoids showing the button where it can never work.
-  const canHandover = useCan(OFP_CREATE) && npd.audience === 'ERGO' && npd.kind === 'PRODUCTION' && npd.stage === 'APPROVED_FOR_PRODUCTION_HANDOVER'
+  // Offered by the server with the same checks the handover enforces (role, kind, stage, not yet handed over).
+  const canHandover = npd.actions.includes('HANDOVER')
   const [editingProject, setEditingProject] = useState(false)
   const [closeStage, closeState] = useCloseNpdStageMutation()
   const [assignPlan, assignState] = useAssignNpdPlanMutation()

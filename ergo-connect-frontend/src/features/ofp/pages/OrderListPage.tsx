@@ -139,7 +139,7 @@ export function OrderListPage() {
             {!isLoading && shown.length === 0 && (
               <TableRow>
                 <TableCell colSpan={8} sx={{ color: 'text.secondary' }}>
-                  No orders yet.
+                  No orders found.
                 </TableCell>
               </TableRow>
             )}
