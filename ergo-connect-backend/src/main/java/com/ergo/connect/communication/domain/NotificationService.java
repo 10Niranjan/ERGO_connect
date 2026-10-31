@@ -1,5 +1,6 @@
 package com.ergo.connect.communication.domain;
 
+import java.sql.Savepoint;
 import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.HashMap;
@@ -12,13 +13,23 @@ import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.orm.jpa.vendor.HibernateJpaDialect;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
+
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import jakarta.persistence.PersistenceException;
 
 import com.ergo.connect.common.event.NotificationEvent;
 import com.ergo.connect.common.event.Recipients;
@@ -43,7 +54,7 @@ import com.ergo.connect.masterdata.api.Directory.UserRef;
 /**
  * In-app notifications (SRS §13.7.4, §12.12.2, §14.9), Phase 6e. Business modules publish a {@link NotificationEvent}
  * (they cannot call this module directly: it calls back into every one of them to check record scope); this service
- * turns it into one row per recipient after the publishing transaction commits.
+ * turns it into one row per recipient in the publishing transaction (just before it commits).
  * <p>
  * <b>Rules (client decisions, ARCHITECTURE.md §8 2026-10-03 "Phase 6e"):</b>
  * <ul>
@@ -90,26 +101,75 @@ public class NotificationService {
 
 	private final DocumentsApi documentsApi;
 
-	NotificationService(JdbcTemplate jdbc, Directory directory, RecordScope scope, DocumentsApi documentsApi) {
+	@PersistenceContext
+	private EntityManager em;
+
+	private final TransactionTemplate own;
+
+	NotificationService(JdbcTemplate jdbc, Directory directory, RecordScope scope, DocumentsApi documentsApi,
+			PlatformTransactionManager txManager) {
 		this.jdbc = jdbc;
 		this.directory = directory;
 		this.scope = scope;
 		this.documentsApi = documentsApi;
+		this.own = new TransactionTemplate(txManager);
+		this.own.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
 	}
 
 	// ---------------------------------------------------------------- delivery
 
-	/** After the publisher's transaction commits (or immediately, when it had none: the scheduled reminders). Its own
-	 * new transaction, because the publisher's is already finished. */
-	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
-	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	/**
+	 * Just before the publisher's transaction commits (or immediately, when it had none: the scheduled reminders), on
+	 * the publisher's own connection. A second connection (REQUIRES_NEW after commit) held two per request and
+	 * starved the pool under concurrent writes (docs/LOAD_TESTING.md). The rows commit or roll back with the business
+	 * change. They run in a savepoint so a failed delivery is undone alone and never aborts the publisher's
+	 * transaction as far as the database goes. The savepoint does not clear a rollback-only flag, so delivery's record-scope
+	 * probes (the owning modules' read facades, run inside this transaction) must never throw; they are written not to.
+	 * Pending entity changes are flushed first: delivery reads the record through JDBC.
+	 */
+	@TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT, fallbackExecution = true)
 	public void onEvent(NotificationEvent event) {
+		// a read-only publisher could not write the rows on its own connection: give it a transaction of its own
+		boolean inTransaction = TransactionSynchronizationManager.isActualTransactionActive()
+				&& !TransactionSynchronizationManager.isCurrentTransactionReadOnly();
+		if (inTransaction) {
+			flushPendingChanges();
+		}
 		try {
-			deliver(event);
+			if (inTransaction) {
+				jdbc.execute((ConnectionCallback<Void>) con -> {
+					Savepoint undo = con.setSavepoint();
+					try {
+						deliver(event);
+						con.releaseSavepoint(undo);
+					}
+					catch (RuntimeException e) {
+						con.rollback(undo);
+						throw e;
+					}
+					return null;
+				});
+			}
+			else {
+				own.executeWithoutResult(status -> deliver(event));
+			}
 		}
 		catch (RuntimeException e) {
 			log.error("Could not deliver {} notification for {} {}", event.kind(), event.linkedModule(),
 					event.linkedRecordId(), e);
+		}
+	}
+
+	/** The flush the commit would have made, with the same exception translation (a lost optimistic-lock race must
+	 * stay a 409, not an unhandled 500), and outside the delivery try: that failure belongs to the publisher. */
+	private void flushPendingChanges() {
+		try {
+			em.flush();
+		}
+		catch (PersistenceException e) {
+			// the same dialect the commit uses: constraint races become 409s, not an unhandled JpaSystemException
+			DataAccessException translated = new HibernateJpaDialect().translateExceptionIfPossible(e);
+			throw translated != null ? translated : e;
 		}
 	}
 
