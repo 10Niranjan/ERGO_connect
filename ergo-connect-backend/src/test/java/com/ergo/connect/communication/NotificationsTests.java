@@ -23,6 +23,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -56,6 +58,9 @@ class NotificationsTests {
 
 	@Autowired
 	Notifier notifier;
+
+	@Autowired
+	PlatformTransactionManager txManager;
 
 	@Autowired
 	OverdueReminders reminders;
@@ -191,6 +196,59 @@ class NotificationsTests {
 				Recipients.users(Set.of(buyerB.userId(), sellerX.userId())));
 		assertCount(buyerB, 0);
 		assertCount(sellerX, 0);
+	}
+
+	// ---------------------------------------------------------------- delivery inside the publisher's transaction
+
+	private long storedFor(Login who) {
+		return jdbc.queryForObject("SELECT count(*) FROM notifications WHERE recipient_user_id = ?", Long.class,
+				who.userId());
+	}
+
+	@Test
+	void aRolledBackChangeLeavesNoNotification() throws Exception {
+		long rfqId = draftRfq(buyerA);
+		new TransactionTemplate(txManager).executeWithoutResult(status -> {
+			notifier.send(NotificationKind.RFQ_SUBMITTED, "rfq", rfqId, "RFQ-X", null, Recipients.ergo(Role.ERGO_RFQ));
+			status.setRollbackOnly();
+		});
+		assertThat(storedFor(ergoRfq)).isZero();
+	}
+
+	@Test
+	void aCommittedChangeAndItsNotificationAppearTogether() throws Exception {
+		long rfqId = draftRfq(buyerA);
+		new TransactionTemplate(txManager).executeWithoutResult(status -> {
+			jdbc.update("UPDATE rfqs SET internal_notes = 'changed' WHERE rfq_id = ?", rfqId);
+			notifier.send(NotificationKind.RFQ_SUBMITTED, "rfq", rfqId, "RFQ-X", null, Recipients.ergo(Role.ERGO_RFQ));
+		});
+		assertThat(storedFor(ergoRfq)).isEqualTo(1);
+		assertThat(jdbc.queryForObject("SELECT internal_notes FROM rfqs WHERE rfq_id = ?", String.class, rfqId))
+			.isEqualTo("changed");
+	}
+
+	@Test
+	void aPublisherThatOnlyReadsStillDeliversItsNotification() throws Exception {
+		long rfqId = draftRfq(buyerA);
+		TransactionTemplate readOnly = new TransactionTemplate(txManager);
+		readOnly.setReadOnly(true);
+		readOnly.executeWithoutResult(status -> notifier.send(NotificationKind.RFQ_SUBMITTED, "rfq", rfqId, "RFQ-X",
+				null, Recipients.ergo(Role.ERGO_RFQ)));
+		assertThat(storedFor(ergoRfq)).isEqualTo(1);
+	}
+
+	@Test
+	void aDeliveryThatCannotCompleteDoesNotUndoTheBusinessChange() throws Exception {
+		long rfqId = draftRfq(buyerA);
+		// the dedupe key column is 120 characters, so this insert fails inside delivery
+		new TransactionTemplate(txManager).executeWithoutResult(status -> {
+			jdbc.update("UPDATE rfqs SET internal_notes = 'kept' WHERE rfq_id = ?", rfqId);
+			notifier.sendScheduled(NotificationKind.RFQ_STATUS_CHANGED, "rfq", rfqId, "RFQ-X", "Late",
+					Recipients.ergo(Role.ERGO_RFQ), "k".repeat(5000));
+		});
+		assertThat(jdbc.queryForObject("SELECT internal_notes FROM rfqs WHERE rfq_id = ?", String.class, rfqId))
+			.isEqualTo("kept");
+		assertThat(storedFor(ergoRfq)).isZero();
 	}
 
 	@Test
