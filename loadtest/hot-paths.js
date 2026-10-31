@@ -37,7 +37,17 @@ const THINK = parseFloat(__ENV.THINK || '1')
 // Each audience has its own work list: suppliers are (by design) refused on /api/rfqs and use their assigned quotes.
 const USERS = (__ENV.USERS || 'management@ergo.dev,kam@ergo.dev,buyer@acme.dev,sales@precision.dev').split(',')
 const SUPPLIERS = (__ENV.SUPPLIER_USERS || 'sales@precision.dev').split(',')
+// Users with no RFQ/quote list of their own (quality, logistics, supplier planners): they only run the lists below.
+const NO_WORK_LIST = (__ENV.NO_WORK_LIST_USERS || 'quality@ergo.dev,logistics@acme.dev,planner@precision.dev').split(',')
 const JSON_HEADERS = { 'Content-Type': 'application/json' }
+
+// Every other paged work list. A user whose role has no access (403) simply skips that list, so one USERS set covers all
+// audiences. Tagged by path so a slow list is named in the output.
+const OTHER_LISTS = ['/api/ofp/orders', '/api/npd', '/api/npd/sample-pos', '/api/ofp/production-pos', '/api/quality/ncrs', '/api/quality/deviations', '/api/quality/inspections']
+function otherList(path, headers) {
+  const r = http.get(`${BASE}${path}?page=0&size=20`, { headers, tags: { name: 'other-list', list: path }, responseCallback: http.expectedStatuses(200, 403) })
+  check(r, { [`${path} 200 or 403`]: (x) => x.status === 200 || x.status === 403 })
+}
 
 const scenarios = {
   browse: {
@@ -56,6 +66,7 @@ export const options = {
     'http_req_failed{scenario:browse}': ['rate<0.01'],
     'http_req_duration{scenario:browse}': ['p(95)<800'],
     'http_req_duration{name:work-list}': ['p(95)<1000'],
+    'http_req_duration{name:other-list}': ['p(95)<1000'],
     'http_req_duration{name:dashboard}': ['p(95)<1000'],
     'http_req_duration{name:unread-count}': ['p(95)<300'],
     'http_req_failed{scenario:login}': ['rate<0.01'],
@@ -85,7 +96,9 @@ export function browse(tokens) {
   })
   sleep(THINK)
   group('work a list', () => {
-    if (!__ENV.SKIP_LIST) get(listPath, 'work-list')
+    if (!__ENV.SKIP_LIST && !NO_WORK_LIST.includes(USERS[idx])) get(listPath, 'work-list')
+    // the other paged lists, each as the audience that uses it; a role without the module gets 403 and skips it
+    if (!__ENV.SKIP_LIST) for (const path of OTHER_LISTS) otherList(path, headers)
     get('/api/documents', 'documents')
     get('/api/notifications', 'notifications')
   })
