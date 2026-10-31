@@ -10,3 +10,5 @@ Staging does not exist, so this is the local variant of 8p, not the sign-off run
 | Anonymous | 0 FAIL, 119 PASS, 1 WARN: `Cross-Origin-Resource-Policy` missing on `/api/auth/logout` and `/api/auth/forgot-password` (204s). Left as is: no cross-origin resource embedding is in play and the wrong value could break a split frontend host. Revisit at staging with the real origins. |
 
 **Not covered here (needs staging):** TLS and HSTS (only sent over HTTPS), cookie `Secure` over a real host, the container image scan, Front Door/WAF behaviour, ERGO-role scans (admin login needs a 2FA code), and authorization fuzzing. Cross-company access is covered by the test suite, not by ZAP, which has no notion of two tenants.
+
+**Re-run on the fixed build (same day):** customer (`buyer@acme.dev`) and ERGO management (`management@ergo.dev`) scans, each 0 FAIL, 119 PASS, 1 WARN: the same missing `Cross-Origin-Resource-Policy` header (now on authenticated 200s too). The 500 on `/api/documents/{id}/replace` is gone. The first re-run attempt hit the old backend process (it still held port 8080), so the numbers above come from the second one, after the old process was stopped.
