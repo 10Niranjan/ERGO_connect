@@ -717,6 +717,13 @@ class DocumentsTests {
 		return result;
 	}
 
+	@Test
+	void anUploadEndpointCalledWithoutAMultipartBodyIsABadRequestNotAServerError() throws Exception {
+		mvc.perform(post("/api/documents/{id}/replace", 1L).header(HttpHeaders.AUTHORIZATION, buyerA.bearer())
+			.contentType(MediaType.APPLICATION_JSON).content("{}"))
+			.andExpect(status().isBadRequest());
+	}
+
 	private ResultActions replace(long documentId, Login user, String name) throws Exception {
 		return mvc.perform(multipart("/api/documents/{id}/replace", documentId)
 			.file(new MockMultipartFile("file", name, "application/octet-stream", name.getBytes(StandardCharsets.UTF_8)))

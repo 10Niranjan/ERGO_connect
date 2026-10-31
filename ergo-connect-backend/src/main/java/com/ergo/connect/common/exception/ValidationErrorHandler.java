@@ -71,6 +71,12 @@ class ValidationErrorHandler extends ResponseEntityExceptionHandler {
 	}
 
 	/** Role refusals from {@code @PreAuthorize} are RFC 9457 documents like every other error. */
+	/** An upload endpoint called without a multipart body (ZAP, 8p) is the caller's mistake, not a server error. */
+	@ExceptionHandler(org.springframework.web.multipart.MultipartException.class)
+	ProblemDetail notMultipart() {
+		return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Send the file as a multipart upload.");
+	}
+
 	@ExceptionHandler(AccessDeniedException.class)
 	ProblemDetail forbidden() {
 		return ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "Your role may not do this.");
