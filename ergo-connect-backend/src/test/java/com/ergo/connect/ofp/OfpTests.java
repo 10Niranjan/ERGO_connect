@@ -895,8 +895,10 @@ class OfpTests {
 			.getContentAsString();
 		long shipmentId = ((Number) JsonPath.read(withShipment, "$.shipments[0].id")).longValue();
 
+		// the order moving on brings its shipments up with it (ARCHITECTURE.md §8 2026-10-31)
 		call(post("/api/ofp/orders/{id}/in-transit", orderId), ergoOfp, "{}")
-			.andExpect(jsonPath("$.currentStatus").value("IN_TRANSIT"));
+			.andExpect(jsonPath("$.currentStatus").value("IN_TRANSIT"))
+			.andExpect(jsonPath("$.shipments[0].status").value("IN_TRANSIT"));
 
 		// Delivered is refused without a POD on file
 		call(post("/api/ofp/orders/{id}/delivered", orderId), ergoOfp, "{}")
@@ -910,7 +912,8 @@ class OfpTests {
 			.andExpect(jsonPath("$.shipments[0].podFileName").value("pod.pdf"));
 
 		call(post("/api/ofp/orders/{id}/delivered", orderId), ergoOfp, "{}")
-			.andExpect(jsonPath("$.currentStatus").value("DELIVERED"));
+			.andExpect(jsonPath("$.currentStatus").value("DELIVERED"))
+			.andExpect(jsonPath("$.shipments[0].status").value("DELIVERED"));
 
 		call(post("/api/ofp/orders/{id}/close", orderId), ergoOfp, "{}")
 			.andExpect(jsonPath("$.currentStatus").value("CLOSED"));

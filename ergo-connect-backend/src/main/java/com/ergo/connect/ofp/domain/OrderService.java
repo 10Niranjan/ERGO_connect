@@ -525,13 +525,15 @@ public class OrderService {
 	/** SRS §14.6, Phase 4c: Dispatched -> In Transit, ERGO OFP/Admin only. Deliberately independent of any
 	 * shipment's own {@code status} field (ARCHITECTURE.md §8 2026-09-29): updating a shipment row never moves
 	 * {@code orders.currentStatus} by itself, the same "child rows never drive the order's own status" shape every
-	 * other transition in this module already follows. */
+	 * other transition in this module already follows. The reverse does hold (ARCHITECTURE.md §8 2026-10-31): the
+	 * order moving on brings its shipments that are behind up to the same status. */
 	public OrderDetail markInTransit(long id, String comment) {
 		CurrentUser me = CurrentUser.get();
 		Order order = visible(me, id);
 		require(OrderAction.MARK_IN_TRANSIT, me, order);
 		reasonIfGiven(comment);
 		order.currentStatus = OrderStatus.IN_TRANSIT;
+		advanceShipments(order, OrderStatus.IN_TRANSIT, me);
 		statusChanged(order, "In transit");
 		return view(me, order);
 	}
@@ -550,8 +552,19 @@ public class OrderService {
 		}
 		reasonIfGiven(comment);
 		order.currentStatus = OrderStatus.DELIVERED;
+		advanceShipments(order, OrderStatus.DELIVERED, me);
 		notifier.send(NotificationKind.DELIVERY_CONFIRMED, "ofp", order.id, order.orderNumber, null, ergoAndCustomer(order));
 		return view(me, order);
+	}
+
+	/** Brings every shipment of the order that is behind up to {@code target}; field changes are audited by the entity listener. */
+	private void advanceShipments(Order order, OrderStatus target, CurrentUser me) {
+		for (Shipment shipment : shipments.findByOrderIdOrderById(order.id)) {
+			if (SHIPMENT_RANK.get(shipment.status) < SHIPMENT_RANK.get(target)) {
+				shipment.status = target;
+				shipment.updatedByUserId = me.userId();
+			}
+		}
 	}
 
 	/** At least one {@code shipments} row for this order has a POD document attached. */
