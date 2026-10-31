@@ -104,10 +104,12 @@ public class AuditLogService {
 
 	/** The audit trail of one record, oldest first. Callers decide who may read it. */
 	public List<AuditEntry> history(String module, String entity, long recordId) {
+		// customers and suppliers are not told that an ERGO admin acted as one of their users
+		boolean ergoViewer = CurrentUser.find().map(u -> u.companyType() == com.ergo.connect.common.security.CompanyType.ERGO).orElse(true);
 		return jdbc.query("""
 				SELECT a.changed_at,
 				       u.first_name || ' ' || u.last_name
-				         || CASE WHEN a.acting_admin_user_id IS NULL THEN ''
+				         || CASE WHEN a.acting_admin_user_id IS NULL OR NOT ? THEN ''
 				                 ELSE ' (by Super Admin ' || ad.first_name || ' ' || ad.last_name || ')' END AS user_name,
 				       a.changed_by_role_code, a.event_type,
 				       a.field_name, a.old_value, a.new_value, a.action_reason, a.source_channel
@@ -116,7 +118,7 @@ public class AuditLogService {
 				WHERE a.module_name = ? AND a.entity_name = ? AND a.record_id = ?
 				ORDER BY a.audit_log_id""", (rs, n) -> new AuditEntry(rs.getObject(1, OffsetDateTime.class).toInstant(),
 				rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5), rs.getString(6), rs.getString(7),
-				rs.getString(8), rs.getString(9)), module, entity, recordId);
+				rs.getString(8), rs.getString(9)), ergoViewer, module, entity, recordId);
 	}
 
 	private static String moduleOf(Class<?> entity) {

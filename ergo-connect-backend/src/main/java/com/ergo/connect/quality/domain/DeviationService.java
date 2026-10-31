@@ -745,9 +745,9 @@ public class DeviationService {
 				"SELECT COALESCE(MAX(version_no), 0) + 1 FROM deviation_versions WHERE deviation_id = ?", Integer.class,
 				d.id);
 		jdbc.update(
-				"INSERT INTO deviation_versions (deviation_id, version_no, snapshot, recorded_by_user_id) "
-						+ "VALUES (?, ?, ?::jsonb, ?)",
-				d.id, nextVersion, json.writeValueAsString(snapshot), me.userId());
+				"INSERT INTO deviation_versions (deviation_id, version_no, snapshot, recorded_by_user_id, "
+						+ "acting_admin_user_id) VALUES (?, ?, ?::jsonb, ?, ?)",
+				d.id, nextVersion, json.writeValueAsString(snapshot), me.userId(), me.impersonatorId());
 	}
 
 	private record DeviationSnapshot(long id, String deviationNumber, LinkedModule linkedModule, long linkedRecordId,

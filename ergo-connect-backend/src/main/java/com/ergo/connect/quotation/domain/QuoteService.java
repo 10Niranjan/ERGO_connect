@@ -431,10 +431,12 @@ public class QuoteService {
 			.toArray(Long[]::new);
 		jdbc.update("""
 				INSERT INTO supplier_quote_versions (supplier_quote_id, version_no, snapshot, document_ids,
-				                                     submitted_by_user_id, reopen_reason, reopened_by_user_id, reopened_at)
-				VALUES (?, ?, ?::jsonb, ?, ?, ?, ?, ?)""", quote.id, quote.currentVersion,
+				                                     submitted_by_user_id, reopen_reason, reopened_by_user_id, reopened_at,
+				                                     acting_admin_user_id)
+				VALUES (?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?)""", quote.id, quote.currentVersion,
 				json.writeValueAsString(data(quote)), files, me.userId(), quote.reopenReason, quote.reopenedByUserId,
-				quote.reopenedAt == null ? null : OffsetDateTime.ofInstant(quote.reopenedAt, ZoneOffset.UTC));
+				quote.reopenedAt == null ? null : OffsetDateTime.ofInstant(quote.reopenedAt, ZoneOffset.UTC),
+				me.impersonatorId());
 		quote.reopenReason = null;
 		quote.reopenedByUserId = null;
 		quote.reopenedAt = null;

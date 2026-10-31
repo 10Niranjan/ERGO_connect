@@ -60,6 +60,9 @@ class Document {
 	@Column(updatable = false)
 	Long uploadedByUserId;
 
+	/** Set on insert by AuditEntityListener: the Super Admin who acted as this user, else null. */
+	Long actingAdminUserId;
+
 	@Column(updatable = false)
 	Long uploadedByCompanyId;
 

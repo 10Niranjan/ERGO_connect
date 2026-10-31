@@ -82,6 +82,8 @@ public class AuthService {
 
 	private final LoginRateLimiter rateLimiter;
 
+	private final LoginAsRateLimiter loginAsRateLimiter;
+
 	private final ChangePasswordRateLimiter changePasswordRateLimiter;
 
 	private final PasswordResetTokenStore resetTokens;
@@ -124,6 +126,7 @@ public class AuthService {
 
 	AuthService(UserRepository users, CompanyRepository companies, SessionStore sessions, RoleCatalog roleCatalog,
 			PasswordEncoder passwordEncoder, AccessTokens accessTokens, LoginRateLimiter rateLimiter,
+			LoginAsRateLimiter loginAsRateLimiter,
 			ChangePasswordRateLimiter changePasswordRateLimiter, PasswordResetTokenStore resetTokens,
 			ForgotPasswordRateLimiter forgotPasswordRateLimiter, PasswordResetRequestHandler resetRequestHandler,
 			PasswordResetMailer mailer, OtpCodeStore otpCodes, OtpRateLimiter otpRateLimiter, AuditLogService audit,
@@ -135,6 +138,7 @@ public class AuthService {
 		this.passwordEncoder = passwordEncoder;
 		this.accessTokens = accessTokens;
 		this.rateLimiter = rateLimiter;
+		this.loginAsRateLimiter = loginAsRateLimiter;
 		this.changePasswordRateLimiter = changePasswordRateLimiter;
 		this.resetTokens = resetTokens;
 		this.forgotPasswordRateLimiter = forgotPasswordRateLimiter;
@@ -372,6 +376,7 @@ public class AuthService {
 		catch (ApiException e) {
 			throw ApiException.unprocessable("This user has no active role, so there is nothing to view");
 		}
+		loginAsRateLimiter.checkAndRecord(admin.id); // a stolen admin session cannot sweep every user
 		Instant now = Instant.now();
 		// the admin's own session must be live and currently acting as Super Admin (not just an older token saying so)
 		SessionStore.Session own = sessions.findLiveById(me.sessionId())
@@ -524,6 +529,9 @@ public class AuthService {
 			sessions.revoke(sessionToken);
 		}
 		if (shadowToken != null) {
+			// still open here means the admin's own logout did not already end and audit it
+			sessions.findActive(shadowToken).filter(s -> s.impersonatedBy() != null).ifPresent(s -> auditEnded(
+					users.findById(s.impersonatedBy()).orElseThrow(), s.userId(), "LOGOUT"));
 			sessions.revoke(shadowToken);
 		}
 	}

@@ -48,6 +48,9 @@ class NpdValidationDecision {
 
 	Long decidedByUserId;
 
+	/** Set on insert by AuditEntityListener: the Super Admin who acted as this user, else null. */
+	Long actingAdminUserId;
+
 	@CreationTimestamp
 	@Column(updatable = false)
 	Instant createdAt;

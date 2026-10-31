@@ -56,6 +56,9 @@ class Comment {
 	@Column(updatable = false)
 	Long createdByUserId;
 
+	/** Set on insert by AuditEntityListener: the Super Admin who acted as this user, else null. */
+	Long actingAdminUserId;
+
 	@Column(updatable = false)
 	Long createdByCompanyId;
 

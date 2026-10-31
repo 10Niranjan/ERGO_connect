@@ -282,6 +282,12 @@ class ShadowLoginTests {
 		Map<String, Object> first = rows.get(0);
 		assertThat(audit.history((String) first.get("module_name"), (String) first.get("entity_name"), rfq))
 			.anySatisfy(entry -> assertThat(entry.user()).contains("(by Super Admin " + admin.firstName));
+		// customers and suppliers reading the trail are not told an ERGO admin acted as their user
+		CurrentUser.runAs(new CurrentUser(buyer.id, customer.id, CUSTOMER, Role.CUSTOMER_RFQ, 0L), () -> {
+			assertThat(audit.history((String) first.get("module_name"), (String) first.get("entity_name"), rfq))
+				.noneSatisfy(entry -> assertThat(entry.user()).contains("Super Admin"));
+			return null;
+		});
 
 		// the same call by the customer themselves carries no admin
 		String own = accounts.bearer(buyer);
@@ -321,6 +327,21 @@ class ShadowLoginTests {
 		mvc.perform(json(post("/api/auth/switch-role"), "{\"role\": \"CUSTOMER_OFP\"}", again)).andExpect(status().isForbidden());
 		mvc.perform(json(post("/api/users/{id}/login-as", target.id), "{\"reason\": \"" + REASON + "\"}", again))
 			.andExpect(status().isForbidden());
+	}
+
+	@Test
+	void approvalAndDecisionActionsAreRefusedInsideAViewHoweverThePathIsSpelled() throws Exception {
+		User target = accounts.user(customer, Role.CUSTOMER_RFQ);
+		String shadow = Accounts.bearer(start(target.id));
+		for (String path : List.of("/api/deviations/1/approve", "/api/deviations/1/approve/", "/api/deviations/1/APPROVE",
+				"/api/customer-quotes/1/respond", "/api/npd/approvals/1/decide",
+				"/api/inspections/1/pass", "/api/documents/1/reject", "/api/quotes/1/accept")) {
+			mvc.perform(json(post(java.net.URI.create(path)), "{}", shadow)).andExpect(status().isForbidden())
+				.andExpect(content().string(org.hamcrest.Matchers.containsString("approval")));
+		}
+		// the admin's own session is not caught by the filter (the call reaches the module and is a plain 404/403 there)
+		assertThat(mvc.perform(json(post("/api/deviations/999999/approve"), "{}", adminBearer)).andReturn().getResponse()
+			.getContentAsString()).doesNotContain("approval decisions are off limits");
 	}
 
 	// ---- how it ends

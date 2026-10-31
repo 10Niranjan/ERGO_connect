@@ -15,6 +15,8 @@ import org.hibernate.event.spi.PostInsertEvent;
 import org.hibernate.event.spi.PostInsertEventListener;
 import org.hibernate.event.spi.PostUpdateEvent;
 import org.hibernate.event.spi.PostUpdateEventListener;
+import org.hibernate.event.spi.PreInsertEvent;
+import org.hibernate.event.spi.PreInsertEventListener;
 import org.hibernate.persister.entity.EntityPersister;
 import org.springframework.stereotype.Component;
 import org.springframework.util.ReflectionUtils;
@@ -27,7 +29,7 @@ import jakarta.persistence.EntityManagerFactory;
  * as explicit events.
  */
 @Component
-class AuditEntityListener implements PostInsertEventListener, PostUpdateEventListener, PostDeleteEventListener {
+class AuditEntityListener implements PreInsertEventListener, PostInsertEventListener, PostUpdateEventListener, PostDeleteEventListener {
 
 	private static final String MASK = "***";
 
@@ -38,9 +40,28 @@ class AuditEntityListener implements PostInsertEventListener, PostUpdateEventLis
 		EventListenerRegistry registry = emf.unwrap(SessionFactoryImplementor.class)
 			.getServiceRegistry()
 			.requireService(EventListenerRegistry.class);
+		registry.appendListeners(EventType.PRE_INSERT, this);
 		registry.appendListeners(EventType.POST_INSERT, this);
 		registry.appendListeners(EventType.POST_UPDATE, this);
 		registry.appendListeners(EventType.POST_DELETE, this);
+	}
+
+	/** Stamps the Super Admin on rows that carry an actingAdminUserId property, when the insert is an act-as. */
+	@Override
+	public boolean onPreInsert(PreInsertEvent event) {
+		Long admin = com.ergo.connect.common.security.CurrentUser.find()
+			.map(com.ergo.connect.common.security.CurrentUser::impersonatorId)
+			.orElse(null);
+		if (admin != null) {
+			String[] names = event.getPersister().getPropertyNames();
+			for (int i = 0; i < names.length; i++) {
+				if ("actingAdminUserId".equals(names[i])) {
+					event.getState()[i] = admin;
+					event.getPersister().setValue(event.getEntity(), i, admin);
+				}
+			}
+		}
+		return false;
 	}
 
 	@Override

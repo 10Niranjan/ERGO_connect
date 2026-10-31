@@ -38,6 +38,9 @@ class NpdPromptResponse {
 
 	Long respondedByUserId;
 
+	/** Set on insert by AuditEntityListener: the Super Admin who acted as this user, else null. */
+	Long actingAdminUserId;
+
 	Instant respondedAt;
 
 	@CreationTimestamp

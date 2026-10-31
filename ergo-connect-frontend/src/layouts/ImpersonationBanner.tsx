@@ -12,8 +12,9 @@ export function ImpersonationBanner({ session }: { session: Session }) {
   if (!view) return null
 
   async function exit() {
-    await endImpersonation().unwrap().catch(() => undefined)
-    void navigate('/admin/users')
+    // stay on failure: leaving would look like the view ended while the server still has it open
+    const ended = await endImpersonation().unwrap().then(() => true, () => false)
+    if (ended) void navigate('/admin/users')
   }
 
   return (
