@@ -4,8 +4,8 @@ import { execFileSync } from 'node:child_process'
 import { API, PERSONA, attempt, files, get, getAll, log, upload } from './lib.mjs'
 
 export async function run(ctx) {
-  const rfqs = Object.fromEntries((await get('admin', '/rfqs')).map((r) => [r.partNumber, r.id]))
-  const npds = Object.fromEntries((await get('npdLead', '/npd')).map((n) => [n.partNumber, n.id]))
+  const rfqs = Object.fromEntries((await getAll('admin', '/rfqs')).map((r) => [r.partNumber, r.id]))
+  const npds = Object.fromEntries((await getAll('npdLead', '/npd')).map((n) => [n.partNumber, n.id]))
   const orders = Object.fromEntries((await getAll('ofp', '/ofp/orders')).map((o) => [o.partNumber, o.id]))
   const asc = (a, b) => a - b
   const insp = (await getAll('quality', '/quality/inspections')).map((i) => i.id).sort(asc)

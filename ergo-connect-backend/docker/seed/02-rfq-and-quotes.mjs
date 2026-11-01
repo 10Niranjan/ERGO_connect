@@ -1,5 +1,5 @@
 // Phase 2: 15 RFQs at every status (draft -> closed), multi-supplier quotes, scoring, customer decisions, files.
-import { PERSONA, attempt, call, failures, files, get, inDays, log, upload } from './lib.mjs'
+import { PERSONA, attempt, call, failures, files, get, getAll, inDays, log, upload } from './lib.mjs'
 
 const code = async (list) => Object.fromEntries((await get('admin', `/master-data/${list}`)).map((e) => [e.code, e.id]))
 
@@ -61,7 +61,7 @@ export async function run(ctx) {
     materialLeadTimeWeeks: 3, toolingLeadTimeDays: 55, sampleLeadTimeDays: 25, productionLeadTimeDays: 40, validityDate: inDays(90),
   })
 
-  const existing = await get('admin', '/rfqs')
+  const existing = await getAll('admin', '/rfqs')
   const byPart = (part) => existing.find((r) => r.partNumber === part)
   const status = async (id) => (await get('admin', `/rfqs/${id}`)).status
   let created = 0

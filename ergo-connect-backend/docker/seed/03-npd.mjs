@@ -1,6 +1,6 @@
 // Phase 3: four NPD projects at different stages with activities (ERGO, supplier and customer owned), prompt
 // checklists, issues/risks and approvals, advanced through the real stage-gate rules.
-import { PERSONA, attempt, call, get, inDays, inspection, log } from './lib.mjs'
+import { PERSONA, attempt, call, get, getAll, inDays, inspection, log } from './lib.mjs'
 
 const STAGES = ['PLANNING', 'COMMERCIAL_SOURCING_READINESS', 'TOOLING_MATERIAL_RELEASE', 'TRIAL_PREPARATION', 'TRIAL_EXECUTION', 'FINAL_SAMPLE_READINESS', 'CUSTOMER_FEEDBACK', 'APPROVED_FOR_PRODUCTION_HANDOVER']
 
@@ -49,8 +49,8 @@ const PROJECTS = [
 export async function run(ctx) {
   const C = ctx.companyIds
   const companyOf = { precision: C.precision, shakti: C.shakti, acme: C.acme, bharat: C.bharat, sahyadri: C.sahyadri }
-  const rfqs = await get('admin', '/rfqs')
-  const existing = await get('npd', '/npd')
+  const rfqs = await getAll('admin', '/rfqs')
+  const existing = await getAll('npd', '/npd')
   const queue = await get('npd', '/npd/conversion-queue')
   const out = []
 

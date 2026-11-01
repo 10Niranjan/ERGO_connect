@@ -1,0 +1,93 @@
+# Client-demo stack for ONE small VM (Oracle Always Free / any Docker host). Not the Azure production path (infra/).
+# Runs the backend on the dev profile on purpose: documents live in Postgres (no Azure Blob), no SMTP needed, and the
+# demo personas + docker/seed-demo-data.mjs work. Secrets that dev hardcodes (JWT secret, DB password) are overridden
+# from .env below. Only Caddy is published to the internet; everything else stays on the private compose network.
+#
+#   cd deploy && cp .env.example .env && (edit .env) && docker compose -f docker-compose.prod.yml up -d --build
+name: ergo-demo
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ergo_connect
+      POSTGRES_USER: ergo
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ergo -d ergo_connect"]
+      interval: 5s
+      retries: 20
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+
+  clamav:
+    image: clamav/clamav:1.4
+    restart: unless-stopped
+    # Same scan settings as docker-compose.yml / docker/docker-compose.local.yml (without them clamd silently passes
+    # encrypted / macro payloads). Signatures come bundled in the image; freshclam is off, so no outbound dependency.
+    environment:
+      CLAMD_CONF_StreamMaxLength: 60M
+      CLAMD_CONF_MaxScanTime: 5000
+      CLAMD_CONF_AlertExceedsMax: "yes"
+      CLAMD_CONF_AlertEncryptedArchive: "yes"
+      CLAMD_CONF_AlertEncryptedDoc: "yes"
+      CLAMD_CONF_AlertOLE2Macros: "yes"
+      CLAMAV_NO_FRESHCLAMD: "true"
+    healthcheck:
+      # The image's own check: clamd answers PING. Loading signatures takes 1-3 minutes on first start.
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 120s
+
+  backend:
+    build: ../ergo-connect-backend
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ergo_connect
+      SPRING_DATASOURCE_USERNAME: ergo
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
+      SPRING_DATA_REDIS_HOST: redis
+      CLAMAV_HOST: clamav
+      ERGO_SECURITY_JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env (32+ random chars)}
+      # Browser origin = the public URL (same-origin through Caddy/nginx, so CORS is rarely exercised).
+      ERGO_CORS_ALLOWED_ORIGINS: https://${DOMAIN:?set DOMAIN in .env}
+      ERGO_FRONTEND_BASE_URL: https://${DOMAIN}
+      SPRINGDOC_API_DOCS_ENABLED: "false"
+      SPRINGDOC_SWAGGER_UI_ENABLED: "false"
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=60
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_started }
+      clamav: { condition: service_healthy }
+
+  frontend:
+    build: ../ergo-connect-frontend
+    restart: unless-stopped
+    depends_on: [backend]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [frontend]
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

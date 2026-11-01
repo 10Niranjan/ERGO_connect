@@ -21,7 +21,7 @@ export async function run(ctx) {
   const C = ctx.companyIds
   const co = { acme: C.acme, bharat: C.bharat, sahyadri: C.sahyadri, precision: C.precision, shakti: C.shakti }
   const modes = Object.fromEntries((await get('admin', '/master-data/shipment-modes')).map((m) => [m.code, m.id]))
-  const npdList = await get('npdLead', '/npd')
+  const npdList = await getAll('npdLead', '/npd')
   const out = []
 
   for (const o of ORDERS) {

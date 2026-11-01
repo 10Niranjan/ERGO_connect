@@ -3,7 +3,8 @@
 import { createHmac } from 'node:crypto'
 
 export const API = process.env.API_URL ?? 'http://localhost:8080/api'
-const SECRET = 'dev-only-jwt-secret-never-use-outside-local-dev' // application-dev.yml ergo.security.jwt-secret
+// application-dev.yml ergo.security.jwt-secret; SEED_JWT_SECRET must equal the backend's ERGO_SECURITY_JWT_SECRET when it is overridden (deploy/)
+const SECRET = process.env.SEED_JWT_SECRET ?? 'dev-only-jwt-secret-never-use-outside-local-dev'
 
 /** user id, company id, company type, active role. Ids 1..20 are DevDataSeeder's, in order; 21+ are made by phase 1. */
 export const PERSONA = {
@@ -34,7 +35,7 @@ export const PERSONA = {
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
 export function token(p) {
   const now = Math.floor(Date.now() / 1000)
-  const body = `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ iss: 'ergo-connect', sub: String(p.id), cid: p.cid, ctype: p.ctype, role: p.role, sid: 1, pwc: false, iat: now, exp: now + 7200 })}`
+  const body = `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ iss: 'ergo-connect', sub: String(p.id), cid: p.cid, ctype: p.ctype, role: p.role, sid: p.id, pwc: false, iat: now, exp: now + 7200 })}`
   return `${body}.${createHmac('sha256', SECRET).update(body).digest('base64url')}`
 }
 

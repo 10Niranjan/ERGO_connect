@@ -5,7 +5,7 @@ import { PERSONA, attempt, files, get, getAll, inDays, inspection, log, upload }
 export async function run(ctx) {
   const C = ctx.companyIds
   const orders = Object.fromEntries((await getAll('ofp', '/ofp/orders')).map((o) => [o.partNumber, o.id]))
-  const npds = Object.fromEntries((await get('npdLead', '/npd')).map((n) => [n.partNumber, n.id]))
+  const npds = Object.fromEntries((await getAll('npdLead', '/npd')).map((n) => [n.partNumber, n.id]))
   const cust = { 'ACM-KNUCKLE-01': C.acme, 'ACM-GEARBLANK-09': C.acme, 'ACM-SHAFT-20': C.acme, 'ACM-BUSH-21': C.acme, 'ACM-GASKET-23': C.acme, 'BHM-HUB-12': C.bharat, 'BHM-FLYWHEEL-22': C.bharat, 'SAH-SPRING-15': C.sahyadri, 'SAH-LINK-24': C.sahyadri }
   const sup = (part) => (part.startsWith('BHM') ? C.shakti : C.precision)
   const defect = (category, description, quantity, severity) => ({ defectCategory: category, defectDescription: description, defectQuantity: quantity, severity })
