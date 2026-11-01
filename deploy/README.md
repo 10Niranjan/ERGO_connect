@@ -6,7 +6,7 @@ no Azure/SMTP secrets are needed. Only Caddy (80/443) is exposed.
 
 ## 1. Server (once)
 1. Create the VM. In the cloud firewall / security list open TCP **22, 80, 443**; also on the VM: `sudo iptables -I INPUT -p tcp -m multiport --dports 80,443 -j ACCEPT` (Oracle images block them by default), then save the rules.
-2. Point a hostname at the VM's public IP (own domain A record, or a free `name.duckdns.org`).
+2. Hostname: no signup needed with sslip.io. For public IP 130.61.5.9 use `130-61-5-9.sslip.io` as DOMAIN (resolves to that IP; Caddy gets a real certificate for it). Or use your own domain / a `name.duckdns.org` pointing at the IP.
 3. Install Docker: `curl -fsSL https://get.docker.com | sh && sudo usermod -aG docker $USER` (log out and in).
 4. `git clone -b "sprint-5-(demo-branch-)" https://github.com/varadyadav02/ERGO_connect.git && cd ERGO_connect/deploy`
 
