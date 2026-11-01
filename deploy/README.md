@@ -43,3 +43,12 @@ docker compose -f docker-compose.prod.yml down            # stop (data kept);  a
 - Dev profile: the demo personas share the published password and 2FA is skipped. Share the URL only with the client, and wipe or `down` the stack after the demo.
 - No password-reset email (no SMTP). ClamAV signatures are the ones bundled in the image.
 - Redis/Postgres are not exposed; backups are manual (step 5).
+
+## Clean start / reset to clean
+A new VM is already clean: the Postgres volume is created empty, Flyway builds the schema, and the only rows are the 20 demo users (DevDataSeeder), base lookup lists, and whatever step 3 loads. No RFQs, quotes, orders or documents exist until someone creates them.
+To get back to exactly that state at any time (this DELETES all data and uploaded files):
+```bash
+docker compose -f docker-compose.prod.yml down -v      # -v drops the database and certificate volumes
+docker compose -f docker-compose.prod.yml up -d        # then repeat step 3
+```
+Dropping `caddy_data` forces a new certificate request (Let's Encrypt allows 5 per week per hostname); to keep the certificate, instead run `docker volume rm ergo-demo_pgdata` after `down`.
