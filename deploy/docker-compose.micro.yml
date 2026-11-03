@@ -1,0 +1,65 @@
+# Client-demo stack for a 1 GB VM (Oracle Always Free E2.1.Micro) with Postgres on Neon. Variant of docker-compose.prod.yml:
+#   - NO postgres container (DB_URL points at Neon), NO clamav (needs ~1.5 GB RAM), NO on-box builds (images come from GHCR,
+#     built by .github/workflows/demo-images.yml). Backend, frontend, Redis and Caddy only.
+#   - MALWARE SCANNING IS OFF here (ERGO_CLAMAV_ENABLED=false, honoured only under the dev profile). Demo use only.
+# Untested on the real Micro: see "Variant B" in README.md. Memory is tight; swap is required.
+#
+#   cd deploy && cp micro.env.example .env && (edit .env) && docker compose -f docker-compose.micro.yml up -d
+name: ergo-micro
+
+services:
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    # Only the login rate limiter uses it; keep it tiny and never persist.
+    command: ["redis-server", "--maxmemory", "24mb", "--maxmemory-policy", "allkeys-lru", "--save", "", "--appendonly", "no"]
+    mem_limit: 48m
+
+  backend:
+    image: ghcr.io/${IMAGE_OWNER:-varadyadav02}/ergo-connect-backend:demo
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      # Neon: use the DIRECT (non-pooled) host, with ?sslmode=require, e.g.
+      # jdbc:postgresql://ep-xxx.ap-southeast-1.aws.neon.tech/neondb?sslmode=require
+      SPRING_DATASOURCE_URL: ${DB_URL:?set DB_URL in .env (JDBC URL of the Neon database)}
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:?set DB_USERNAME in .env}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: "5"
+      SPRING_DATA_REDIS_HOST: redis
+      ERGO_CLAMAV_ENABLED: "false"
+      ERGO_SECURITY_JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env (32+ random chars)}
+      ERGO_CORS_ALLOWED_ORIGINS: https://${DOMAIN:?set DOMAIN in .env}
+      ERGO_FRONTEND_BASE_URL: https://${DOMAIN}
+      SPRINGDOC_API_DOCS_ENABLED: "false"
+      SPRINGDOC_SWAGGER_UI_ENABLED: "false"
+      # 1 GB host: small heap, serial GC, small thread stacks. Raise -Xmx if the box has more RAM.
+      JAVA_TOOL_OPTIONS: -Xmx350m -XX:MaxMetaspaceSize=128m -XX:+UseSerialGC -Xss512k
+    mem_limit: 600m
+    depends_on:
+      redis: { condition: service_started }
+
+  frontend:
+    image: ghcr.io/${IMAGE_OWNER:-varadyadav02}/ergo-connect-frontend:demo
+    restart: unless-stopped
+    mem_limit: 48m
+    depends_on: [backend]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    mem_limit: 64m
+    depends_on: [frontend]
+
+volumes:
+  caddy_data:
+  caddy_config:

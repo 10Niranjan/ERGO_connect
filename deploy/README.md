@@ -29,7 +29,7 @@ Run `00-sessions.sql` before anything logs in. Logins: the demo users (`admin@er
 ## 4. Smoke test (do this the day before, then reboot the VM and repeat 3-5)
 1. `https://DOMAIN` loads the login page with a valid certificate.
 2. Log in as admin, a customer buyer, and a supplier; each sees only its own data (supplier never sees the customer).
-3. Upload a normal PDF to an RFQ: saves. Upload the EICAR test file (`X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*` in a .txt): **rejected** by malware scanning.
+3. Upload a normal PDF to an RFQ: saves. Upload the EICAR test file (`X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*` in a .txt): **rejected** by malware scanning. (Only with the full stack above. In Variant B scanning is OFF, so EICAR is accepted: skip this check.)
 4. Walk RFQ -> quote -> customer approval -> NPD -> order -> quality, checking the dashboards and the notification bell.
 5. `docker compose -f docker-compose.prod.yml logs --tail=100 backend` shows no ERROR lines.
 
@@ -52,3 +52,18 @@ docker compose -f docker-compose.prod.yml down -v      # -v drops the database a
 docker compose -f docker-compose.prod.yml up -d        # then repeat step 3
 ```
 Dropping `caddy_data` forces a new certificate request (Let's Encrypt allows 5 per week per hostname); to keep the certificate, instead run `docker volume rm ergo-demo_pgdata` after `down`.
+
+## Variant B: 1 GB VM (Oracle Always Free Micro) + Neon Postgres, malware scanning OFF
+For when no 4 GB host is available. **Untested on a real Micro**: memory is tight (about 1 GB total) and the CPU is slow (first backend start runs every Flyway migration and may take minutes). Files: `docker-compose.micro.yml`, `micro.env.example`.
+- **Scanning is OFF** (`ERGO_CLAMAV_ENABLED=false`, allowed only under the dev profile): uploaded files are not checked. Share the URL only with the client, wipe the data after, and never migrate this data into a real environment (nothing records which files went unscanned).
+- Nothing is built on the VM: `.github/workflows/demo-images.yml` pushes `ghcr.io/<owner>/ergo-connect-{backend,frontend}:demo`. Both packages must be Public (GitHub > Packages > package settings), or run `docker login ghcr.io` on the VM first.
+1. VM: ports 22/80/443 open (cloud list + `iptables`, as in section 1), Docker installed, and **2 GB swap**: `sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile && echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab`.
+2. Neon: create a free project and use the **direct (non-pooled)** connection details. `DB_URL` is a JDBC URL with `?sslmode=require`.
+3. `git clone -b sprint-5-demo https://github.com/varadyadav02/ERGO_connect.git && cd ERGO_connect/deploy && cp micro.env.example .env` and edit it (DOMAIN, DB_URL, DB_USERNAME, DB_PASSWORD, JWT_SECRET).
+4. `docker compose -f docker-compose.micro.yml pull && docker compose -f docker-compose.micro.yml up -d`, then `docker compose -f docker-compose.micro.yml logs -f backend` until it reports started.
+5. Base data (once, after the backend is healthy), against Neon and the running backend:
+```bash
+docker run --rm -i postgres:17-alpine psql "postgresql://USER:PASSWORD@NEON_HOST/DBNAME?sslmode=require" < ../ergo-connect-backend/docker/seed/00-sessions.sql
+docker run --rm --network ergo-micro_default -e API_URL=http://backend:8080/api -e SEED_JWT_SECRET="$(grep ^JWT_SECRET .env | cut -d= -f2-)" -v "$PWD/../ergo-connect-backend/docker:/s" -w /s node:22-alpine node seed-demo-data.mjs --only=1
+```
+6. Smoke test as in section 4 (skip the EICAR check). Neon suspends when idle, so the first request after a quiet spell is slow. Check `docker stats --no-stream` for memory headroom.
