@@ -11,6 +11,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
@@ -37,6 +38,7 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @Profile("!test")
+@ConditionalOnProperty(name = "ergo.clamav.enabled", havingValue = "true", matchIfMissing = true)
 class ClamAvVirusScanner implements VirusScanner {
 
 	private static final byte[] COMMAND = "zINSTREAM\0".getBytes(StandardCharsets.US_ASCII);
