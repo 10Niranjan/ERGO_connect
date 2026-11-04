@@ -34,8 +34,9 @@ services:
       SPRINGDOC_API_DOCS_ENABLED: "false"
       SPRINGDOC_SWAGGER_UI_ENABLED: "false"
       # 1 GB host: small heap, serial GC, small thread stacks. Raise -Xmx if the box has more RAM.
-      JAVA_TOOL_OPTIONS: -Xmx350m -XX:MaxMetaspaceSize=128m -XX:+UseSerialGC -Xss512k
-    mem_limit: 600m
+      # Metaspace 128m was too small: the first login (Lettuce/Netty classes) hit OutOfMemoryError: Metaspace.
+      JAVA_TOOL_OPTIONS: -Xmx350m -XX:MaxMetaspaceSize=256m -XX:+UseSerialGC -Xss512k
+    mem_limit: 700m
     depends_on:
       redis: { condition: service_started }
 
