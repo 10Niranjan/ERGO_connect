@@ -296,7 +296,8 @@ class StrictModuleSwitchTests {
 		call(post("/api/quality/inspections"), ergoQuality, inspection("OFP", order)).andExpect(status().isUnprocessableContent());
 		call(post("/api/quality/ncrs"), ergoQuality, ncr("OFP", order)).andExpect(status().isUnprocessableContent());
 		call(post("/api/quality/ncrs"), ergoQuality, ncr("NPD", project)).andExpect(status().isUnprocessableContent());
-		assertThat(count("SELECT count(*) FROM inspections WHERE linked_record_id IN (?, ?)", order, project)).isZero();
+		assertThat(count("SELECT count(*) FROM inspections WHERE (linked_module = 'OFP' AND linked_record_id = ?)"
+				+ " OR (linked_module = 'NPD' AND linked_record_id = ?)", order, project)).isZero();
 
 		// read-only is enough to link (the link changes Quality, it only reads NPD/OFP)
 		cap("NPD", "V");

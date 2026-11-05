@@ -60,6 +60,11 @@ class ModuleSwitchFacadeTests {
 	private static final Map<Class<?>, String> MODULES = Map.of(RfqApi.class, "RFQ", QuotationApi.class, "QUOTATION",
 			NpdApi.class, "NPD", OfpApi.class, "OFP", QualityApi.class, "QUALITY");
 
+	/** Facade methods whose record belongs to another module's switch than their facade's: the production order is
+	 * served by the NPD package but is an OFP record (ProductionPoService.inScope, ProductionPoSwitchTests). */
+	private static final Map<String, String> GOVERNED_BY = Map.of("NpdApi#productionPoPartiesVisibleToCaller(long)",
+			"OFP");
+
 	static {
 		// RFQ
 		rules(RfqApi.class, Rule.NOT_FOUND, "forErgo(long)", "forCustomer(long)", "numberOf(long)",
@@ -130,6 +135,7 @@ class ModuleSwitchFacadeTests {
 		}
 		assertThat(declared).as("a facade method was added or removed: classify it in ModuleSwitchFacadeTests.RULES, "
 				+ "and make it honour the module switch (docs/PERMISSIONS.md §9)").isEqualTo(new TreeSet<>(RULES.keySet()));
+		assertThat(declared).as("GOVERNED_BY names a method that no longer exists").containsAll(GOVERNED_BY.keySet());
 	}
 
 	@Test
@@ -139,26 +145,30 @@ class ModuleSwitchFacadeTests {
 				npdApi, OfpApi.class, ofpApi, QualityApi.class, qualityApi);
 		List<String> failures = new ArrayList<>();
 
-		for (Map.Entry<Class<?>, String> module : MODULES.entrySet()) {
-			Class<?> api = module.getKey();
+		for (String module : new TreeSet<>(MODULES.values())) {
 			for (String cap : List.of("V", "NV")) {
-				SwitchTestSupport.cap(jdbc, policy, module.getValue(), cap);
-				for (Method m : api.getDeclaredMethods()) {
-					Rule rule = RULES.get(key(api, m));
-					boolean applies = switch (rule) {
-						case NOT_FOUND, HIDDEN_EMPTY -> cap.equals("NV");
-						case WRITE, FROZEN_EMPTY -> true;
-					};
-					if (!applies) {
-						continue;
-					}
-					String outcome = call(caller, beans.get(api), m, rule);
-					if (outcome != null) {
-						failures.add("%s with %s = %s: %s".formatted(key(api, m), module.getValue(), cap, outcome));
+				SwitchTestSupport.cap(jdbc, policy, module, cap);
+				for (Class<?> api : MODULES.keySet()) {
+					for (Method m : api.getDeclaredMethods()) {
+						if (!GOVERNED_BY.getOrDefault(key(api, m), MODULES.get(api)).equals(module)) {
+							continue;
+						}
+						Rule rule = RULES.get(key(api, m));
+						boolean applies = switch (rule) {
+							case NOT_FOUND, HIDDEN_EMPTY -> cap.equals("NV");
+							case WRITE, FROZEN_EMPTY -> true;
+						};
+						if (!applies) {
+							continue;
+						}
+						String outcome = call(caller, beans.get(api), m, rule);
+						if (outcome != null) {
+							failures.add("%s with %s = %s: %s".formatted(key(api, m), module, cap, outcome));
+						}
 					}
 				}
 			}
-			SwitchTestSupport.cap(jdbc, policy, module.getValue(), "O");
+			SwitchTestSupport.cap(jdbc, policy, module, "O");
 		}
 		assertThat(failures).isEmpty();
 	}
