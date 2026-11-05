@@ -1,5 +1,7 @@
 # syntax=docker/dockerfile:1
-FROM maven:3.9-eclipse-temurin-21 AS build
+# Build stages run on the CI runner's own CPU (the jar and the agent are arch-independent); only the final stage is
+# per-platform, so the arm64 image (Oracle Ampere A1, free tier) needs emulation just for addgroup.
+FROM --platform=$BUILDPLATFORM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /build
 COPY pom.xml .
 RUN mvn -B dependency:go-offline
@@ -8,7 +10,7 @@ RUN mvn -B -DskipTests package
 
 # Application Insights Java agent (8m). Pinned, and checked against the sha256 Maven Central publishes for it.
 # Bump both together. It is only switched on by the deploy (JAVA_TOOL_OPTIONS + APPLICATIONINSIGHTS_CONNECTION_STRING).
-FROM alpine:3.22 AS agent
+FROM --platform=$BUILDPLATFORM alpine:3.22 AS agent
 ARG AI_AGENT_VERSION=3.7.10
 ARG AI_AGENT_SHA256=93a70c8f5d364c7e777f6c4d1b235dba91aef8448bd3fa94359f1d7f3e2eb0ec
 RUN wget -q -O /applicationinsights-agent.jar       "https://repo1.maven.org/maven2/com/microsoft/azure/applicationinsights-agent/${AI_AGENT_VERSION}/applicationinsights-agent-${AI_AGENT_VERSION}.jar"  && echo "${AI_AGENT_SHA256}  /applicationinsights-agent.jar" | sha256sum -c -

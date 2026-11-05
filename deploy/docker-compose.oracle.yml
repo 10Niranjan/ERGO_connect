@@ -1,4 +1,4 @@
-# PRODUCTION stack for one Oracle Cloud VM (x86/AMD shape, 2 GB+ RAM), ARCHITECTURE.md §8 2026-11-05. Not the demo files.
+# PRODUCTION stack for one Oracle Cloud VM (free-tier Ampere A1 arm64, or any x86 shape; 2 GB+ RAM), ARCHITECTURE.md §8 2026-11-05. Not the demo files.
 #   - prod profile: real logins (no demo users), 2FA, forgot-password email (SMTP required), Swagger off.
 #   - Postgres runs on this VM and also holds the uploaded documents (ERGO_STORAGE_TYPE=postgres); backups: backup.sh.
 #     Three DB logins (db-init/10-roles.sh): the app connects as ergo_app (rows only), Flyway as ergo_owner.
