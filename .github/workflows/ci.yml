@@ -5,6 +5,11 @@ on:
   pull_request:
   # deploy.yml gates on this exact workflow rather than re-implementing it (Phase 8l)
   workflow_call:
+    inputs:
+      # true = a missing NVD_API_KEY fails the run (callers whose output reaches production: demo-images.yml)
+      require_cve_gate:
+        type: boolean
+        default: false
     secrets:
       NVD_API_KEY:
         required: false
@@ -67,11 +72,11 @@ jobs:
       # and add it as the repo secret NVD_API_KEY to turn this gate on (ARCHITECTURE.md §8, Phase 8a).
       # Skipping is fine for a push/PR, but not for a deploy (called from deploy.yml, where github.event_name is
       # the caller's workflow_dispatch): a green deploy run must mean the Java CVE gate really ran (Phase 8l).
-      - if: env.NVD_API_KEY == '' && github.event_name == 'workflow_dispatch'
+      - if: env.NVD_API_KEY == '' && (github.event_name == 'workflow_dispatch' || inputs.require_cve_gate)
         run: |
-          echo "::error::NVD_API_KEY is not set, so the backend CVE gate cannot run - refusing to let a deploy through without it."
+          echo "::error::NVD_API_KEY is not set, so the backend CVE gate cannot run - refusing to let a deploy or production image through without it."
           exit 1
-      - if: env.NVD_API_KEY == '' && github.event_name != 'workflow_dispatch'
+      - if: env.NVD_API_KEY == '' && !(github.event_name == 'workflow_dispatch' || inputs.require_cve_gate)
         run: echo "::warning::NVD_API_KEY repo secret is not set - skipping the CVE gate for this run. See the comment on this step in .github/workflows/ci.yml."
       - if: env.NVD_API_KEY != ''
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4

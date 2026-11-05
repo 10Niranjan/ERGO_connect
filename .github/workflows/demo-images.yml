@@ -1,9 +1,10 @@
 name: Demo images
 
-# Builds the backend and frontend images for the one-small-VM client demo (deploy/) and pushes them to GHCR, so the
-# VM only pulls them (a 1 GB Oracle Micro cannot run the Maven/npm builds). Not the Azure path (deploy.yml).
-# Manual only; run it from the sprint-5-demo branch. Images: ghcr.io/<owner>/ergo-connect-{backend,frontend}:demo
-# After the first run, set both packages to Public (GitHub > Packages > package settings) so the VM can pull without a token.
+# Builds the backend and frontend images for the Oracle VMs (deploy/: the client demo AND production,
+# docker-compose.oracle.yml) and pushes them to GHCR, so the VMs only pull them. Not the Azure path (deploy.yml).
+# Images: ghcr.io/<owner>/ergo-connect-{backend,frontend}:<commit sha> (plus :demo). Only built after ci.yml (tests,
+# lint, Dependency-Check) passes for the same commit. The packages stay PRIVATE: VMs `docker login ghcr.io` with a
+# read:packages token. Production pins IMAGE_TAG to a sha whose run here is fully green.
 on:
   workflow_dispatch:
   # A workflow_dispatch can only be started once the file is on the default branch, so also run on pushes to the demo branch.
@@ -23,7 +24,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Gate: the same build, test, lint and CVE jobs as every push (as deploy.yml does).
+  ci:
+    uses: ./.github/workflows/ci.yml
+    with:
+      require_cve_gate: true # no NVD_API_KEY = no images
+    secrets:
+      NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+
   build:
+    needs: ci
     runs-on: ubuntu-latest
     strategy:
       matrix:

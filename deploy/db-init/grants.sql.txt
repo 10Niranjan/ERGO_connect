@@ -1,0 +1,11 @@
+-- Ownership and grants for ergo_connect. Safe to re-run (also run after a restore, README "Production on Oracle" step 7).
+-- Named .txt so the image's init step does not run it on its own; 10-roles.sh runs it after creating the roles.
+ALTER DATABASE ergo_connect OWNER TO ergo_owner;
+ALTER SCHEMA public OWNER TO ergo_owner;
+REVOKE ALL ON SCHEMA public FROM PUBLIC;
+GRANT USAGE ON SCHEMA public TO ergo_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ergo_app;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ergo_app;
+-- Tables and sequences that later migrations create (as ergo_owner) get the same grants.
+ALTER DEFAULT PRIVILEGES FOR ROLE ergo_owner IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO ergo_app;
+ALTER DEFAULT PRIVILEGES FOR ROLE ergo_owner IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO ergo_app;

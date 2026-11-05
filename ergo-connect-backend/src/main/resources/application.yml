@@ -81,10 +81,15 @@ ergo:
     access-token-ttl: 15m # short: role/account changes reach every request within this window
     session-ttl: 12h      # a login lasts one working day at most
     password-reset-token-ttl: 30m
+  storage:
+    type: ${ERGO_STORAGE_TYPE:postgres} # postgres|azure (DocumentStorage, case-insensitive; anything else fails startup); prod defaults to azure
   # ClamAV sidecar (Phase 8i) - docker/docker-compose.local.yml runs the same image dev points at here; prod
   # overrides the host via CLAMAV_HOST once 8k/8l deploy the real sidecar.
   clamav:
-    enabled: ${ERGO_CLAMAV_ENABLED:true} # exactly true|false. false = demo-only no-scan (DisabledVirusScanner), dev profile only
+    enabled: ${ERGO_CLAMAV_ENABLED:true} # exactly true|false. false = no scanning (DisabledVirusScanner): dev, or with the flag below
+    # Outside dev, scanning may only be off when this is also true: a written-down risk acceptance (ARCHITECTURE.md
+    # §8 2026-11-05, Oracle production), so one stray env var can never switch scanning off.
+    unscanned-uploads-accepted: ${ERGO_CLAMAV_UNSCANNED_UPLOADS_ACCEPTED:false}
     host: ${CLAMAV_HOST:localhost}
     port: ${CLAMAV_PORT:3310}
     timeout-ms: 10000

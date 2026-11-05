@@ -1,0 +1,116 @@
+# PRODUCTION stack for one Oracle Cloud VM (x86/AMD shape, 2 GB+ RAM), ARCHITECTURE.md §8 2026-11-05. Not the demo files.
+#   - prod profile: real logins (no demo users), 2FA, forgot-password email (SMTP required), Swagger off.
+#   - Postgres runs on this VM and also holds the uploaded documents (ERGO_STORAGE_TYPE=postgres); backups: backup.sh.
+#     Three DB logins (db-init/10-roles.sh): the app connects as ergo_app (rows only), Flyway as ergo_owner.
+#   - MALWARE SCANNING IS OFF (client decision, accepted risk): uploads are stored unscanned.
+#   - App images from GHCR pinned to a commit (IMAGE_TAG), built by .github/workflows/demo-images.yml after CI passes.
+#     Third-party images are pinned by digest: bump them on purpose, never by a plain `pull`.
+# Runbook: "Production on Oracle" in README.md.
+#
+#   cd deploy && cp oracle.env.example .env && (edit .env) && docker compose -f docker-compose.oracle.yml up -d
+name: ergo-prod
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "5" }
+
+services:
+  postgres:
+    image: postgres:17.11-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
+    restart: unless-stopped
+    <<: *logging
+    environment:
+      POSTGRES_DB: ergo_connect
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_ADMIN_PASSWORD:?set DB_ADMIN_PASSWORD in .env}
+      # Read only by db-init/10-roles.sh on the very first start (empty volume).
+      DB_OWNER_PASSWORD: ${DB_OWNER_PASSWORD:?set DB_OWNER_PASSWORD in .env}
+      DB_APP_PASSWORD: ${DB_APP_PASSWORD:?set DB_APP_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ergo_connect"]
+      interval: 5s
+      retries: 20
+    networks: [data]
+    mem_limit: 384m
+
+  redis:
+    image: redis:8.10.3-alpine@sha256:21090af93f8324db2f0f0f4f38a7c60369d47d917e000c3423d89d2ae2883537
+    restart: unless-stopped
+    <<: *logging
+    # Login/upload rate limiters only: small, never persisted, reachable only from the backend.
+    command: ["redis-server", "--maxmemory", "32mb", "--maxmemory-policy", "allkeys-lru", "--save", "", "--appendonly", "no"]
+    networks: [data]
+    mem_limit: 64m
+
+  backend:
+    image: ghcr.io/${IMAGE_OWNER:-varadyadav02}/ergo-connect-backend:${IMAGE_TAG:?set IMAGE_TAG in .env (a commit sha)}
+    restart: unless-stopped
+    <<: *logging
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_URL: jdbc:postgresql://postgres:5432/ergo_connect
+      DB_USERNAME: ergo_app
+      DB_PASSWORD: ${DB_APP_PASSWORD}
+      SPRING_FLYWAY_USER: ergo_owner
+      SPRING_FLYWAY_PASSWORD: ${DB_OWNER_PASSWORD}
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env (openssl rand -base64 48)}
+      CORS_ALLOWED_ORIGINS: https://${DOMAIN:?set DOMAIN in .env}
+      FRONTEND_BASE_URL: https://${DOMAIN}
+      MAIL_HOST: ${MAIL_HOST:?set MAIL_HOST in .env}
+      MAIL_PORT: ${MAIL_PORT:?set MAIL_PORT in .env}
+      MAIL_USERNAME: ${MAIL_USERNAME:?set MAIL_USERNAME in .env}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:?set MAIL_PASSWORD in .env}
+      MAIL_FROM: ${MAIL_FROM:?set MAIL_FROM in .env}
+      ERGO_STORAGE_TYPE: postgres
+      ERGO_CLAMAV_ENABLED: "false"
+      ERGO_CLAMAV_UNSCANNED_UPLOADS_ACCEPTED: "true"
+      # First start only (empty database): creates the first admin. Remove both from .env after that first login.
+      ERGO_BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      ERGO_BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      JAVA_TOOL_OPTIONS: -Xmx640m -XX:MaxMetaspaceSize=256m -XX:+UseSerialGC -Xss512k
+    # data: Postgres/Redis; edge: nginx in front, and outbound SMTP (the data network has no internet route).
+    networks: [data, edge]
+    mem_limit: 1100m
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_started }
+
+  frontend:
+    image: ghcr.io/${IMAGE_OWNER:-varadyadav02}/ergo-connect-frontend:${IMAGE_TAG}
+    restart: unless-stopped
+    <<: *logging
+    networks: [edge]
+    mem_limit: 64m
+    depends_on: [backend]
+
+  caddy:
+    image: caddy:2.11.8-alpine@sha256:f6228111e5fafa1a5238258d0858e103f10599b8d1659a146e7726681a002bb9
+    restart: unless-stopped
+    <<: *logging
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [edge]
+    mem_limit: 64m
+    depends_on: [frontend]
+
+networks:
+  data:
+    internal: true
+  edge: {}
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

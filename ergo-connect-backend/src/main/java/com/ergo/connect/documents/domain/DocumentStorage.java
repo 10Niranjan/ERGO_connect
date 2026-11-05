@@ -1,6 +1,6 @@
 package com.ergo.connect.documents.domain;
 
-import org.springframework.context.annotation.Profile;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -10,10 +10,10 @@ import org.springframework.stereotype.Component;
  * ARCHITECTURE.md §8 2026-10-02: Azure Blob Storage + virus scanning is deferred to Phase 8 hardening; this interface
  * keeps that swap cheap). {@link PostgresDocumentStorage} reproduces today's {@code document_contents} behavior
  * exactly (same table, no size check here - the 50MB cap is enforced upstream by Spring's multipart config,
- * {@code application.yml}, before bytes ever reach this layer). {@link AzureBlobDocumentStorage} is the real thing
- * (Phase 8h); it only runs under the {@code prod} profile, same convention as {@code RequireMailInProd} and
- * {@code SecurityProperties.jwtSecret} - everywhere else (dev, test, CI's Testcontainers suite) keeps using Postgres
- * so no real Azure credentials are ever needed to run {@code ./mvnw verify}.
+ * {@code application.yml}, before bytes ever reach this layer). {@link AzureBlobDocumentStorage} is the Azure one
+ * (Phase 8h). {@code ergo.storage.type} picks exactly one: {@code postgres} (default; dev, test and the Oracle
+ * production VM, ARCHITECTURE.md §8 2026-11-05) or {@code azure} (the prod profile's default, for the infra/ Bicep
+ * path). Any other value leaves no bean and startup fails closed.
  */
 public interface DocumentStorage {
 
@@ -26,7 +26,7 @@ public interface DocumentStorage {
 }
 
 @Component
-@Profile("!prod")
+@ConditionalOnProperty(name = "ergo.storage.type", havingValue = "postgres")
 class PostgresDocumentStorage implements DocumentStorage {
 
 	private final JdbcTemplate jdbc;

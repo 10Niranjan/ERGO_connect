@@ -10,7 +10,7 @@ import com.azure.storage.blob.BlobServiceVersion;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Profile;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -31,7 +31,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * not a fallback; falling back to an immediate action with no transaction is a safety net, not an expected case.
  */
 @Component
-@Profile("prod")
+@ConditionalOnProperty(name = "ergo.storage.type", havingValue = "azure")
 class AzureBlobDocumentStorage implements DocumentStorage {
 
 	private static final Logger log = LoggerFactory.getLogger(AzureBlobDocumentStorage.class);
