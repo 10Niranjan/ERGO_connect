@@ -10,6 +10,11 @@ RUN npm run build
 # Runs as the image's built-in non-root "nginx" user, which can't bind <1024 - nginx.conf
 # listens on 8080 to match (security-reviewer L2).
 FROM nginxinc/nginx-unprivileged:1.30-alpine
+# The base image lags Alpine's security fixes (Trivy gate in demo-images.yml: brotli, curl, expat, zlib, 2026-11-06), so
+# pull the patched packages at build time, then drop back to the base image's non-root user (uid 101 "nginx").
+USER root
+RUN apk upgrade --no-cache
+USER 101
 COPY --from=build /build/dist /usr/share/nginx/html
 # A template, not a static conf: the base image's entrypoint envsubst's it into
 # conf.d/default.conf on container start, substituting only real container env vars (nginx's

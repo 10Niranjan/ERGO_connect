@@ -16,7 +16,8 @@ ARG AI_AGENT_SHA256=93a70c8f5d364c7e777f6c4d1b235dba91aef8448bd3fa94359f1d7f3e2e
 RUN wget -q -O /applicationinsights-agent.jar       "https://repo1.maven.org/maven2/com/microsoft/azure/applicationinsights-agent/${AI_AGENT_VERSION}/applicationinsights-agent-${AI_AGENT_VERSION}.jar"  && echo "${AI_AGENT_SHA256}  /applicationinsights-agent.jar" | sha256sum -c -
 
 FROM eclipse-temurin:21-jre-alpine
-RUN addgroup -S ergo && adduser -S ergo -G ergo
+# Pull Alpine's patched packages: the base image lags them and the Trivy image gate fails on fixable HIGH/CRITICAL OS CVEs.
+RUN apk upgrade --no-cache && addgroup -S ergo && adduser -S ergo -G ergo
 WORKDIR /app
 COPY --from=build /build/target/ergo-connect-backend-*.jar app.jar
 COPY --from=agent /applicationinsights-agent.jar applicationinsights-agent.jar
