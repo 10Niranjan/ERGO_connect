@@ -60,6 +60,9 @@ services:
       SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE: 25MB
       SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE: 26MB
       ERGO_SECURITY_UPLOAD_RATE_LIMIT_MAX_ATTEMPTS: "10"
+      # Pilot decision (ARCHITECTURE.md §8, 2026-11-06): ERGO Admin signs in with the password alone, no emailed code.
+      # Remove this line (default true) to make the 6-digit code mandatory for ERGO Admin again. The backend logs a warning at start.
+      ERGO_SECURITY_ADMIN_2FA_REQUIRED: "false"
       # Metaspace 128m was too small on the demo (first login hit OutOfMemoryError: Metaspace); keep 256m.
       # ExitOnOutOfMemoryError: a heap-exhausted JVM restarts cleanly (restart: unless-stopped) instead of limping on.
       JAVA_TOOL_OPTIONS: -Xmx350m -XX:MaxMetaspaceSize=256m -XX:+UseSerialGC -Xss512k -XX:+ExitOnOutOfMemoryError

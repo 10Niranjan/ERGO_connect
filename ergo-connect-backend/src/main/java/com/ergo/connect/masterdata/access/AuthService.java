@@ -109,8 +109,32 @@ public class AuthService {
 	@org.springframework.beans.factory.annotation.Value("${ergo.security.skip-otp:false}")
 	private boolean skipOtp;
 
+	/**
+	 * Default true: ERGO Admin must pass the emailed code on every login (Phase 8g). Set false only as a deliberate
+	 * pilot decision (ARCHITECTURE.md §8, 2026-11-06): the admin then signs in with the password alone. Unlike
+	 * skip-otp this works in prod; it logs a warning at every start and every other user's own 2FA is unaffected.
+	 */
+	@org.springframework.beans.factory.annotation.Value("${ergo.security.admin-2fa-required:true}")
+	private String adminTwoFactorSetting = "true";
+
+	private boolean adminTwoFactorRequired = true;
+
 	@org.springframework.beans.factory.annotation.Autowired
 	private org.springframework.core.env.Environment env;
+
+	/** Read as a string and accepted only as exactly "true" or "false": a stray "off", "no" or "0" must never turn admin
+	 * 2FA off by accident (Spring's boolean conversion would), and a bad value stops the start rather than guessing. */
+	@jakarta.annotation.PostConstruct
+	void applyAdminTwoFactorSetting() {
+		String value = adminTwoFactorSetting == null ? "" : adminTwoFactorSetting.strip();
+		if (!value.equals("true") && !value.equals("false")) {
+			throw new IllegalStateException("ergo.security.admin-2fa-required must be exactly true or false, not '" + value + "'");
+		}
+		adminTwoFactorRequired = value.equals("true");
+		if (!adminTwoFactorRequired) {
+			log.warn("ergo.security.admin-2fa-required is OFF: ERGO Admin logs in with the password alone, no emailed code.");
+		}
+	}
 
 	/** Fail closed: the flag disables mandatory Super Admin 2FA, so it may only ever be on in the dev profile. */
 	@jakarta.annotation.PostConstruct
@@ -179,11 +203,12 @@ public class AuthService {
 		user.lockedUntil = null;
 		// checked here, not just at grant time (security review finding M1): a flag set only when ERGO_ADMIN is
 		// granted misses any row that predates this feature or was granted outside UserAdminService/AdminBootstrapRunner
-		if (!user.twoFactorEnabled && user.roles.contains(Role.ERGO_ADMIN)) {
+		boolean adminWithoutCode = !adminTwoFactorRequired && user.roles.contains(Role.ERGO_ADMIN);
+		if (!user.twoFactorEnabled && user.roles.contains(Role.ERGO_ADMIN) && !adminWithoutCode) {
 			user.twoFactorEnabled = true;
 			audit.record(User.class, user.id, "TWO_FACTOR_ENABLED", null, null, null);
 		}
-		if (user.twoFactorEnabled && !skipOtp) {
+		if (user.twoFactorEnabled && !skipOtp && !adminWithoutCode) {
 			// no session yet - credentials proved identity, but the login isn't complete until verifyOtp(). The IP
 			// slot is deliberately NOT released here (security review finding L4): a password holder could
 			// otherwise call /login over and over at no cost, each time emailing the victim's inbox a fresh code.
@@ -192,6 +217,16 @@ public class AuthService {
 			return LoginResult.otpChallenge();
 		}
 		rateLimiter.release(ip); // a successful login shouldn't cost this shared IP one of its attempts
+		if (adminWithoutCode) {
+			// the emailed code used to make every admin sign-in visible: leave an audit row, a log line and a notice instead
+			log.warn("ERGO Admin {} signed in from {} WITHOUT the emailed code (ergo.security.admin-2fa-required=false)",
+					user.email, ip);
+			CurrentUser.runAs(new CurrentUser(user.id, user.companyId, CompanyType.ERGO, Role.ERGO_ADMIN, 0L), () -> {
+				audit.record(User.class, user.id, "LOGIN_WITHOUT_SECOND_FACTOR", "ip", null, ip);
+				return null;
+			});
+			mailer.sendAdminSignInNotice(user.email, ip);
+		}
 		return finishLogin(user, company, ip);
 	}
 

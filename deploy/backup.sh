@@ -2,7 +2,7 @@
 # Encrypted backup of the production database (docker-compose.oracle.yml, or Neon for docker-compose.micro-prod.yml). Documents live in Postgres, so this
 # one dump is everything. The dump is encrypted to BACKUP_GPG_RECIPIENT's public key as it streams: the plaintext never
 # touches the disk, and the VM cannot decrypt its own backups (the private key stays off the VM).
-# Each run: dump -> copy off the machine (BACKUP_RCLONE_REMOTE) -> prune local copies older than KEEP_DAYS (14) ->
+# Each run: dump -> copy off the machine (BACKUP_PAR_URL: Oracle write-only pre-authenticated request, or BACKUP_RCLONE_REMOTE) -> prune local copies older than KEEP_DAYS (14) ->
 # ping BACKUP_PING_URL. Any failure stops the run before the ping, so a missed ping means a failed backup.
 #
 # Nightly via cron (crontab -e), e.g.:  30 2 * * * /home/ubuntu/ERGO_connect/deploy/backup.sh >> /home/ubuntu/ergo-backup.log 2>&1
@@ -41,12 +41,23 @@ fi
 mv "$FILE.part" "$FILE"
 echo "$(date -u +%FT%TZ) backup written: $FILE ($(du -h "$FILE" | cut -f1))"
 
-if [ -n "$REMOTE" ]; then
+PAR_URL="$(env_value BACKUP_PAR_URL)"
+if [ -n "$PAR_URL" ]; then
+  # Oracle Object Storage pre-authenticated request (write-only, one bucket, expires): no account credentials on this VM.
+  # PAR_URL ends in /o/ ; the object name is appended. The bucket's retention rule stops overwrites and deletes.
+  case "$PAR_URL" in https://*/o/) ;; *) echo "BACKUP_PAR_URL must be an https URL ending in /o/" >&2; exit 1;; esac
+  # The URL is the secret: it goes to curl on stdin (printf is a shell builtin), never on a command line visible in ps.
+  # Content-MD5 makes Object Storage reject a corrupted upload. If a retry hits an object that already landed, the
+  # retention rule answers 4xx and the run reports failure (a false alarm: check the bucket before worrying).
+  printf 'url = "%s%s"\n' "$PAR_URL" "$(basename "$FILE")" \
+    | curl -K - -fsS -m 600 --retry 3 -o /dev/null -H "Content-MD5: $(openssl md5 -binary "$FILE" | base64)" -T "$FILE"
+  echo "$(date -u +%FT%TZ) uploaded off the machine (pre-authenticated request)"
+elif [ -n "$REMOTE" ]; then
   rclone copy "$FILE" "$REMOTE"
   echo "$(date -u +%FT%TZ) copied off the machine to $REMOTE"
 elif [ "${BACKUP_LOCAL_ONLY:-}" != 1 ]; then
   # No ping: a backup that never left the VM must not report success (set BACKUP_LOCAL_ONLY=1 to allow it by hand).
-  echo "BACKUP_RCLONE_REMOTE is empty: this backup exists only on this VM" >&2
+  echo "Neither BACKUP_PAR_URL nor BACKUP_RCLONE_REMOTE is set: this backup exists only on this VM" >&2
   exit 1
 fi
 

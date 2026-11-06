@@ -71,6 +71,19 @@ class PasswordResetMailer {
 				ttl.toMinutes()));
 	}
 
+	/** Only when ergo.security.admin-2fa-required is false: the emailed code used to make every admin sign-in visible in
+	 * the inbox, so each one is announced instead (best effort: a failed send never blocks the login). */
+	void sendAdminSignInNotice(String toEmail, String ip) {
+		if (mailSender.isEmpty()) {
+			log.warn("No MailSender configured - could not notify {} of an admin sign-in from {}", toEmail, ip);
+			return;
+		}
+		send(toEmail, "ERGO Connect admin sign-in", """
+				Your ERGO Connect ERGO Admin account just signed in with the password alone (no login code) from %s.
+
+				If this wasn't you, change the password immediately and contact your ERGO Connect administrator.""".formatted(ip));
+	}
+
 	/** Phase 8g security review finding M2: the owner should hear about this even though, unlike a password
 	 * change, nothing else about their session changes to tip them off. */
 	void sendTwoFactorDisabledNotice(String toEmail) {
