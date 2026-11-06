@@ -39,7 +39,15 @@ class SecurityHeadersTest {
 	void clickjackingAndMimeSniffingHeadersAreAlwaysPresent() throws Exception {
 		mvc.perform(get("/actuator/health"))
 			.andExpect(header().string("X-Content-Type-Options", "nosniff"))
-			.andExpect(header().string("X-Frame-Options", "DENY"));
+			.andExpect(header().string("X-Frame-Options", "DENY"))
+			.andExpect(header().string("Cache-Control", containsString("no-store")));
+	}
+
+	@Test
+	void apiResponsesSendNoReferrer() throws Exception {
+		// 8p F3: the one header SecurityConfig adds on top of the defaults (the web app's nginx sends the same)
+		mvc.perform(get("/actuator/health"))
+			.andExpect(header().string("Referrer-Policy", "no-referrer"));
 	}
 
 

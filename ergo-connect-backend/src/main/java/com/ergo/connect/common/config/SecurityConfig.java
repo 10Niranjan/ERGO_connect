@@ -27,6 +27,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
@@ -59,6 +60,8 @@ class SecurityConfig {
 
 		return http
 			.csrf(csrf -> csrf.disable()) // bearer tokens; the session cookie is SameSite=Strict and scoped to /api/auth
+			// the defaults stay (HSTS, nosniff, X-Frame-Options, no-store); the web app's nginx already sends this one (8p F3)
+			.headers(h -> h.referrerPolicy(r -> r.policy(ReferrerPolicy.NO_REFERRER)))
 			.sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 			.cors(c -> c.configurationSource(corsSource))
 			.authorizeHttpRequests(auth -> auth

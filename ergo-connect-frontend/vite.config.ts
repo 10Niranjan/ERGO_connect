@@ -13,4 +13,7 @@ export default defineConfig({
   server: {
     proxy: { '/api': 'http://localhost:8080' },
   },
+  // Every asset becomes a file: the CSP in nginx.conf.template allows no data: images or fonts, so an inlined small
+  // asset would be blocked without any build error.
+  build: { assetsInlineLimit: 0 },
 })

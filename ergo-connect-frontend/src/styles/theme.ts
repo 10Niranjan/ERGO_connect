@@ -120,7 +120,7 @@ export function buildTheme(mode: ColorMode, colors: ModeColors) {
     },
     shape: { borderRadius: 8 },
     typography: {
-      fontFamily: '"Inter", -apple-system, "Segoe UI", Roboto, Arial, sans-serif',
+      fontFamily: '"Inter Variable", -apple-system, "Segoe UI", Roboto, Arial, sans-serif',
       fontSize: 14,
       h1: { fontWeight: 600, letterSpacing: '-0.02em' },
       h2: { fontWeight: 600, letterSpacing: '-0.02em' },
