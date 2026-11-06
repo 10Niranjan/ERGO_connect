@@ -14,11 +14,9 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Gate: the same build, test, lint and CVE jobs every push runs. A missing NVD_API_KEY fails here (ci.yml).
+  # Gate: the same build, test, lint and CVE jobs every push runs (ci.yml; the Java CVE gate is Trivy, no secret).
   ci:
     uses: ./.github/workflows/ci.yml
-    secrets:
-      NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
 
   # Deliberately holds NO cloud credentials. It runs the project's dependency install, a third-party scanner and
   # (in the docker build) arbitrary build scripts; only the tarballs it produces cross into the credentialed job,
@@ -52,7 +50,7 @@ jobs:
           docker pull "$CLAMAV_IMAGE"
           docker save "$CLAMAV_IMAGE" -o images/clamav.tar
 
-      # OS packages only: Dependency-Check in ci.yml covers the Java dependencies, and Trivy's Java DB download alone
+      # OS packages only: Trivy's fs scan in ci.yml covers the Java dependencies, and Trivy's Java DB download alone
       # took ~5 minutes. Fixable HIGH/CRITICAL fails the build, so a vulnerable image is never pushed. Not covered:
       # anything a build-time dependency bakes into its own image.
       - name: Scan images

@@ -226,7 +226,7 @@ One-time only, for the very first deploy against an empty database — unset bot
 | `ERGO_BOOTSTRAP_ADMIN_EMAIL` | creates the first ERGO Admin login on startup if no company exists yet |
 | `ERGO_BOOTSTRAP_ADMIN_PASSWORD` | its temporary password (≤72 bytes, bcrypt's limit) — the account must change it on first login |
 
-CI-only secret: `NVD_API_KEY` (GitHub repo secret, not an app env var) turns on the Dependency-Check CVE gate — optional, CI skips it with a `::warning::` when unset.
+CI needs no secrets for the CVE gate: Trivy (keyless, digest-pinned) scans the Maven dependencies and the images (ARCHITECTURE.md §8, 2026-11-06).
 
 ## Non-negotiables
 

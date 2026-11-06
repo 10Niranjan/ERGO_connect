@@ -110,3 +110,20 @@ Three database logins (`db-init/10-roles.sh`, created on the first start): `post
 - No built-in alerting, only the monitor from step 5.
 - Flyway's `ergo_owner` password is in the backend's environment. Someone who could run code inside the backend could still alter the schema; SQL injection cannot, because it runs as `ergo_app`.
 - One VM: losing it means restoring from the off-machine backup.
+
+## Interim production: Micro VM + Neon (`docker-compose.micro-prod.yml`)
+Used while the free Ampere A1 VM is "Out of host capacity" (`ops/oracle-a1-retry.sh` keeps asking; Always Free A1 is now 2 OCPU / 12 GB total, Oracle docs checked 2026-11-06). Same prod profile as the Oracle stack, but Postgres is the Neon free plan: **1 GB per project for data AND uploaded documents** (writes fail when full), it suspends when idle (first request after a quiet spell is slow), and it is reached over the public internet. Malware scanning OFF. Upload limits are tighter here (25 MB files, 10 uploads per 5 min per user) so one user cannot fill Neon or the 350 MB heap; the app's own defaults (50 MB, 30) apply again on the Oracle VM.
+
+**Neon setup (once; this is how the `ergo-prod` project was built).** Create the roles and the database with SQL, **not** the Neon console/CLI: roles made there join `neon_superuser` (CREATEROLE, CREATEDB, BYPASSRLS), which defeats the least-privilege split. Connect as the project's default role (`neondb_owner`, from the console) and run, with the two passwords from `openssl rand -hex 24`:
+```sql
+CREATE ROLE ergo_owner LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '<owner>';
+CREATE ROLE ergo_app   LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '<app>';
+GRANT ergo_owner TO neondb_owner;  CREATE DATABASE ergo_connect OWNER ergo_owner;  REVOKE ergo_owner FROM neondb_owner;
+ALTER ROLE neondb_owner PASSWORD '<random, discard it>';   -- keep the default admin role off the VM and out of every file
+```
+Then connect to `ergo_connect` as `ergo_owner` and run `db-init/grants.sql.txt` minus its two `ALTER ... OWNER` lines. Check: `select rolname, rolsuper, rolcreaterole, rolcreatedb, rolbypassrls from pg_roles where rolname like 'ergo_%'` is all `f`, and `ergo_app` is a member of nothing. Turn on 2FA for the Neon account: anyone with the console can branch the database or reset passwords. Checked 2026-11-06: all 43 migrations apply as `ergo_owner` over `sslmode=verify-full` (JDBC) and `ergo_app` cannot DROP, TRUNCATE or disable triggers on `audit_logs`, create tables or `SET ROLE ergo_owner`.
+
+- **TLS:** `DB_URL` must use `sslmode=verify-full&sslfactory=org.postgresql.ssl.DefaultJavaSSLFactory&channelBinding=require` (`micro-prod.env.example`). `sslmode=require` encrypts but never checks the certificate, so anyone on the path could pose as Neon and capture the schema owner's password. For psql/pg_dump use `PGSSLMODE=verify-full PGSSLROOTCERT=system` (libpq 16+).
+- **Run it** like the Oracle stack (steps 2-4 there; `cp micro-prod.env.example .env`). Never run it beside the demo stack: the Micro VM has 1 GB. Measured locally: backend ~445 MB of its 700 MB cap after start. The step-4 forwarded-IP check has no `exec postgres` here: run `psql` with the Neon settings above, as `ergo_owner`, for `select ip_address, created_at from user_sessions order by session_id desc limit 3`.
+- **Backups:** `backup.sh` detects `DB_URL` in `.env` and dumps Neon (pinned Postgres client, verify-full, `ergo_owner` password from the environment) through the same gpg + rclone + ping pipeline, so cron and upgrade step 6 work unchanged. Neon's own history window is short and goes with the project: it is not a backup. Watch Neon's storage use (console) and act at ~70%.
+- **Hostname:** a real domain on a **reserved** public IP is the target. With `<dashed-ip>.sslip.io`, if the VM is reclaimed or recreated its IP can pass to another Oracle tenant, who would hold a valid certificate for your hostname. sslip.io is for a short pilot only.

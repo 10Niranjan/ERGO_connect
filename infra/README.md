@@ -70,8 +70,7 @@ az role assignment create --assignee "$APP_ID" --role Contributor --scope "$(az 
 3. Add environment *secrets* `AZURE_CLIENT_ID` (= `$APP_ID`), `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID` and
    environment *variables* `AZURE_RESOURCE_GROUP` (`rg-ergo-staging`) and `ACR_NAME` (without `.azurecr.io`).
    (They gate nothing by being secret; they are stored there for tidiness.)
-4. The repo secret **`NVD_API_KEY` must exist.** On push/PR a missing key only skips the Java CVE gate with a warning;
-   on a deploy it fails the run, because a green deploy has to mean the gate ran (8a).
+4. No CVE-gate secret is needed: the Java gate is Trivy since 2026-11-06 (no NVD key) and always runs, on a deploy too (8a).
 
 Optional hardening that moves the protection into code: customise the repository's OIDC subject claim to include
 `job_workflow_ref` and use that subject in the federated credential, so only `deploy.yml` on the allowed branch can

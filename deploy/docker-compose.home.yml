@@ -1,0 +1,23 @@
+# HOME-SERVER FALLBACK for the Oracle production stack: same compose, but Caddy is switched off and a free
+# Cloudflare quick tunnel gives the app a public https URL (no open ports, no domain, no signup).
+#   Use: ./home-up.sh        (needs .env as in oracle.env.example; IMAGE_TAG=local uses locally built images)
+# Limits: the *.trycloudflare.com URL changes whenever the tunnel container restarts (re-run home-up.sh),
+#   uptime = this PC's uptime, and the audit-log IP is not trustworthy on this path (Cloudflare's XFF is not
+#   normalised like Caddy's: unverified, test with curl -H 'X-Forwarded-For: 1.2.3.4' before relying on it).
+#   Cloudflare terminates TLS, so it sees every password, code and document in plaintext: pilot data only, and run only
+#   images that passed CI (IMAGE_TAG = a green commit sha, not 'local'). Move to the Oracle VM when it exists.
+name: ergo-prod
+
+services:
+  caddy:
+    profiles: ["off"]
+  tunnel:
+    image: cloudflare/cloudflared:2026.10.7@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+    command: tunnel --no-autoupdate --url http://frontend:8080
+    networks: [edge]
+    mem_limit: 64m
+    depends_on: [frontend]

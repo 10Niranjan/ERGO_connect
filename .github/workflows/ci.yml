@@ -5,14 +5,6 @@ on:
   pull_request:
   # deploy.yml gates on this exact workflow rather than re-implementing it (Phase 8l)
   workflow_call:
-    inputs:
-      # true = a missing NVD_API_KEY fails the run (callers whose output reaches production: demo-images.yml)
-      require_cve_gate:
-        type: boolean
-        default: false
-    secrets:
-      NVD_API_KEY:
-        required: false
 
 permissions:
   contents: read
@@ -49,46 +41,35 @@ jobs:
       - run: npm run lint
       - run: npm run build
       # Dependency hygiene (ARCHITECTURE.md §4/§8 Phase 8a): fail on high/critical CVEs. npm's own
-      # auditor, no extra tool needed for this half - OWASP Dependency-Check below covers the backend.
+      # auditor, no extra tool needed for this half - the Trivy job below covers the backend.
       - run: npm audit --audit-level=high
 
+  # Backend dependency CVE gate (ARCHITECTURE.md §8, Phase 8a; Trivy since 2026-11-06). OWASP Dependency-Check needed
+  # an NVD API key as a repo secret, which nobody with admin could add, so no image was ever built. Trivy needs no key:
+  # it resolves the Maven tree from pom.xml and fails on fixable HIGH/CRITICAL. It always runs, on every push/PR/deploy.
+  # Same digest-pinned image as deploy.yml (not the GitHub Action: its tags were hijacked in March 2026).
   dependency-check:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ergo-connect-backend
+    timeout-minutes: 20
     env:
-      NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+      TRIVY: ghcr.io/aquasecurity/trivy@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 # 0.74.0
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
           distribution: temurin
           java-version: '21'
           cache: maven
-      # dependency-check-maven 13 hard-fails with no NVD data at all if this secret is unset (NVD now
-      # requires a key, no anonymous fallback) - skip gracefully rather than blocking every push/PR on a
-      # one-time setup step. Request a free key at https://nvd.nist.gov/developers/request-an-api-key
-      # and add it as the repo secret NVD_API_KEY to turn this gate on (ARCHITECTURE.md §8, Phase 8a).
-      # Skipping is fine for a push/PR, but not for a deploy (called from deploy.yml, where github.event_name is
-      # the caller's workflow_dispatch): a green deploy run must mean the Java CVE gate really ran (Phase 8l).
-      - if: env.NVD_API_KEY == '' && (github.event_name == 'workflow_dispatch' || inputs.require_cve_gate)
+      # Resolve the dependency tree into the runner's Maven repo first and let Trivy read it from there: left alone it
+      # fetches every POM from Maven Central during the scan and gets 429-throttled (30 min Retry-After) on shared IPs.
+      - name: Resolve backend dependencies
+        working-directory: ergo-connect-backend
+        run: ./mvnw -B -q dependency:go-offline
+      - name: Scan backend dependencies
         run: |
-          echo "::error::NVD_API_KEY is not set, so the backend CVE gate cannot run - refusing to let a deploy or production image through without it."
-          exit 1
-      - if: env.NVD_API_KEY == '' && !(github.event_name == 'workflow_dispatch' || inputs.require_cve_gate)
-        run: echo "::warning::NVD_API_KEY repo secret is not set - skipping the CVE gate for this run. See the comment on this step in .github/workflows/ci.yml."
-      - if: env.NVD_API_KEY != ''
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: ~/.m2/dependency-check-data
-          key: dependency-check-data-${{ github.run_id }}
-          restore-keys: dependency-check-data-
-      - if: env.NVD_API_KEY != ''
-        run: ./mvnw -B -Psecurity dependency-check:check -DnvdApiKey="$NVD_API_KEY"
-      - if: always() && env.NVD_API_KEY != ''
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: dependency-check-report
-          path: ergo-connect-backend/target/dependency-check-report.html
-          if-no-files-found: ignore
+          test -f ergo-connect-backend/pom.xml || { echo "::error::ergo-connect-backend/pom.xml missing: nothing to scan"; exit 1; }
+          docker run --rm -v "$PWD/ergo-connect-backend:/src:ro" -v "$HOME/.m2/repository:/root/.m2/repository:ro" "$TRIVY" \
+            fs /src --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
+            --no-progress --skip-version-check --timeout 15m --exit-code 1

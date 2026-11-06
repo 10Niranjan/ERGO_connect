@@ -3,7 +3,7 @@ name: Demo images
 # Builds the backend and frontend images for the Oracle VMs (deploy/: the client demo AND production,
 # docker-compose.oracle.yml) and pushes them to GHCR, so the VMs only pull them. Not the Azure path (deploy.yml).
 # Images: ghcr.io/<owner>/ergo-connect-{backend,frontend}:<commit sha> (plus :demo). Only built after ci.yml (tests,
-# lint, Dependency-Check) passes for the same commit. The packages stay PRIVATE: VMs `docker login ghcr.io` with a
+# lint, Trivy CVE scan) passes for the same commit. The packages stay PRIVATE: VMs `docker login ghcr.io` with a
 # read:packages token. Production pins IMAGE_TAG to a sha whose run here is fully green.
 on:
   workflow_dispatch:
@@ -27,14 +27,13 @@ jobs:
   # Gate: the same build, test, lint and CVE jobs as every push (as deploy.yml does).
   ci:
     uses: ./.github/workflows/ci.yml
-    with:
-      require_cve_gate: true # no NVD_API_KEY = no images
-    secrets:
-      NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
 
   build:
     needs: ci
     runs-on: ubuntu-latest
+    env:
+      # Same digest-pinned Trivy as ci.yml / deploy.yml (0.74.0).
+      TRIVY: ghcr.io/aquasecurity/trivy@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
     strategy:
       matrix:
         include:
@@ -43,19 +42,56 @@ jobs:
           - name: frontend
             context: ergo-connect-frontend
     steps:
+      # No token left in .git/config, and no registry login until the push step: everything before it (QEMU, buildkit,
+      # the image builds, Trivy) runs without the packages:write token.
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      # arm64 for the free Oracle Ampere A1 VM, amd64 for the Micro demo VM.
+        with:
+          persist-credentials: false
+      # arm64 for the free Oracle Ampere A1 VM, amd64 for the Micro demo VM. Both helper images run privileged, so they
+      # are pinned by digest (the actions' defaults are mutable tags): binfmt qemu-v10.2.3-68, buildkit v0.34.1.
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          image: tonistiigi/binfmt:qemu-v10.2.3-68@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
+          platforms: arm64
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: image=moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
+      # GHCR repository names must be lowercase.
+      - name: Image name
+        id: img
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ergo-connect-${{ matrix.name }}" >> "$GITHUB_OUTPUT"
+      # Scan both architectures before pushing (as deploy.yml): fixable HIGH/CRITICAL in the image's OS packages fails
+      # the run, so a vulnerable image never reaches GHCR. Each architecture has its own base image build, and arm64 is
+      # the production target (A1). Residual: the pushed build below is a separate build from the scanned ones; the shared
+      # gha cache keeps the layers identical in practice, and Dependabot keeps the base images current.
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ matrix.context }}
+          platforms: linux/amd64
+          load: true
+          tags: scan-${{ matrix.name }}:amd64
+          cache-from: type=gha,scope=${{ matrix.name }}
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ matrix.context }}
+          platforms: linux/arm64
+          load: true
+          tags: scan-${{ matrix.name }}:arm64
+          cache-from: type=gha,scope=${{ matrix.name }}
+      - name: Scan images
+        run: |
+          mkdir -p "$RUNNER_TEMP/scan"
+          for arch in amd64 arm64; do
+            docker save "scan-${{ matrix.name }}:$arch" -o "$RUNNER_TEMP/scan/$arch.tar"
+            docker run --rm -v "$RUNNER_TEMP/scan:/scan:ro" "$TRIVY" \
+              image --input "/scan/$arch.tar" --scanners vuln --pkg-types os --severity HIGH,CRITICAL \
+              --ignore-unfixed --no-progress --skip-version-check --timeout 15m --exit-code 1
+          done
       - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      # GHCR repository names must be lowercase.
-      - name: Image name
-        id: img
-        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ergo-connect-${{ matrix.name }}" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ${{ matrix.context }}

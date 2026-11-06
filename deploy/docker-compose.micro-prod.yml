@@ -1,0 +1,104 @@
+# PRODUCTION-profile stack for the free 1 GB Oracle Micro VM (E2.1.Micro) with Postgres on Neon. Interim path while the
+# Ampere A1 VM is out of capacity; same app config as docker-compose.oracle.yml, minus the Postgres container.
+#   - prod profile: real logins (no demo users), 2FA, forgot-password email (SMTP required), Swagger off.
+#   - Neon holds data AND uploaded documents (ERGO_STORAGE_TYPE=postgres): free plan is 1 GB per project, writes fail when full.
+#     Two Neon logins: the app connects as ergo_app (rows only), Flyway as ergo_owner (see README "Production on Micro + Neon").
+#   - MALWARE SCANNING IS OFF (client decision, accepted risk). Images from GHCR pinned to a commit (IMAGE_TAG).
+#   - 1 GB host: small heap, 2 GB swap required. Demo-proven sizing from docker-compose.micro.yml.
+#
+#   cd deploy && cp micro-prod.env.example .env && (edit .env) && docker compose -f docker-compose.micro-prod.yml up -d
+name: ergo-prod
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "5" }
+
+services:
+  redis:
+    image: redis:8.10.3-alpine@sha256:21090af93f8324db2f0f0f4f38a7c60369d47d917e000c3423d89d2ae2883537
+    restart: unless-stopped
+    <<: *logging
+    # Login/upload rate limiters only: tiny, never persisted, reachable only from the backend.
+    command: ["redis-server", "--maxmemory", "24mb", "--maxmemory-policy", "allkeys-lru", "--save", "", "--appendonly", "no"]
+    networks: [data]
+    mem_limit: 48m
+
+  backend:
+    image: ghcr.io/${IMAGE_OWNER:-varadyadav02}/ergo-connect-backend:${IMAGE_TAG:?set IMAGE_TAG in .env (a commit sha)}
+    restart: unless-stopped
+    <<: *logging
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      # Neon DIRECT (non-pooled) host. The URL in .env must use sslmode=verify-full (JRE trust store) and channelBinding=require:
+      # sslmode=require encrypts but never checks the server certificate, and every query crosses the public internet here.
+      # ergo_app = running app; ergo_owner = Flyway only.
+      DB_URL: ${DB_URL:?set DB_URL in .env (JDBC URL of the Neon ergo_connect database)}
+      DB_USERNAME: ergo_app
+      DB_PASSWORD: ${DB_APP_PASSWORD:?set DB_APP_PASSWORD in .env}
+      SPRING_FLYWAY_USER: ergo_owner
+      SPRING_FLYWAY_PASSWORD: ${DB_OWNER_PASSWORD:?set DB_OWNER_PASSWORD in .env}
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: "5"
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env (openssl rand -base64 48)}
+      CORS_ALLOWED_ORIGINS: https://${DOMAIN:?set DOMAIN in .env}
+      FRONTEND_BASE_URL: https://${DOMAIN}
+      MAIL_HOST: ${MAIL_HOST:?set MAIL_HOST in .env}
+      MAIL_PORT: ${MAIL_PORT:?set MAIL_PORT in .env}
+      MAIL_USERNAME: ${MAIL_USERNAME:?set MAIL_USERNAME in .env}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:?set MAIL_PASSWORD in .env}
+      MAIL_FROM: ${MAIL_FROM:?set MAIL_FROM in .env}
+      ERGO_STORAGE_TYPE: postgres
+      ERGO_CLAMAV_ENABLED: "false"
+      ERGO_CLAMAV_UNSCANNED_UPLOADS_ACCEPTED: "true"
+      # First start only (empty database): creates the first admin. Remove both from .env after that first login.
+      ERGO_BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      ERGO_BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      # Tighter than the app defaults (50 MB files, 30 uploads / 5 min / user) for this stack only: documents are held in
+      # memory on a 350 MB heap and stored in Neon's shared 1 GB, so one user could fill it or exhaust the heap. This
+      # narrows the 50 MB drawings/3D models limit: raise these only after moving to the Oracle VM (documents in its own Postgres).
+      SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE: 25MB
+      SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE: 26MB
+      ERGO_SECURITY_UPLOAD_RATE_LIMIT_MAX_ATTEMPTS: "10"
+      # Metaspace 128m was too small on the demo (first login hit OutOfMemoryError: Metaspace); keep 256m.
+      # ExitOnOutOfMemoryError: a heap-exhausted JVM restarts cleanly (restart: unless-stopped) instead of limping on.
+      JAVA_TOOL_OPTIONS: -Xmx350m -XX:MaxMetaspaceSize=256m -XX:+UseSerialGC -Xss512k -XX:+ExitOnOutOfMemoryError
+    # data: Redis; edge: nginx in front, Neon over the internet and outbound SMTP.
+    networks: [data, edge]
+    mem_limit: 700m
+    depends_on:
+      redis: { condition: service_started }
+
+  frontend:
+    image: ghcr.io/${IMAGE_OWNER:-varadyadav02}/ergo-connect-frontend:${IMAGE_TAG}
+    restart: unless-stopped
+    <<: *logging
+    networks: [edge]
+    mem_limit: 48m
+    depends_on: [backend]
+
+  caddy:
+    image: caddy:2.11.8-alpine@sha256:f6228111e5fafa1a5238258d0858e103f10599b8d1659a146e7726681a002bb9
+    restart: unless-stopped
+    <<: *logging
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [edge]
+    mem_limit: 64m
+    depends_on: [frontend]
+
+networks:
+  data:
+    internal: true
+  edge: {}
+
+volumes:
+  caddy_data:
+  caddy_config:
