@@ -54,6 +54,20 @@ Target: `https://130-210-58-133.sslip.io` (Oracle Micro VM + Neon, commit `c477b
 | F6 | Info | The Caddy and Redis containers run as root inside their containers (image defaults), not privileged. | Accept, or switch to the non-root Caddy variant. |
 | F7 | Info | ZAP: cache-control/"storable" on static assets, "Unix timestamp" and "suspicious comments" in the bundled JavaScript, "modern web application": normal for a built SPA. | None. |
 
+### Fixes (2026-11-07, commit `37b3b39`)
+| # | Status | What changed |
+|---|---|---|
+| F1 | **Fixed** | nginx (`location /`) sends `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'`. Tighter than the recommendation above: no `data:` (the build has none, and `vite.config.ts` now sets `assetsInlineLimit: 0` so it never will). `'unsafe-inline'` stays for styles only, because MUI/emotion injects `<style>` tags (ARCHITECTURE.md §8, 2026-11-07). |
+| F2 | **Fixed** | `Permissions-Policy: camera=(), microphone=(), geolocation=()` and `Cross-Origin-Opener-Policy: same-origin`. COEP not set (ZAP 90004 stays a warning): nothing needs cross-origin isolation. |
+| F3 | **Fixed** | API responses send `Referrer-Policy: no-referrer` (`SecurityConfig`); `SecurityHeadersTest` checks it and the default `no-store`. |
+| F4 | **Fixed** | Inter is self-hosted (`@fontsource-variable/inter` 5.3.0, OFL-1.1, no dependencies or install scripts); Google Fonts is gone. |
+| F5 | **Fixed** (live) | `rpcbind` disabled, `PermitRootLogin no` (drop-in `/etc/ssh/sshd_config.d/10-ergo-hardening.conf`). Port 22 stays open to the internet: the owner's address changes, and SSH is key-only. |
+| F6, F7 | Accepted | Unchanged. |
+
+**How F1 was tested before release.** A headless-Chrome sweep (throwaway script, not in the repo) ran against the same nginx template and build, with the browser-walk data. It opened every route in the router and clicked every tab on each screen, signed in as each of the 17 active roles: 25 sessions (`CUSTOMER_MANAGEMENT` is inactive and cannot sign in), 1,050 screen visits, 695 tab clicks. It also ran an image upload, its preview (`blob:`) and a download. Result: 0 CSP violations, 0 script errors, 0 server errors, 0 requests to another origin. The self-hosted font is the one in use, and only its Latin file is downloaded. Passive ZAP on that copy: 0 FAIL, 62 PASS, 6 WARN (the four F7 items, 10055 `style-src 'unsafe-inline'`, 90004 COEP); 10063 Permissions-Policy and 90003 Subresource Integrity are gone.
+
+**Live check after deploy (2026-11-07, production on `37b3b39`).** Backup taken first, then image tag switched and the stack recreated; the backend took about 130 s to report healthy on the 1 GB VM. `https://130-210-58-133.sslip.io/` now sends the F1 `Content-Security-Policy`, `Permissions-Policy` and `Cross-Origin-Opener-Policy: same-origin`; `/api/...` responses send `Referrer-Policy: no-referrer`. The built JS, CSS and Inter `.woff2` files all return 200 from the same origin. On the VM: `rpcbind` and `rpcbind.socket` inactive, `sshd -T` shows `permitrootlogin no`, and a fresh key login works after the reload. Not done: a signed-in browser look at the live site (no pilot credentials were used in this pass).
+
 **Open by decision, not by defect:** the ERGO Admin signs in with the password alone while `ERGO_SECURITY_ADMIN_2FA_REQUIRED=false` (ARCHITECTURE.md §8, 2026-11-06); each such sign-in is audited and emailed. Re-enable the emailed code before real customers are onboarded.
 
 **Not covered:** active scanning of the live system; role-by-role and cross-company tests on the live instance (it has no pilot users; the automated campaign covers them); denial-of-service and load testing on the 1 GB VM (`docs/LOAD_TESTING.md` is local); the provider consoles (Neon, Oracle, Brevo) beyond what is stated; a third-party penetration test.
