@@ -13,8 +13,9 @@ import { useReturnSamplePoMutation, useSamplePoHistoryQuery, useSamplePoQuery, t
 
 export function SamplePoDetailPage() {
   const id = Number(useParams().id)
-  const { data: samplePo, isLoading, error } = useSamplePoQuery(id)
-  if (isLoading) return <LinearProgress />
+  // currentData, not data: data keeps the previous record while a new id fails to load.
+  const { currentData: samplePo, isLoading, isFetching, error } = useSamplePoQuery(id)
+  if (isLoading || (isFetching && !samplePo)) return <LinearProgress />
   if (!samplePo) return <Alert severity="error">{problemMessage(error)}</Alert>
   return <SamplePoDetail samplePo={samplePo} />
 }

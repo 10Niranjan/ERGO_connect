@@ -35,8 +35,9 @@ import {
 
 export function OrderDetailPage() {
   const id = Number(useParams().id)
-  const { data: order, isLoading, error } = useOfpOrderQuery(id)
-  if (isLoading) return <LinearProgress />
+  // currentData, not data: data keeps the previous record while a new id fails to load.
+  const { currentData: order, isLoading, isFetching, error } = useOfpOrderQuery(id)
+  if (isLoading || (isFetching && !order)) return <LinearProgress />
   if (!order) return <Alert severity="error">{problemMessage(error)}</Alert>
   return <OrderDetailView order={order} />
 }

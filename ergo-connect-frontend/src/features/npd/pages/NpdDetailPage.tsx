@@ -100,8 +100,9 @@ import { formatDateTime } from '@/utils/date'
 
 export function NpdDetailPage() {
   const id = Number(useParams().id)
-  const { data: npd, isLoading, error } = useNpdProjectQuery(id)
-  if (isLoading) return <LinearProgress />
+  // currentData, not data: data keeps the previous record while a new id fails to load.
+  const { currentData: npd, isLoading, isFetching, error } = useNpdProjectQuery(id)
+  if (isLoading || (isFetching && !npd)) return <LinearProgress />
   if (!npd) return <Alert severity="error">{problemMessage(error)}</Alert>
   return <NpdDetail npd={npd} />
 }

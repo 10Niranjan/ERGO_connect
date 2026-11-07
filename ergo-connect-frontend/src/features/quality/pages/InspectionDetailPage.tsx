@@ -21,8 +21,9 @@ import {
 
 export function InspectionDetailPage() {
   const id = Number(useParams().id)
-  const { data: inspection, isLoading, error } = useInspectionQuery(id)
-  if (isLoading) return <LinearProgress />
+  // currentData, not data: data keeps the previous record while a new id fails to load.
+  const { currentData: inspection, isLoading, isFetching, error } = useInspectionQuery(id)
+  if (isLoading || (isFetching && !inspection)) return <LinearProgress />
   if (!inspection) return <Alert severity="error">{problemMessage(error)}</Alert>
   return <InspectionDetailView inspection={inspection} />
 }

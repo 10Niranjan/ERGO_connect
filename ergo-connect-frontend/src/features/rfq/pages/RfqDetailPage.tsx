@@ -55,8 +55,9 @@ const COMMANDS: Record<Exclude<RfqCommand, 'start-review'>, { title: string; lab
 
 export function RfqDetailPage() {
   const id = Number(useParams().id)
-  const { data: rfq, isLoading, error } = useRfqQuery(id)
-  if (isLoading) return <LinearProgress />
+  // currentData, not data: data keeps the previous record while a new id fails to load.
+  const { currentData: rfq, isLoading, isFetching, error } = useRfqQuery(id)
+  if (isLoading || (isFetching && !rfq)) return <LinearProgress />
   if (!rfq) return <Alert severity="error">{problemMessage(error)}</Alert>
   return <RfqDetail rfq={rfq} />
 }

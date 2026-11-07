@@ -25,8 +25,9 @@ import {
 
 export function NcrDetailPage() {
   const id = Number(useParams().id)
-  const { data: ncr, isLoading, error } = useNcrQuery(id)
-  if (isLoading) return <LinearProgress />
+  // currentData, not data: data keeps the previous record while a new id fails to load.
+  const { currentData: ncr, isLoading, isFetching, error } = useNcrQuery(id)
+  if (isLoading || (isFetching && !ncr)) return <LinearProgress />
   if (!ncr) return <Alert severity="error">{problemMessage(error)}</Alert>
   return <NcrDetailView ncr={ncr} />
 }

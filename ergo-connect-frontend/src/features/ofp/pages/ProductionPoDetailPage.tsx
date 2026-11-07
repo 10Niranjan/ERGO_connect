@@ -13,8 +13,9 @@ import { useProductionPoHistoryQuery, useProductionPoQuery, useReturnProductionP
 
 export function ProductionPoDetailPage() {
   const id = Number(useParams().id)
-  const { data: productionPo, isLoading, error } = useProductionPoQuery(id)
-  if (isLoading) return <LinearProgress />
+  // currentData, not data: data keeps the previous record while a new id fails to load.
+  const { currentData: productionPo, isLoading, isFetching, error } = useProductionPoQuery(id)
+  if (isLoading || (isFetching && !productionPo)) return <LinearProgress />
   if (!productionPo) return <Alert severity="error">{problemMessage(error)}</Alert>
   return <ProductionPoDetail productionPo={productionPo} />
 }

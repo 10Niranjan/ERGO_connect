@@ -23,8 +23,9 @@ import { formatDateTime } from '@/utils/date'
 
 export function DeviationDetailPage() {
   const id = Number(useParams().id)
-  const { data: deviation, isLoading, error } = useDeviationQuery(id)
-  if (isLoading) return <LinearProgress />
+  // currentData, not data: data keeps the previous record while a new id fails to load.
+  const { currentData: deviation, isLoading, isFetching, error } = useDeviationQuery(id)
+  if (isLoading || (isFetching && !deviation)) return <LinearProgress />
   if (!deviation) return <Alert severity="error">{problemMessage(error)}</Alert>
   return <DeviationDetailView deviation={deviation} />
 }
