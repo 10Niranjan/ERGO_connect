@@ -116,9 +116,6 @@ export function Navbar({ session, onToggleMobile }: NavbarProps) {
               />
             </MenuItem>
             <Divider />
-            {session.activeRole === 'ERGO_ADMIN' && (
-              <MenuItem onClick={() => { setMenuAnchor(null); navigate('/admin/appearance') }}>Appearance</MenuItem>
-            )}
             <MenuItem onClick={() => navigate('/change-password')}>Change password</MenuItem>
             <MenuItem onClick={handleSignOut}>Sign out</MenuItem>
           </Menu>

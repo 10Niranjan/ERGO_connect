@@ -8,6 +8,7 @@ import EngineeringIcon from '@mui/icons-material/Engineering'
 import FactCheckIcon from '@mui/icons-material/FactCheck'
 import DescriptionIcon from '@mui/icons-material/Description'
 import FolderIcon from '@mui/icons-material/Folder'
+import PaletteIcon from '@mui/icons-material/Palette'
 import LocalShippingIcon from '@mui/icons-material/LocalShipping'
 import PeopleIcon from '@mui/icons-material/People'
 import ReportProblemIcon from '@mui/icons-material/ReportProblem'
@@ -53,6 +54,7 @@ const ICONS: Record<string, ElementType> = {
   tune: TuneIcon,
   people: PeopleIcon,
   security: SecurityIcon,
+  palette: PaletteIcon,
 }
 
 interface SidebarProps {
@@ -61,11 +63,23 @@ interface SidebarProps {
   onCloseMobile: () => void
 }
 
+// Not a server menu row: the screen is ERGO Admin only (RequireRole on the route), so the sidebar adds it for that role.
+const THEME_ITEM = { key: 'theme-branding', label: 'Theme & Branding', path: '/admin/appearance', icon: 'palette' }
+
 export function Sidebar({ session, mobileOpen, onCloseMobile }: SidebarProps) {
   const initials = `${session.user.firstName[0] ?? ''}${session.user.lastName[0] ?? ''}`
   const { pathname } = useLocation()
+  const serverMenu = session.access?.menu ?? []
+  const menu =
+    session.activeRole === 'ERGO_ADMIN'
+      ? serverMenu.some((section) => section.title?.toUpperCase() === 'ERGO ADMIN')
+        ? serverMenu.map((section) =>
+            section.title?.toUpperCase() === 'ERGO ADMIN' ? { ...section, items: [...section.items, THEME_ITEM] } : section,
+          )
+        : [...serverMenu, { title: 'ERGO ADMIN', items: [THEME_ITEM] }]
+      : serverMenu
   // The longest item path the page sits under is the active one: /quality/ncrs is NCR / CAPA, not Inspections (/quality) too.
-  const activePath = (session.access?.menu ?? [])
+  const activePath = menu
     .flatMap((section) => section.items.map((item) => item.path))
     .filter((path) => (path === '/' ? pathname === '/' : pathname === path || pathname.startsWith(`${path}/`)))
     .sort((a, b) => b.length - a.length)[0]
@@ -91,7 +105,7 @@ export function Sidebar({ session, mobileOpen, onCloseMobile }: SidebarProps) {
       {/* Navigation items list */}
       <Box sx={{ flexGrow: 1, overflowY: 'auto', py: 1 }}>
         {/* The menu is built by the server from the role's permissions: what is not sent is not allowed. */}
-        {(session.access?.menu ?? []).map((section, sIndex) => {
+        {menu.map((section, sIndex) => {
           const visibleItems = section.items
           if (!visibleItems.length) return null
 
