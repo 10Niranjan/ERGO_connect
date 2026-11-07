@@ -1,7 +1,7 @@
 # 8q: final readiness check against SRS §21 (2026-11-06)
 
 SRS §21 lists six conditions "before go-live". This is the evidence for each, on the deployed system
-(`https://130-210-58-133.sslip.io`, commit `c477b11`, Oracle Micro VM + Neon). **This report is the evidence; the sign-off
+(`https://130-210-58-133.sslip.io`, commit `c477b11` when tested; production now runs `9409ef0` with the 8p fixes, Oracle Micro VM + Neon). **This report is the evidence; the sign-off
 itself belongs to the owner and the client.** Status: **Ready**, **Partly** or **Open**.
 
 | # | SRS §21 condition | Status | Evidence | What is missing |
