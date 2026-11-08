@@ -38,13 +38,19 @@ export async function run(ctx) {
   const SUPPLIER_COMPANY = { 'Precision Castings': C.precision, 'Shakti Forgings': C.shakti, 'Deccan Machining': C.deccan }
   const SUPPLIER_NAME = { precision: 'Precision Castings', shakti: 'Shakti Forgings', deccan: 'Deccan Machining' }
 
+  // Multi-item RFQs (flow slice 2): the part-level fields now live in items[0].
   const form = (s) => ({
-    customerCompanyId: s.cust, partNumber: s.part, revision: 'A', description: s.desc, eau: s.eau, netWeightKg: s.net, grossWeightKg: s.gross,
-    materialId: mat[s.mat], materialSpec: s.mspec ?? null, coatingId: s.coat ? coat[s.coat] : null, coatingSpec: s.coat ? null : 'Raw finish, rust-preventive oil',
-    targetQuoteDate: inDays(25), priority: s.part.endsWith('-01') || s.part.endsWith('-12') ? 'HIGH' : s.part.endsWith('-06') ? 'LOW' : 'NORMAL',
-    currencyId: cur.INR, targetToolingCost: s.tgt[2], targetPpapPiecePrice: s.tgt[0], targetProductionPiecePrice: s.tgt[1], paymentTermId: pay.NET30 ?? Object.values(pay)[0],
-    materialLeadTimeWeeks: 3, toolingLeadTimeDays: 60, sampleLeadTimeDays: 30, productionLeadTimeDays: 45, moq: 500,
-    processSteps: s.steps, customerRemarks: 'Annual volume as per our current schedule; PPAP level 3 required before production.',
+    customerCompanyId: s.cust, targetQuoteDate: inDays(25),
+    priority: s.part.endsWith('-01') || s.part.endsWith('-12') ? 'HIGH' : s.part.endsWith('-06') ? 'LOW' : 'NORMAL',
+    currencyId: cur.INR, paymentTermId: pay.NET30 ?? Object.values(pay)[0],
+    customerRemarks: 'Annual volume as per our current schedule; PPAP level 3 required before production.',
+    items: [{
+      partNumber: s.part, revision: 'A', description: s.desc, eau: s.eau, netWeightKg: s.net, grossWeightKg: s.gross,
+      materialId: mat[s.mat], materialSpec: s.mspec ?? null, coatingId: s.coat ? coat[s.coat] : null, coatingSpec: s.coat ? null : 'Raw finish, rust-preventive oil',
+      targetToolingCost: s.tgt[2], targetPpapPiecePrice: s.tgt[0], targetProductionPiecePrice: s.tgt[1],
+      materialLeadTimeWeeks: 3, toolingLeadTimeDays: 60, sampleLeadTimeDays: 30, productionLeadTimeDays: 45, moq: 500,
+      processSteps: s.steps,
+    }],
   })
   const quoteForm = (s, price) => {
     const c = (n) => Math.round(n * 100) / 100
@@ -62,7 +68,7 @@ export async function run(ctx) {
   })
 
   const existing = await getAll('admin', '/rfqs')
-  const byPart = (part) => existing.find((r) => r.partNumber === part)
+  const byPart = (part) => existing.find((r) => (r.parts ?? []).includes(part))
   const status = async (id) => (await get('admin', `/rfqs/${id}`)).status
   let created = 0
 
@@ -91,8 +97,10 @@ export async function run(ctx) {
       else if (cmd === 'close') await attempt(`${s.part} close`, 'rfq', 'POST', `/rfqs/${rfq.id}/close`, { comment: 'Customer chose a different source; closing.' })
       else if (cmd === 'invite') {
         const names = arg.split(',').map((k) => SUPPLIER_NAME[k])
-        const supplierIds = names.map((n) => SUPPLIER_COMPANY[n]).filter(Boolean)
-        invitedQuotes = await attempt(`${s.part} invite`, 'rfq', 'POST', `/rfqs/${rfq.id}/quotes`, { supplierIds, responseDueDate: inDays(14) })
+        // Flow slice 3: one sub-RFQ per supplier and no part in two of them, so each seeded RFQ goes to its first supplier only.
+        const supplierIds = names.map((n) => SUPPLIER_COMPANY[n]).filter(Boolean).slice(0, 1)
+        const itemIds = (await get('admin', `/rfqs/${rfq.id}`)).items?.map((i) => i.id) ?? []
+        invitedQuotes = await attempt(`${s.part} invite`, 'rfq', 'POST', `/rfqs/${rfq.id}/quotes`, { subRfqs: supplierIds.map((supplierId) => ({ supplierId, itemIds })), responseDueDate: inDays(14) })
         for (const q of invitedQuotes?.quotes ?? []) quotes[Object.keys(SUPPLIER_NAME).find((k) => SUPPLIER_NAME[k] === q.supplier.name)] = q.id
       } else if (cmd === 'ask') {
         await attempt(`${s.part} ask`, PERSONA_OF[arg], 'POST', `/quotes/${quotes[arg]}/request-clarification`, { comment: 'Is the surface finish Ra 3.2 or better acceptable, or do you need Ra 1.6 on the seating faces?' })

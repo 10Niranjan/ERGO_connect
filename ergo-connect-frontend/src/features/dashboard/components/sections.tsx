@@ -1,4 +1,4 @@
-import { Button, Chip, Stack, Typography } from '@mui/material'
+import { Button, Chip, Paper, Stack, Typography } from '@mui/material'
 import type { ReactNode } from 'react'
 import { Link as RouterLink } from 'react-router'
 import { PRIORITIES, formatDate } from '../../rfq/labels'
@@ -60,24 +60,28 @@ function Section({
   // The server keeps the rows that need attention first and says how many there are in all (Phase 8o).
   const capped = total > shown
   return (
-    <Stack spacing={1}>
-      <Stack direction="row" spacing={2} sx={{ alignItems: 'baseline' }}>
-        <Typography variant="h6" component="h2">
-          {title}
-        </Typography>
-        {capped && (
-          <Typography variant="body2" color="text.secondary">
-            Showing the {shown} that need attention first, of {total.toLocaleString()}
+    // A section with rows takes the full width of a two-column grid; an empty one shares a row.
+    <Paper variant="outlined" sx={{ p: 2, minWidth: 0, gridColumn: shown > 0 ? '1 / -1' : undefined }}>
+      <Stack spacing={1.5}>
+        <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+          <Typography variant="h6" component="h2">
+            {title}
           </Typography>
-        )}
-        {capped && viewAll && (
-          <Button component={RouterLink} to={viewAll} size="small">
-            View all
-          </Button>
-        )}
+          <Chip size="small" label={total.toLocaleString()} color={total > 0 ? 'primary' : 'default'} variant={total > 0 ? 'filled' : 'outlined'} />
+          {capped && (
+            <Typography variant="body2" color="text.secondary">
+              Showing the {shown} that need attention first
+            </Typography>
+          )}
+          {viewAll && (
+            <Button component={RouterLink} to={viewAll} size="small" sx={{ ml: 'auto !important' }}>
+              View all
+            </Button>
+          )}
+        </Stack>
+        {children}
       </Stack>
-      {children}
-    </Stack>
+    </Paper>
   )
 }
 
@@ -156,6 +160,7 @@ export function NpdSection({
   viewAll,
   showSupplier = false,
   hideWhenEmpty = false,
+  emptyMessage = 'No NPD projects.',
 }: {
   title?: string
   items: NpdDashboardItem[]
@@ -163,6 +168,7 @@ export function NpdSection({
   viewAll?: string
   showSupplier?: boolean
   hideWhenEmpty?: boolean
+  emptyMessage?: string
 }) {
   const columns: Column<NpdDashboardItem>[] = [
     { header: 'NPD no.', render: (r) => r.npdNumber },
@@ -183,7 +189,7 @@ export function NpdSection({
   ]
   return (
     <Section title={title} hidden={hideWhenEmpty && items.length === 0} shown={items.length} total={total} viewAll={viewAll}>
-      <ItemsTable rows={items} columns={columns} getKey={(r) => r.id} emptyMessage="No NPD projects." />
+      <ItemsTable rows={items} columns={columns} getKey={(r) => r.id} emptyMessage={emptyMessage} />
     </Section>
   )
 }
@@ -195,6 +201,7 @@ export function OrderSection({
   viewAll,
   showSupplier = false,
   hideWhenEmpty = false,
+  emptyMessage = 'No orders.',
 }: {
   title?: string
   items: OrderDashboardItem[]
@@ -202,6 +209,7 @@ export function OrderSection({
   viewAll?: string
   showSupplier?: boolean
   hideWhenEmpty?: boolean
+  emptyMessage?: string
 }) {
   const columns: Column<OrderDashboardItem>[] = [
     { header: 'Order no.', render: (r) => r.orderNumber },
@@ -217,7 +225,7 @@ export function OrderSection({
   ]
   return (
     <Section title={title} hidden={hideWhenEmpty && items.length === 0} shown={items.length} total={total} viewAll={viewAll}>
-      <ItemsTable rows={items} columns={columns} getKey={(r) => r.id} emptyMessage="No orders." />
+      <ItemsTable rows={items} columns={columns} getKey={(r) => r.id} emptyMessage={emptyMessage} />
     </Section>
   )
 }

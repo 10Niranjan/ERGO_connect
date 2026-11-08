@@ -1,4 +1,5 @@
-import { Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from '@mui/material'
+import InboxOutlinedIcon from '@mui/icons-material/InboxOutlined'
+import { Box, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from '@mui/material'
 import type { ReactNode } from 'react'
 
 export interface Column<T> {
@@ -20,10 +21,16 @@ export function ItemsTable<T>({
   getKey: (row: T) => number
   emptyMessage?: string
 }) {
-  if (rows.length === 0) return <Typography color="text.secondary">{emptyMessage}</Typography>
+  if (rows.length === 0)
+    return (
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 2, color: 'text.secondary' }}>
+        <InboxOutlinedIcon fontSize="small" sx={{ opacity: 0.7 }} />
+        <Typography variant="body2">{emptyMessage}</Typography>
+      </Box>
+    )
 
   return (
-    <TableContainer component={Paper} variant="outlined">
+    <TableContainer>
       <Table size="small">
         <TableHead>
           <TableRow>
