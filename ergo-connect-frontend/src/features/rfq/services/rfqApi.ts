@@ -1,4 +1,6 @@
 import { api } from '@/services/baseApi'
+import type { AuthState } from '@/features/auth/store/authSlice'
+import { uploadWithProgress } from '@/utils/uploadWithProgress'
 
 export type RfqStatus =
   | 'DRAFT'
@@ -300,12 +302,21 @@ export const rfqApi = api.enhanceEndpoints({ addTagTypes: ['Rfq', 'RfqDocuments'
       providesTags: (_r, _e, id) => [{ type: 'RfqDocuments', id }],
     }),
     attachmentRules: build.query<AttachmentRule[], void>({ query: () => '/rfqs/attachment-rules' }),
-    /** Several files into one slot of one part, in one request; resolves to the stored files. */
-    uploadItemFiles: build.mutation<ItemFile[], { id: number; itemId: number; kind: FileKind; files: File[] }>({
-      query: ({ id, itemId, kind, files }) => {
+    /**
+     * Files into one slot of one part; resolves to the stored files. Goes through XMLHttpRequest (not the shared fetch
+     * base query) so the page can show real upload progress. A cheap request through the shared base query comes
+     * first: it renews an expired access token and follows permission changes exactly as every other call does.
+     */
+    uploadItemFiles: build.mutation<
+      ItemFile[],
+      { id: number; itemId: number; kind: FileKind; files: File[]; onProgress?: (loaded: number, total: number) => void }
+    >({
+      async queryFn({ id, itemId, kind, files, onProgress }, api, _extra, baseQuery) {
+        await baseQuery({ url: '/auth/access' })
+        const token = (api.getState() as { auth: AuthState }).auth?.session?.accessToken
         const body = new FormData()
         files.forEach((file) => body.append('files', file))
-        return { url: `/rfqs/${id}/items/${itemId}/files`, method: 'POST', params: { kind }, body }
+        return uploadWithProgress<ItemFile[]>(`/rfqs/${id}/items/${itemId}/files?kind=${encodeURIComponent(kind)}`, body, token, onProgress)
       },
       invalidatesTags: (_r, _e, { id }) => [{ type: 'RfqDocuments', id }, { type: 'Rfq', id }],
     }),

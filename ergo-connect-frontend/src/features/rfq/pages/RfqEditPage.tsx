@@ -263,6 +263,8 @@ function RfqFormEditor({ view }: { view: RfqView | undefined }) {
   const [expanded, setExpanded] = useState<number[]>([])
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState<string | null>(null)
+  /** Percent of the file being uploaded that has been sent; null while nothing is uploading. */
+  const [uploadPct, setUploadPct] = useState<number | null>(null)
   const [problems, setProblems] = useState<string[]>([])
   const [failure, setFailure] = useState<unknown>(null)
   const [rejections, setRejections] = useState<string[]>([])
@@ -358,7 +360,16 @@ function RfqFormEditor({ view }: { view: RfqView | undefined }) {
           const files = part.pending[kind]
           for (const [n, file] of files.entries()) {
             setProgress(`Uploading ${label} for ${part.partNumber.trim()}: ${file.name} (${n + 1} of ${files.length})`)
-            const stored = await uploadItemFiles({ id: saved.id, itemId: part.id as number, kind, files: [file] }).unwrap()
+            setUploadPct(0)
+            const stored = await uploadItemFiles({
+              id: saved.id,
+              itemId: part.id as number,
+              kind,
+              files: [file],
+              // bytes sent, capped below 100 until the server has answered (it still scans and stores the file)
+              onProgress: (loaded, total) => setUploadPct(Math.min(99, Math.floor((loaded / Math.max(total, 1)) * 100))),
+            }).unwrap()
+            setUploadPct(100)
             setParts((list) =>
               list.map((p) =>
                 p.key === part.key
@@ -370,6 +381,7 @@ function RfqFormEditor({ view }: { view: RfqView | undefined }) {
         }
       }
       setProgress(null)
+      setUploadPct(null)
 
       // Answering a clarification needs the written answer, which the RFQ page asks for: save, then go there.
       if (submit && view?.status !== 'CLARIFICATION_REQUIRED') {
@@ -383,6 +395,7 @@ function RfqFormEditor({ view }: { view: RfqView | undefined }) {
     } finally {
       setBusy(false)
       setProgress(null)
+      setUploadPct(null)
     }
   }
 
@@ -586,10 +599,11 @@ function RfqFormEditor({ view }: { view: RfqView | undefined }) {
       )}
       {busy && (
         <Box>
-          <LinearProgress />
+          <LinearProgress variant={uploadPct == null ? 'indeterminate' : 'determinate'} value={uploadPct ?? 0} aria-label="Upload progress" />
           {progress && (
             <Typography variant="caption" color="text.secondary">
               {progress}
+              {uploadPct != null && ` · ${uploadPct}%${uploadPct >= 99 && uploadPct < 100 ? ' (finishing)' : ''}`}
             </Typography>
           )}
         </Box>
