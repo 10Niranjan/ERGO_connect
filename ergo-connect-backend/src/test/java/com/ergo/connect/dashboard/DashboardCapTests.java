@@ -64,8 +64,8 @@ class DashboardCapTests {
 
 	private void createRfq(Login buyer, String part, int dueInDays) throws Exception {
 		String body = """
-				{"targetQuoteDate": "%s", "currencyId": %d, "items": [
-				  {"partNumber": "%s", "description": "Bracket", "materialSpec": "EN8",
+				{"title": "T", "targetQuoteDate": "%s", "currencyId": %d, "items": [
+				  {"partNumber": "%s", "description": "Bracket", "eau": 1000, "materialSpec": "EN8",
 				   "targetProductionPiecePrice": 99.5, "processSteps": [{"stepName": "Casting"}]}]}"""
 			.formatted(LocalDate.now().plusDays(dueInDays), inr, part);
 		mvc.perform(post("/api/rfqs").header(HttpHeaders.AUTHORIZATION, buyer.bearer())

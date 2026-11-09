@@ -20,6 +20,7 @@ import {
   Typography,
 } from '@mui/material'
 import { useState } from 'react'
+import { saveObjectUrl } from '../../../shared/download'
 import { useNavigate, useParams } from 'react-router'
 import { QUOTATION_CUSTOMER_VIEW, QUOTATION_VIEW, useCan } from '@/features/permissions'
 import { AuditTrail } from '../../../shared/components/AuditTrail'
@@ -32,13 +33,17 @@ import { PartsPanel } from '../../quotation/components/PartsPanel'
 import { partStatusLabel } from '../../quotation/utils/labels'
 import { useRfqPartsQuery } from '../../quotation/services/quoteApi'
 import { DocumentsPanel } from '../components/DocumentsPanel'
-import { PRIORITIES, STATUS, formatDate, formatMoney, formatNumber } from '../labels'
+import { FILE_KIND_LABELS, PRIORITIES, STATUS, formatDate, formatMoney, formatNumber } from '../labels'
 import {
   useCloneRfqMutation,
+  useDownloadRfqDocumentMutation,
   useRfqCommandMutation,
   useRfqHistoryQuery,
   useRfqQuery,
   useUpdateRfqNotesMutation,
+  type CustomerItemView,
+  type FileKind,
+  type ItemFile,
   type ItemView,
   type RfqCommand,
   type RfqView,
@@ -109,12 +114,17 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
             </Typography>
             <Chip label={status.label} color={status.color} size="small" />
           </Stack>
+          {rfq.title && (
+            <Typography variant="h6" component="p">
+              {rfq.title}
+            </Typography>
+          )}
           <Typography color="text.secondary">
             {rfq.items.length} part{rfq.items.length === 1 ? '' : 's'}: {rfq.items.map((i) => i.partNumber).join(', ') || 'none yet'}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            {isErgo && `${rfq.customer.name} · `}Quote needed by {formatDate(rfq.targetQuoteDate)} · Priority {PRIORITIES[rfq.priority]}
-            {isErgo && ` · Owner ${rfq.owner ?? 'not assigned'}`}
+            {isErgo && `${rfq.customer.name} · `}Expected quote receipt {formatDate(rfq.targetQuoteDate)}
+            {isErgo && ` · Priority ${PRIORITIES[rfq.priority]} · Owner ${rfq.owner ?? 'not assigned'}`}
           </Typography>
         </Stack>
         <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', alignItems: 'flex-start' }}>
@@ -165,7 +175,7 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
 
       <Tabs value={tab} onChange={(_e, value: string) => setTab(value)}>
         <Tab value="overview" label="Overview" />
-        <Tab value="process" label="Process flow" />
+        {isErgo && <Tab value="process" label="Process flow" />}
         <Tab value="documents" label="Documents" />
         {!isErgo && canSeeQuotes && <Tab value="quotes" label="Quotation" />}
         {isErgo && <Tab value="parts" label="Parts & suppliers" />}
@@ -180,23 +190,33 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
             <Facts
               title="Request"
               facts={[
-                ['Quote needed by', formatDate(rfq.targetQuoteDate)],
-                ['Priority', PRIORITIES[rfq.priority]],
-                ['Currency of the targets', `${rfq.currency.code} – ${rfq.currency.name}`],
-                ['Payment terms', rfq.paymentTerm?.name ?? '—'],
+                ['RFQ number', rfq.number],
+                ['RFQ date', formatDate(rfq.createdAt)],
+                ...(rfq.audience === 'ERGO' ? ([['Supplier reference', rfq.supplierRef]] as [string, string][]) : []),
+                ['Title', rfq.title ?? '—'],
+                ['Expected quote receipt', formatDate(rfq.targetQuoteDate)],
+                ['Quote currency', `${rfq.currency.code} – ${rfq.currency.name}`],
+                ...(isErgo ? ([['Priority', PRIORITIES[rfq.priority]], ['Payment terms', rfq.paymentTerm?.name ?? '—']] as [string, string][]) : []),
               ]}
             />
-            <Facts title="Requirements and remarks" facts={[['', rfq.customerRemarks ?? '—']]} />
+            <Facts
+              title="Description and instructions"
+              facts={[
+                ['Description', rfq.description ?? '—'],
+                ['Special instructions', rfq.specialInstructions ?? '—'],
+                ...(rfq.customerRemarks ? ([['Earlier remarks', rfq.customerRemarks]] as [string, string][]) : []),
+              ]}
+            />
             {isErgo && <InternalNotes rfq={rfq} />}
           </Box>
           {canSeeParts && (isErgo || !NOT_YET_QUOTED.has(rfq.status)) && <PartStatus rfqId={rfq.id} />}
           {rfq.items.map((item) => (
-            <ItemOverview key={item.id} item={item} currency={rfq.currency.code} />
+            <ItemOverview key={item.id} rfqId={rfq.id} item={item} currency={rfq.currency.code} isErgo={isErgo} />
           ))}
         </Stack>
       )}
 
-      {tab === 'process' && (
+      {tab === 'process' && rfq.audience === 'ERGO' && (
         <Stack spacing={2}>
           {rfq.items.map((item) => (
             <TableContainer component={Paper} variant="outlined" key={item.id}>
@@ -230,7 +250,7 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
                   {item.processSteps.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={7} sx={{ color: 'text.secondary' }}>
-                        No process steps yet (needed before submitting).
+                        No process steps yet. ERGO adds the process flow during the review.
                       </TableCell>
                     </TableRow>
                   )}
@@ -309,34 +329,88 @@ function PartStatus({ rfqId }: { rfqId: number }) {
   )
 }
 
-function ItemOverview({ item, currency }: { item: ItemView; currency: string }) {
-  const t = item.targets
+function ItemOverview({ rfqId, item, currency, isErgo }: { rfqId: number; item: ItemView | CustomerItemView; currency: string; isErgo: boolean }) {
+  // The customer's own part view carries only what it entered; ERGO's carries what ERGO adds during the review too.
+  const ergo = 'targets' in item ? item : null
+  const t = ergo?.targets
   return (
     <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' } }}>
       <Facts
         title={`Part ${item.lineNo}: ${item.partNumber}`}
         facts={[
           ['Part number', item.partNumber],
-          ['Revision', item.revision ?? '—'],
           ['Description', item.description ?? '—'],
-          ['EAU', formatNumber(item.eau, ' pcs/year')],
-          ['Net / gross weight', `${formatNumber(item.netWeightKg)} / ${formatNumber(item.grossWeightKg)} kg`],
-          ['Material', [item.material?.name, item.materialSpec].filter(Boolean).join(' · ') || '—'],
-          ['Coating / surface', [item.coating?.name, item.coatingSpec].filter(Boolean).join(' · ') || '—'],
+          ['Annual volume (EAU)', formatNumber(item.eau, ' pcs/year')],
+          ['Target price', formatMoney(ergo ? (t?.targetProductionPiecePrice ?? null) : (item as CustomerItemView).targetPrice, currency)],
+          ['Remarks', item.remarks ?? '—'],
+          ...(ergo
+            ? ([
+                ['Revision', ergo.revision ?? '—'],
+                ['Net / gross weight', `${formatNumber(ergo.netWeightKg)} / ${formatNumber(ergo.grossWeightKg)} kg`],
+                ['Material', [ergo.material?.name, ergo.materialSpec].filter(Boolean).join(' · ') || '—'],
+                ['Coating / surface', [ergo.coating?.name, ergo.coatingSpec].filter(Boolean).join(' · ') || '—'],
+              ] as [string, string][])
+            : []),
         ]}
       />
-      <Facts
-        title={`Commercial targets: ${item.partNumber}`}
-        note="Never shown to suppliers"
-        facts={[
-          ['Tooling cost', formatMoney(t.targetToolingCost, currency)],
-          ['PPAP piece price', formatMoney(t.targetPpapPiecePrice, currency)],
-          ['Production piece price', formatMoney(t.targetProductionPiecePrice, currency)],
-          ['MOQ', formatNumber(t.moq, ' pcs')],
-          ['Lead times', `material ${formatNumber(t.materialLeadTimeWeeks, ' wk')} · tooling ${formatNumber(t.toolingLeadTimeDays, ' d')} · sample ${formatNumber(t.sampleLeadTimeDays, ' d')} · production ${formatNumber(t.productionLeadTimeDays, ' d')}`],
-        ]}
-      />
+      <Stack spacing={2}>
+        <ItemFiles rfqId={rfqId} partNumber={item.partNumber} files={item.files} />
+        {isErgo && t && (
+          <Facts
+            title={`Commercial targets: ${item.partNumber}`}
+            note="Never shown to suppliers"
+            facts={[
+              ['Tooling cost', formatMoney(t.targetToolingCost, currency)],
+              ['PPAP piece price', formatMoney(t.targetPpapPiecePrice, currency)],
+              ['Production piece price', formatMoney(t.targetProductionPiecePrice, currency)],
+              ['MOQ', formatNumber(t.moq, ' pcs')],
+              ['Lead times', `material ${formatNumber(t.materialLeadTimeWeeks, ' wk')} · tooling ${formatNumber(t.toolingLeadTimeDays, ' d')} · sample ${formatNumber(t.sampleLeadTimeDays, ' d')} · production ${formatNumber(t.productionLeadTimeDays, ' d')}`],
+            ]}
+          />
+        )}
+      </Stack>
     </Box>
+  )
+}
+
+/** A part's files by slot; each name downloads the file. */
+function ItemFiles({ rfqId, partNumber, files: all }: { rfqId: number; partNumber: string; files: ItemFile[] }) {
+  const [download] = useDownloadRfqDocumentMutation()
+  const [error, setError] = useState<unknown>(null)
+  async function open(documentId: number, fileName: string) {
+    setError(null)
+    try {
+      saveObjectUrl(await download({ id: rfqId, documentId }).unwrap(), fileName)
+    } catch (e) {
+      setError(e)
+    }
+  }
+  return (
+    <Card variant="outlined">
+      <CardContent sx={{ display: 'grid', gap: 1 }}>
+        <Typography variant="h6" component="h2">
+          Files: {partNumber}
+        </Typography>
+        {(Object.keys(FILE_KIND_LABELS) as FileKind[]).map((kind) => {
+          const files = all.filter((f) => f.kind === kind)
+          return (
+            <Box key={kind} sx={{ display: 'grid', gridTemplateColumns: '170px 1fr', columnGap: 2 }}>
+              <Typography color="text.secondary">{FILE_KIND_LABELS[kind]}</Typography>
+              {files.length === 0 ? (
+                <Typography>—</Typography>
+              ) : (
+                <Stack direction="row" useFlexGap spacing={0.5} sx={{ flexWrap: 'wrap' }}>
+                  {files.map((f) => (
+                    <Chip key={f.id} size="small" label={f.fileName} title={f.fileName} onClick={() => void open(f.id, f.fileName)} />
+                  ))}
+                </Stack>
+              )}
+            </Box>
+          )
+        })}
+        {error != null && <Alert severity="error">{problemMessage(error)}</Alert>}
+      </CardContent>
+    </Card>
   )
 }
 

@@ -19,6 +19,7 @@ import static com.ergo.connect.rfq.domain.RfqStatus.SENT_TO_SUPPLIERS;
 import static com.ergo.connect.rfq.domain.RfqStatus.SUBMITTED;
 import static com.ergo.connect.rfq.domain.RfqStatus.UNDER_REVIEW;
 
+import java.time.LocalDate;
 import java.time.Year;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -56,6 +57,7 @@ import com.ergo.connect.common.security.CurrentUser;
 import com.ergo.connect.common.security.ModuleAccess;
 import com.ergo.connect.common.security.ModuleAccess.Module;
 import com.ergo.connect.common.security.Role;
+import com.ergo.connect.common.validation.Blank;
 import com.ergo.connect.documents.api.DocumentStore;
 import com.ergo.connect.documents.api.DocumentStore.DocumentInfo;
 import com.ergo.connect.documents.api.DocumentStore.Visibility;
@@ -64,12 +66,14 @@ import com.ergo.connect.masterdata.api.Directory.CompanyRef;
 import com.ergo.connect.masterdata.api.Directory.UserRef;
 import com.ergo.connect.masterdata.api.MasterDataApi;
 import com.ergo.connect.masterdata.api.MasterDataApi.Ref;
+import com.ergo.connect.rfq.domain.RfqDtos.CustomerItemView;
 import com.ergo.connect.rfq.domain.RfqDtos.CustomerRfqRow;
 import com.ergo.connect.rfq.domain.RfqDtos.CustomerRfqView;
 import com.ergo.connect.rfq.domain.RfqDtos.DocumentView;
 import com.ergo.connect.rfq.domain.RfqDtos.ErgoRfqRow;
 import com.ergo.connect.rfq.domain.RfqDtos.ErgoRfqView;
 import com.ergo.connect.rfq.domain.RfqDtos.ItemForm;
+import com.ergo.connect.rfq.domain.RfqDtos.ItemFile;
 import com.ergo.connect.rfq.domain.RfqDtos.ItemView;
 import com.ergo.connect.rfq.domain.RfqDtos.Named;
 import com.ergo.connect.rfq.domain.RfqDtos.RfqAction;
@@ -105,8 +109,14 @@ public class RfqService {
 	/** SRS §10.4 "RV" for ERGO NPD: approved RFQs heading to NPD. */
 	private static final Set<RfqStatus> NPD_VISIBLE = EnumSet.of(CUSTOMER_APPROVED);
 
-	/** While the customer may still change the RFQ. */
+	/** While the customer may still cancel the RFQ. */
 	private static final Set<RfqStatus> CUSTOMER_OPEN = EnumSet.of(DRAFT, SUBMITTED, CLARIFICATION_REQUIRED);
+
+	/**
+	 * While the customer may change the RFQ or its files: once submitted it is read-only to them until ERGO asks for a
+	 * clarification (client format: "read-only unless revisions are enabled"; the clarification is that switch).
+	 */
+	private static final Set<RfqStatus> CUSTOMER_EDITABLE = EnumSet.of(DRAFT, CLARIFICATION_REQUIRED);
 
 	/** Before any supplier has seen it: files may still be removed, ERGO may still cancel. */
 	private static final Set<RfqStatus> BEFORE_FLOAT = EnumSet.of(DRAFT, SUBMITTED, UNDER_REVIEW,
@@ -140,12 +150,16 @@ public class RfqService {
 
 	private final Notifier notifier;
 
+	private final RfqAttachmentRules attachmentRules;
+
 	@jakarta.persistence.PersistenceContext
 	private jakarta.persistence.EntityManager entityManager;
 
 	RfqService(RfqRepository rfqs, RfqItemRepository items, Directory directory, MasterDataApi masterData,
-			DocumentStore documents, AuditLogService audit, JdbcTemplate jdbc, Notifier notifier) {
+			DocumentStore documents, AuditLogService audit, JdbcTemplate jdbc, Notifier notifier,
+			RfqAttachmentRules attachmentRules) {
 		this.notifier = notifier;
+		this.attachmentRules = attachmentRules;
 		this.rfqs = rfqs;
 		this.items = items;
 		this.directory = directory;
@@ -192,14 +206,14 @@ public class RfqService {
 		Map<Long, List<String>> parts = partNumbers(visible);
 		if (!isErgo(me)) {
 			return new RfqPage(visible.stream()
-				.<RfqRow>map(r -> new CustomerRfqRow(r.id, r.number, r.status.forCustomer(),
-						parts.getOrDefault(r.id, List.of()), r.targetQuoteDate, r.priority, r.createdAt))
+				.<RfqRow>map(r -> new CustomerRfqRow(r.id, r.number, r.status.forCustomer(), r.title,
+						parts.getOrDefault(r.id, List.of()), r.targetQuoteDate, r.createdAt))
 				.toList(), found.getTotalElements(), pageNo, pageSize);
 		}
 		Map<Long, CompanyRef> customers = directory.companies(ids(visible, r -> r.customerCompanyId));
 		Map<Long, UserRef> owners = directory.users(ids(visible, r -> r.ownerUserId));
 		return new RfqPage(visible.stream()
-			.<RfqRow>map(r -> new ErgoRfqRow(r.id, r.number, r.status, customers.get(r.customerCompanyId).name(),
+			.<RfqRow>map(r -> new ErgoRfqRow(r.id, r.number, r.status, r.title, customers.get(r.customerCompanyId).name(),
 					parts.getOrDefault(r.id, List.of()), r.targetQuoteDate, r.priority,
 					userName(owners, r.ownerUserId), r.createdAt))
 			.toList(), found.getTotalElements(), pageNo, pageSize);
@@ -262,6 +276,7 @@ public class RfqService {
 			List<Predicate> any = new ArrayList<>();
 			any.add(cb.like(cb.lower(root.<String>get("number")), pattern, '\\'));
 			any.add(cb.exists(byPart));
+			any.add(cb.like(cb.lower(root.<String>get("title")), pattern, (char) 92));
 			if (!customerIds.isEmpty()) {
 				any.add(root.get("customerCompanyId").in(customerIds));
 			}
@@ -304,15 +319,28 @@ public class RfqService {
 		CurrentUser me = CurrentUser.get();
 		Rfq rfq = new Rfq();
 		rfq.customerCompanyId = customerFor(me, form.customerCompanyId());
-		rfq.number = "RFQ-%d-%05d".formatted(Year.now().getValue(),
-				jdbc.queryForObject("SELECT nextval('rfq_number_seq')", Long.class));
+		rfq.number = nextNumber(rfq.customerCompanyId);
 		rfq.sourceType = isErgo(me) ? SourceType.ERGO : SourceType.CUSTOMER;
 		rfq.createdByUserId = me.userId();
 		rfq.status = DRAFT;
 		applyHeader(rfq, form, me);
 		rfqs.save(rfq);
-		syncItems(rfq, form.items());
+		syncItems(rfq, form.items(), isErgo(me), true);
 		return view(rfq, me);
+	}
+
+	/**
+	 * The next RFQ number, PREFIX-YEAR-SERIAL (IC-2026-001): the customer's RFQ prefix, the year, and a serial that
+	 * restarts every year per prefix. One atomic upsert, so two RFQs never get the same number.
+	 */
+	private String nextNumber(long customerCompanyId) {
+		String prefix = directory.rfqPrefix(customerCompanyId);
+		int year = Year.now().getValue();
+		Integer serial = jdbc.queryForObject("""
+				INSERT INTO rfq_number_counters (prefix, year, last_serial) VALUES (?, ?, 1)
+				ON CONFLICT (prefix, year) DO UPDATE SET last_serial = rfq_number_counters.last_serial + 1
+				RETURNING last_serial""", Integer.class, prefix, year);
+		return "%s-%d-%03d".formatted(prefix, year, serial);
 	}
 
 	/** ERGO may change anything while reviewing (flow doc §2), the customer while the RFQ is still its own. */
@@ -323,7 +351,7 @@ public class RfqService {
 		Rfq rfq = visible(me, id);
 		require(RfqAction.EDIT, me, rfq);
 		applyHeader(rfq, form, me);
-		syncItems(rfq, form.items());
+		syncItems(rfq, form.items(), isErgo(me), false);
 		return view(rfq, me);
 	}
 
@@ -341,8 +369,7 @@ public class RfqService {
 		Rfq source = visible(me, id);
 		require(RfqAction.CLONE, me, source);
 		Rfq copy = new Rfq();
-		copy.number = "RFQ-%d-%05d".formatted(Year.now().getValue(),
-				jdbc.queryForObject("SELECT nextval('rfq_number_seq')", Long.class));
+		copy.number = nextNumber(source.customerCompanyId);
 		copy.sourceType = isErgo(me) ? SourceType.ERGO : SourceType.CUSTOMER;
 		copy.customerCompanyId = source.customerCompanyId;
 		copy.createdByUserId = me.userId();
@@ -351,6 +378,9 @@ public class RfqService {
 		copy.currencyId = source.currencyId;
 		copy.paymentTermId = source.paymentTermId;
 		copy.customerRemarks = source.customerRemarks;
+		copy.title = source.title;
+		copy.description = source.description;
+		copy.specialInstructions = source.specialInstructions;
 		rfqs.save(copy);
 		for (RfqItem from : items.findByRfqIdOrderByLineNo(source.id)) {
 			RfqItem to = new RfqItem();
@@ -374,6 +404,7 @@ public class RfqService {
 			to.sampleLeadTimeDays = from.sampleLeadTimeDays;
 			to.productionLeadTimeDays = from.productionLeadTimeDays;
 			to.moq = from.moq;
+			to.remarks = from.remarks;
 			to.processSteps.addAll(from.processSteps);
 			items.save(to);
 		}
@@ -511,6 +542,80 @@ public class RfqService {
 		}
 	}
 
+	/** The slots and what each accepts, for the RFQ page (the backend is the single source of the lists). */
+	public List<RfqDtos.AttachmentRule> attachmentRules() {
+		return attachmentRules.all();
+	}
+
+	/** One file of an upload batch. */
+	public record FileUpload(String name, byte[] content) {
+	}
+
+	/** Most files one request may carry (a cell of the table). */
+	private static final int MAX_FILES_PER_UPLOAD = 20;
+
+	/** Most part files one RFQ may hold (storage is shared, malware scanning may be off). */
+	private static final int MAX_FILES_PER_RFQ = 200;
+
+	/**
+	 * Files into one slot of one part. The whole batch is checked first (slot type, not empty), then stored: if any
+	 * file is refused (malware, size) nothing of the batch is kept. Same window as every upload: the customer in Draft
+	 * or when ERGO asked for a clarification, ERGO until the RFQ is final. The files are visible to ERGO and the
+	 * customer only; ERGO shares one with suppliers per part afterwards, like any other file.
+	 */
+	public List<ItemFile> uploadItemFiles(long id, long itemId, FileKind kind, List<FileUpload> files) {
+		CurrentUser me = CurrentUser.get();
+		Rfq rfq = visible(me, id);
+		require(RfqAction.UPLOAD, me, rfq);
+		RfqItem item = items.findById(itemId).filter(i -> i.rfqId.equals(rfq.id))
+			.orElseThrow(() -> ApiException.notFound("Part"));
+		if (files == null || files.isEmpty()) {
+			throw ApiException.unprocessable("Choose at least one file");
+		}
+		if (files.size() > MAX_FILES_PER_UPLOAD) {
+			throw ApiException.unprocessable("At most " + MAX_FILES_PER_UPLOAD + " files at a time");
+		}
+		Integer held = jdbc.queryForObject("SELECT count(*) FROM rfq_item_files f JOIN rfq_items i USING (rfq_item_id) WHERE i.rfq_id = ?",
+				Integer.class, rfq.id);
+		if (held + files.size() > MAX_FILES_PER_RFQ) {
+			throw ApiException.unprocessable("An RFQ can hold at most " + MAX_FILES_PER_RFQ + " part files");
+		}
+		for (FileUpload file : files) {
+			if (!attachmentRules.accepts(kind, file.name())) {
+				throw ApiException.unprocessable("%s: this column accepts %s only".formatted(file.name(),
+						attachmentRules.extensions(kind).stream().map(String::toUpperCase).collect(Collectors.joining(", "))));
+			}
+		}
+		List<ItemFile> stored = new ArrayList<>();
+		for (FileUpload file : files) {
+			DocumentInfo document = documents.store(MODULE, id, file.name(), file.content(),
+					isErgo(me) ? Visibility.INTERNAL : Visibility.CUSTOMER);
+			jdbc.update("INSERT INTO rfq_item_files (document_id, rfq_item_id, kind) VALUES (?, ?, ?)", document.id(), item.id,
+					kind.name());
+			audit.record(RfqItem.class, item.id, "FILE_ATTACHED", kind.name(), null, document.fileName());
+			stored.add(new ItemFile(document.id(), kind, document.fileName(), document.size(), true,
+					canDelete(me, rfq, document), document.createdAt()));
+		}
+		// One notice per batch, and none while the customer is still drafting (ERGO hears at submit).
+		if (!isErgo(me) && rfq.status != DRAFT) {
+			notifier.send(NotificationKind.DOCUMENT_UPLOADED, "document", stored.getFirst().id(), rfq.number,
+					stored.size() == 1 ? stored.getFirst().fileName() : stored.size() + " files for part " + item.partNumber,
+					Recipients.ergo(ERGO_ADMIN, ERGO_RFQ));
+		}
+		return stored;
+	}
+
+	/** A removed part takes its files with it, so no orphan stays on the RFQ's document list. */
+	private void removeFiles(Rfq rfq, RfqItem item) {
+		for (Long documentId : jdbc.queryForList("SELECT document_id FROM rfq_item_files WHERE rfq_item_id = ?", Long.class,
+				item.id)) {
+			documents.find(MODULE, rfq.id, documentId).ifPresent(d -> {
+				documents.delete(d);
+				audit.record(RfqItem.class, item.id, "FILE_REMOVED", "file", d.fileName(), null);
+			});
+		}
+	}
+
 	/**
 	 * Customers' uploads are visible to ERGO and themselves; only ERGO decides what suppliers see (client decision:
 	 * the customer's identity is hidden from suppliers, so ERGO may share a cleaned copy instead).
@@ -614,7 +719,8 @@ public class RfqService {
 		boolean reviewer = ERGO_REVIEWERS.contains(role);
 		RfqStatus status = rfq.status;
 		return switch (action) {
-			case EDIT -> CUSTOMER_OPEN.contains(status) ? customer || ergo : status == UNDER_REVIEW && ergo;
+			case EDIT -> CUSTOMER_OPEN.contains(status) ? ergo || customer && CUSTOMER_EDITABLE.contains(status)
+					: status == UNDER_REVIEW && ergo;
 			case EDIT_NOTES -> ergo && !RfqStatus.FINAL.contains(status);
 			case SUBMIT -> (status == DRAFT || status == CLARIFICATION_REQUIRED) && (customer || ergo);
 			case START_REVIEW -> status == SUBMITTED && reviewer;
@@ -622,8 +728,7 @@ public class RfqService {
 			case CANCEL -> customer ? CUSTOMER_OPEN.contains(status) : ergo && ERGO_CANCELLABLE.contains(status);
 			case CLOSE -> reviewer && CLOSABLE.contains(status);
 			case CLONE -> customer || ergo;
-			case UPLOAD -> customer ? CUSTOMER_OPEN.contains(status) || status == UNDER_REVIEW
-					: ergo && !RfqStatus.FINAL.contains(status);
+			case UPLOAD -> customer ? CUSTOMER_EDITABLE.contains(status) : ergo && !RfqStatus.FINAL.contains(status);
 		};
 	}
 
@@ -639,10 +744,39 @@ public class RfqService {
 	}
 
 	/**
-	 * SRS §17.1 mandatory fields; every part needs a process flow before suppliers can quote it. Also checked when
-	 * ERGO distributes the RFQ (flow doc §2), after any changes ERGO made.
+	 * The customer's submit rules (client RFQ format): title, an expected quote receipt date that is not in the past,
+	 * at least one part, and a part number and a positive annual volume on every part. The currency is always set.
 	 */
 	static void requireComplete(Rfq rfq, List<RfqItem> parts) {
+		List<String> missing = new ArrayList<>();
+		if (Blank.is(rfq.title)) {
+			missing.add("RFQ title");
+		}
+		if (rfq.targetQuoteDate == null) {
+			missing.add("expected quote receipt date");
+		}
+		else if (rfq.targetQuoteDate.isBefore(LocalDate.now())) {
+			missing.add("expected quote receipt date (it is in the past)");
+		}
+		if (parts.isEmpty()) {
+			missing.add("at least one part");
+		}
+		for (RfqItem part : parts) {
+			if (part.eau == null || part.eau <= 0) {
+				missing.add("part " + part.partNumber + ": annual volume (EAU)");
+			}
+		}
+		if (!missing.isEmpty()) {
+			throw ApiException.unprocessable("Please complete: " + String.join("; ", missing));
+		}
+	}
+
+	/**
+	 * What suppliers need before they can quote (SRS §17.1): a description, a material and a process flow per part.
+	 * The customer's form no longer asks for these, so ERGO fills them in during the review; checked when ERGO
+	 * distributes the RFQ (flow doc §2), after any changes ERGO made.
+	 */
+	static void requireDistributable(Rfq rfq, List<RfqItem> parts) {
 		List<String> missing = new ArrayList<>();
 		if (rfq.targetQuoteDate == null) {
 			missing.add("target quote date");
@@ -691,13 +825,23 @@ public class RfqService {
 		if (!Objects.equals(rfq.currencyId, form.currencyId())) {
 			masterData.requireActive(Ref.CURRENCY, form.currencyId(), "Currency");
 		}
-		if (!Objects.equals(rfq.paymentTermId, form.paymentTermId())) {
+		if (isErgo(me) && !Objects.equals(rfq.paymentTermId, form.paymentTermId())) {
 			masterData.requireActive(Ref.PAYMENT_TERM, form.paymentTermId(), "Payment term");
 		}
+		// A customer's edit never touches what ERGO set (priority, payment term): the customer form does not carry them.
+		boolean keepErgoSettings = !isErgo(me);
 		rfq.targetQuoteDate = form.targetQuoteDate();
-		rfq.priority = form.priority() == null ? Priority.NORMAL : form.priority();
+		if (!keepErgoSettings) {
+			rfq.priority = form.priority() == null ? Priority.NORMAL : form.priority();
+			rfq.paymentTermId = form.paymentTermId();
+		}
+		if (rfq.priority == null) {
+			rfq.priority = Priority.NORMAL; // a customer's new RFQ
+		}
 		rfq.currencyId = form.currencyId();
-		rfq.paymentTermId = form.paymentTermId();
+		rfq.title = text(form.title());
+		rfq.description = text(form.description());
+		rfq.specialInstructions = text(form.specialInstructions());
 		rfq.customerRemarks = text(form.customerRemarks());
 		if (isErgo(me)) {
 			rfq.internalNotes = text(form.internalNotes()); // never written by customers, whatever they send
@@ -709,21 +853,23 @@ public class RfqService {
 	 * them), parts without one are added, parts left out are removed. Line numbers follow the form's order. Only
 	 * possible before distribution (see {@link #allowed}), so no supplier has a quote on a removed part.
 	 */
-	private void syncItems(Rfq rfq, List<ItemForm> forms) {
+	private void syncItems(Rfq rfq, List<ItemForm> forms, boolean ergo, boolean creating) {
 		List<RfqItem> existing = items.findByRfqIdOrderByLineNo(rfq.id);
 		Map<Long, RfqItem> byId = existing.stream().collect(Collectors.toMap(i -> i.id, Function.identity()));
 		Set<String> seen = new HashSet<>();
 		for (ItemForm form : forms) {
-			String revision = text(form.revision());
-			if (!seen.add(form.partNumber().trim().toLowerCase() + "|" + (revision == null ? "" : revision.toLowerCase()))) {
-				throw ApiException.unprocessable("Part " + form.partNumber().trim() + " is listed twice");
-			}
 			if (form.id() != null && !byId.containsKey(form.id())) {
 				throw ApiException.unprocessable("Unknown part in this RFQ");
+			}
+			// a customer's edit keeps the revision ERGO recorded, so that is the one that counts here
+			String revision = form.id() != null && !ergo ? byId.get(form.id()).revision : text(form.revision());
+			if (!seen.add(form.partNumber().trim().toLowerCase() + "|" + (revision == null ? "" : revision.toLowerCase()))) {
+				throw ApiException.unprocessable("Part " + form.partNumber().trim() + " is listed twice");
 			}
 		}
 		for (RfqItem item : existing) {
 			if (forms.stream().noneMatch(f -> Objects.equals(f.id(), item.id))) {
+				removeFiles(rfq, item);
 				items.delete(item);
 				audit.record(Rfq.class, rfq.id, "PART_REMOVED", "part", item.partNumber, null);
 			}
@@ -736,7 +882,9 @@ public class RfqService {
 				item.rfqId = rfq.id;
 			}
 			List<ProcessStep> before = List.copyOf(item.processSteps);
-			applyItem(item, form, lineNo);
+			// a customer's new RFQ may carry the old technical fields (API clients); once it exists, a part it adds or
+			// re-adds is bare until ERGO fills it in, so a customer cannot plant material or process steps in the review
+			applyItem(item, form, lineNo, ergo || creating);
 			items.save(item);
 			if (!before.equals(item.processSteps)) {
 				audit.record(RfqItem.class, item.id, "UPDATE", "processFlow", route(before), route(item.processSteps));
@@ -744,7 +892,20 @@ public class RfqService {
 		}
 	}
 
-	private void applyItem(RfqItem item, ItemForm form, int lineNo) {
+	/**
+	 * {@code full}: write every field. A customer editing a part that already exists writes only what its form carries
+	 * (part number, description, volume, target price, remarks): what ERGO added during the review stays as it is.
+	 */
+	private void applyItem(RfqItem item, ItemForm form, int lineNo, boolean full) {
+		if (!full) {
+			item.lineNo = lineNo;
+			item.partNumber = form.partNumber().trim();
+			item.description = text(form.description());
+			item.eau = form.eau();
+			item.targetProductionPiecePrice = form.targetProductionPiecePrice();
+			item.remarks = text(form.remarks());
+			return;
+		}
 		if (!Objects.equals(item.materialId, form.materialId())) {
 			masterData.requireActive(Ref.MATERIAL, form.materialId(), "Material");
 		}
@@ -777,6 +938,7 @@ public class RfqService {
 		item.sampleLeadTimeDays = form.sampleLeadTimeDays();
 		item.productionLeadTimeDays = form.productionLeadTimeDays();
 		item.moq = form.moq();
+		item.remarks = text(form.remarks());
 		if (!item.processSteps.equals(steps)) {
 			item.processSteps.clear();
 			item.processSteps.addAll(steps);
@@ -815,33 +977,43 @@ public class RfqService {
 		if (!BEFORE_FLOAT.contains(rfq.status)) {
 			return false;
 		}
-		return ERGO_EDITORS.contains(me.role())
-				|| CUSTOMER_EDITORS.contains(me.role()) && document.uploadedByCompanyId() == me.companyId();
+		return ERGO_EDITORS.contains(me.role()) || CUSTOMER_EDITORS.contains(me.role())
+				&& CUSTOMER_EDITABLE.contains(rfq.status) && document.uploadedByCompanyId() == me.companyId();
 	}
 
 	private RfqView view(Rfq r, CurrentUser me) {
-		List<ItemView> itemViews = itemViews(items.findByRfqIdOrderByLineNo(r.id));
+		List<RfqItem> parts = items.findByRfqIdOrderByLineNo(r.id);
 		Map<Long, MasterDataApi.Named> currencies = masterData.describe(Ref.CURRENCY, List.of(r.currencyId));
 		Map<Long, MasterDataApi.Named> terms = masterData.describe(Ref.PAYMENT_TERM, ids(List.of(r), x -> x.paymentTermId));
 		Set<RfqAction> actions = actions(me, r);
 
 		if (!isErgo(me)) {
-			return new CustomerRfqView("CUSTOMER", r.id, r.number, r.status.forCustomer(), r.targetQuoteDate,
-					r.priority, named(currencies, r.currencyId), named(terms, r.paymentTermId), itemViews,
+			Map<Long, List<ItemFile>> files = itemFiles(r, me, parts);
+			List<CustomerItemView> own = parts.stream()
+				.map(p -> new CustomerItemView(p.id, p.lineNo, p.partNumber, p.description, p.eau,
+						p.targetProductionPiecePrice, p.remarks, files.getOrDefault(p.id, List.of())))
+				.toList();
+			return new CustomerRfqView("CUSTOMER", r.id, r.number, r.status.forCustomer(), r.title, r.description,
+					r.specialInstructions, r.targetQuoteDate, named(currencies, r.currencyId), own,
 					r.customerRemarks, r.clarificationQuestion, r.clarificationAnswer, actions, r.createdAt,
 					r.updatedAt);
 		}
+		List<ItemView> itemViews = itemViews(r, me, parts);
 		CompanyRef customer = directory.company(r.customerCompanyId).orElseThrow();
 		Map<Long, UserRef> users = directory.users(ids(List.of(r), x -> x.createdByUserId, x -> x.ownerUserId));
-		return new ErgoRfqView("ERGO", r.id, r.number, r.status, r.sourceType,
+		String supplierRef = r.supplierRef != null ? r.supplierRef
+				: jdbc.queryForObject("SELECT supplier_ref FROM rfqs WHERE rfq_id = ?", String.class, r.id); // a new RFQ: set by the database
+		return new ErgoRfqView("ERGO", r.id, r.number, supplierRef, r.status, r.sourceType,
 				new Named(customer.id(), customer.code(), customer.name()), userName(users, r.createdByUserId),
-				userName(users, r.ownerUserId), r.targetQuoteDate, r.priority, named(currencies, r.currencyId),
+				userName(users, r.ownerUserId), r.title, r.description, r.specialInstructions, r.targetQuoteDate,
+				r.priority, named(currencies, r.currencyId),
 				named(terms, r.paymentTermId), itemViews, r.customerRemarks, r.internalNotes, r.clarificationQuestion,
 				r.clarificationAnswer, actions, r.createdAt, r.updatedAt);
 	}
 
 	/** The parts as ERGO and the RFQ's own customer see them (targets included; suppliers never get this view). */
-	private List<ItemView> itemViews(List<RfqItem> parts) {
+	private List<ItemView> itemViews(Rfq rfq, CurrentUser me, List<RfqItem> parts) {
+		Map<Long, List<ItemFile>> files = itemFiles(rfq, me, parts);
 		Map<Long, MasterDataApi.Named> materials = masterData.describe(Ref.MATERIAL,
 				parts.stream().map(p -> p.materialId).filter(Objects::nonNull).collect(Collectors.toSet()));
 		Map<Long, MasterDataApi.Named> coatings = masterData.describe(Ref.COATING,
@@ -859,8 +1031,33 @@ public class RfqService {
 					p.processSteps.stream()
 						.map(s -> new StepView(named(processes, s.processId()), s.stepName(), s.cycleTimeSeconds(),
 								s.sourcingType(), s.outsourcedSupplierName(), s.remarks()))
-						.toList()))
+						.toList(),
+					p.remarks, files.getOrDefault(p.id, List.of())))
 			.toList();
+	}
+
+	/** Each part's files by slot, as the caller may see them (the same visibility rule as the RFQ's document list). */
+	private Map<Long, List<ItemFile>> itemFiles(Rfq rfq, CurrentUser me, List<RfqItem> parts) {
+		if (parts.isEmpty()) {
+			return Map.of();
+		}
+		record Slot(long itemId, FileKind kind) {
+		}
+		Map<Long, Slot> slots = new java.util.HashMap<>();
+		jdbc.query("SELECT document_id, rfq_item_id, kind FROM rfq_item_files WHERE rfq_item_id = ANY (?)",
+				rs -> {
+					slots.put(rs.getLong(1), new Slot(rs.getLong(2), FileKind.valueOf(rs.getString(3))));
+				}, (Object) parts.stream().map(p -> p.id).toArray(Long[]::new));
+		Map<Long, List<ItemFile>> result = new java.util.HashMap<>();
+		for (DocumentInfo d : documents.list(MODULE, rfq.id)) {
+			Slot slot = slots.get(d.id());
+			if (slot != null && canSee(me, d)) {
+				result.computeIfAbsent(slot.itemId(), k -> new ArrayList<>())
+					.add(new ItemFile(d.id(), slot.kind(), d.fileName(), d.size(), d.uploadedByCompanyId() == me.companyId(),
+							canDelete(me, rfq, d), d.createdAt()));
+			}
+		}
+		return result;
 	}
 
 	private Map<Long, List<String>> partNumbers(Collection<Rfq> list) {

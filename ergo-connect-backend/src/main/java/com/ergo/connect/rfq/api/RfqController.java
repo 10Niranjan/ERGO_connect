@@ -24,8 +24,11 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.ergo.connect.common.audit.AuditLogService.AuditEntry;
 import com.ergo.connect.documents.api.DocumentStore.Visibility;
+import com.ergo.connect.rfq.domain.FileKind;
+import com.ergo.connect.rfq.domain.RfqDtos.AttachmentRule;
 import com.ergo.connect.rfq.domain.RfqDtos.CommentForm;
 import com.ergo.connect.rfq.domain.RfqDtos.DocumentView;
+import com.ergo.connect.rfq.domain.RfqDtos.ItemFile;
 import com.ergo.connect.rfq.domain.RfqDtos.NotesForm;
 import com.ergo.connect.rfq.domain.RfqDtos.RfqForm;
 import com.ergo.connect.rfq.domain.RfqDtos.RfqPage;
@@ -33,6 +36,7 @@ import com.ergo.connect.rfq.domain.RfqDtos.RfqView;
 import com.ergo.connect.rfq.domain.RfqDtos.VisibilityForm;
 import com.ergo.connect.rfq.domain.RfqService;
 import com.ergo.connect.rfq.domain.RfqService.DocumentFile;
+import com.ergo.connect.rfq.domain.RfqService.FileUpload;
 
 import jakarta.validation.Valid;
 
@@ -65,6 +69,13 @@ class RfqController {
 	RfqPage list(@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "25") int size,
 			@RequestParam(required = false) String status, @RequestParam(required = false) String q) {
 		return rfqs.list(page, size, status, q);
+	}
+
+	/** The part slots, their accepted file types and the size limit: the RFQ page reads them instead of hard-coding. */
+	@GetMapping("/attachment-rules")
+	@PreAuthorize(VIEWERS)
+	List<AttachmentRule> attachmentRules() {
+		return rfqs.attachmentRules();
 	}
 
 	@GetMapping("/{id}")
@@ -148,6 +159,19 @@ class RfqController {
 			@RequestParam(required = false) Visibility visibility,
 			@RequestParam(required = false) java.util.List<Long> itemIds) throws IOException {
 		return rfqs.upload(id, file.getOriginalFilename(), file.getBytes(), visibility, itemIds);
+	}
+
+	/** Several files into one slot of one part, in one request. */
+	@PostMapping(path = "/{id}/items/{itemId}/files", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+	@PreAuthorize(CREATORS)
+	@ResponseStatus(HttpStatus.CREATED)
+	List<ItemFile> uploadItemFiles(@PathVariable long id, @PathVariable long itemId, @RequestParam FileKind kind,
+			@RequestParam("files") List<MultipartFile> files) throws IOException {
+		List<FileUpload> uploads = new java.util.ArrayList<>();
+		for (MultipartFile file : files) {
+			uploads.add(new FileUpload(file.getOriginalFilename(), file.getBytes()));
+		}
+		return rfqs.uploadItemFiles(id, itemId, kind, uploads);
 	}
 
 	/** Always a download (never rendered in the browser), not cached. */

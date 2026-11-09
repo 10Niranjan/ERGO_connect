@@ -52,6 +52,9 @@ class Company {
 
 	String postalCode;
 
+	/** Prefix of this customer's RFQ numbers (IC-2026-001). Set by ERGO only; unique. */
+	String rfqPrefix;
+
 	String taxId;
 
 	String website;

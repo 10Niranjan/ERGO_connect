@@ -73,7 +73,7 @@ export function RfqListPage() {
       <Stack direction="row" spacing={2}>
         <TextField
           size="small"
-          label={isErgo ? 'Search RFQ no., part or customer' : 'Search RFQ no. or part'}
+          label={isErgo ? 'Search RFQ no., title, part or customer' : 'Search RFQ no., title or part'}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           slotProps={{ htmlInput: { maxLength: 100 } }}
@@ -105,11 +105,12 @@ export function RfqListPage() {
           <TableHead>
             <TableRow>
               <TableCell>RFQ</TableCell>
+              <TableCell>Title</TableCell>
               {isErgo && <TableCell>Customer</TableCell>}
               <TableCell>Parts</TableCell>
               <TableCell>Status</TableCell>
-              <TableCell>Quote needed by</TableCell>
-              <TableCell>Priority</TableCell>
+              <TableCell>Expected quote receipt</TableCell>
+              {isErgo && <TableCell>Priority</TableCell>}
               {isErgo && <TableCell>Owner</TableCell>}
               <TableCell>Created</TableCell>
             </TableRow>
@@ -118,20 +119,21 @@ export function RfqListPage() {
             {rfqs.map((r) => (
               <TableRow key={r.id} hover sx={{ cursor: 'pointer' }} onClick={() => navigate(`/rfqs/${r.id}`)}>
                 <TableCell>{r.number}</TableCell>
+                <TableCell sx={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.title ?? '—'}</TableCell>
                 {isErgo && <TableCell>{r.customer}</TableCell>}
                 <TableCell sx={{ maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.parts.join(', ') || '—'}</TableCell>
                 <TableCell>
                   <Chip size="small" label={STATUS[r.status].label} color={STATUS[r.status].color} />
                 </TableCell>
                 <TableCell>{formatDate(r.targetQuoteDate)}</TableCell>
-                <TableCell>{PRIORITIES[r.priority]}</TableCell>
+                {isErgo && <TableCell>{r.priority ? PRIORITIES[r.priority] : "—"}</TableCell>}
                 {isErgo && <TableCell>{r.owner ?? '—'}</TableCell>}
                 <TableCell>{formatDate(r.createdAt)}</TableCell>
               </TableRow>
             ))}
             {!isLoading && rfqs.length === 0 && (
               <TableRow>
-                <TableCell colSpan={isErgo ? 8 : 6} sx={{ color: 'text.secondary' }}>
+                <TableCell colSpan={isErgo ? 9 : 6} sx={{ color: 'text.secondary' }}>
                   {filtered ? 'No RFQs match.' : 'No RFQs yet.'}
                 </TableCell>
               </TableRow>

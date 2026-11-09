@@ -294,7 +294,7 @@ class DashboardTests {
 		submit(rfqId, buyerA);
 		mvc.perform(json(post("/api/rfqs/{id}/start-review", rfqId), "{}", ergoRfq)).andExpect(status().isOk());
 		com.ergo.connect.TestRfq.invite(mvc, ergoRfq, rfqId, supplier);
-		String number = com.ergo.connect.TestRfq.numberOf(mvc, ergoRfq, rfqId);
+		String number = com.ergo.connect.TestRfq.supplierRefOf(mvc, ergoRfq, rfqId);
 		long firstPart = com.ergo.connect.TestRfq.itemIds(mvc, ergoRfq, rfqId).getFirst();
 		jdbc.update("UPDATE rfq_supplier_assignments SET response_due_date = ? WHERE supplier_company_id = ? AND rfq_item_id = ?",
 				LocalDate.now().minusDays(1), supplier, firstPart);

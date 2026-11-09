@@ -19,6 +19,8 @@ export interface CompanyProfile {
   primaryContactName: string | null
   primaryContactEmail: string | null
   primaryContactPhone: string | null
+  /** Prefix of this customer's RFQ numbers (IC in IC-2026-001); ERGO sets it, null = initials of the name. */
+  rfqPrefix: string | null
 }
 
 export interface Company {

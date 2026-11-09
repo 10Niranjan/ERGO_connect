@@ -108,7 +108,7 @@ class AccessIsolationTests {
 		String rfq = mvc.perform(post("/api/rfqs").header(HttpHeaders.AUTHORIZATION, buyerA.bearer())
 			.contentType(MediaType.APPLICATION_JSON)
 			.content("""
-					{"targetQuoteDate": "%2$s", "currencyId": %3$d, "customerRemarks": "x",
+					{"title": "T", "targetQuoteDate": "%2$s", "currencyId": %3$d, "customerRemarks": "x",
 					 "items": [{"partNumber": "PN-ISO", "revision": "A", "description": "Flange", "eau": 5000, "materialId": %1$d,
 					  "targetProductionPiecePrice": 42.50, "processSteps": [{"processId": %4$d, "stepName": "Step 1"}]}]}"""
 				.formatted(users.masterEntry("materials", "material"), LocalDate.now().plusDays(14), users.currency("INR"),

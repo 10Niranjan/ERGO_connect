@@ -72,6 +72,9 @@ class QuoteTests {
 
 	String number;
 
+	/** What suppliers see instead of the RFQ number. */
+	String supplierRef;
+
 	long p1;
 
 	long p2;
@@ -92,6 +95,7 @@ class QuoteTests {
 		sellerY = users.login(supplierY, "SUPPLIER_KAM");
 		rfqId = reviewedRfq();
 		number = TestRfq.numberOf(mvc, ergoRfq, rfqId);
+		supplierRef = TestRfq.supplierRefOf(mvc, ergoRfq, rfqId);
 		List<Long> parts = TestRfq.itemIds(mvc, ergoRfq, rfqId);
 		p1 = parts.get(0);
 		p2 = parts.get(1);
@@ -440,15 +444,15 @@ class QuoteTests {
 	/** Three parts: the first with a process route that names a sub-supplier, which suppliers must never see. */
 	private String rfqForm() {
 		return """
-				{"targetQuoteDate": "%s", "currencyId": %d, "customerRemarks": "Keep target secret",
+				{"title": "T", "targetQuoteDate": "%s", "currencyId": %d, "customerRemarks": "Keep target secret",
 				 "items": [
-				  {"partNumber": "PN-Q1", "description": "Flange", "materialSpec": "EN8", "targetProductionPiecePrice": 99.5,
+				  {"partNumber": "PN-Q1", "description": "Flange", "eau": 1000, "materialSpec": "EN8", "targetProductionPiecePrice": 99.5,
 				   "processSteps": [{"stepName": "Forging", "cycleTimeSeconds": 55, "sourcingType": "OUTSOURCED",
 				                     "outsourcedSupplierName": "Rival Forge Ltd", "remarks": "per customer spec AS-12"},
 				                    {"stepName": "Machining"}]},
-				  {"partNumber": "PN-Q2", "description": "Housing", "materialSpec": "AlSi9",
+				  {"partNumber": "PN-Q2", "description": "Housing", "eau": 1000, "materialSpec": "AlSi9",
 				   "processSteps": [{"stepName": "Casting"}]},
-				  {"partNumber": "PN-Q3", "description": "Cap", "materialSpec": "PA66",
+				  {"partNumber": "PN-Q3", "description": "Cap", "eau": 1000, "materialSpec": "PA66",
 				   "processSteps": [{"stepName": "Moulding"}]}]}"""
 			.formatted(LocalDate.now().plusDays(10), inr);
 	}
@@ -467,7 +471,7 @@ class QuoteTests {
 	}
 
 	private long quoteOf(Login supplier, String partNumber) throws Exception {
-		return TestRfq.quoteOf(mvc, supplier, number, partNumber);
+		return TestRfq.quoteOf(mvc, supplier, supplierRef, partNumber);
 	}
 
 	private ResultActions call(MockHttpServletRequestBuilder request, Login user, String body) throws Exception {

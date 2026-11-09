@@ -35,6 +35,11 @@ class Rfq {
 	@Column(name = "rfq_number", updatable = false)
 	String number;
 
+	/** What suppliers see instead of the number (set by the database, never written by the app). */
+	@Column(name = "supplier_ref", insertable = false, updatable = false)
+	@AuditExclude
+	String supplierRef;
+
 	@Enumerated(EnumType.STRING)
 	@Column(updatable = false)
 	SourceType sourceType;
@@ -60,6 +65,12 @@ class Rfq {
 	Long paymentTermId;
 
 	String customerRemarks;
+
+	String title;
+
+	String description;
+
+	String specialInstructions;
 
 	String internalNotes;
 

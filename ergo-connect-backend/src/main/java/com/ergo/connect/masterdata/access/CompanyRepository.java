@@ -28,6 +28,8 @@ interface CompanyRepository extends Repository<Company, Long> {
 
 	boolean existsByCodeIgnoreCase(String code);
 
+	Optional<Company> findByRfqPrefix(String rfqPrefix);
+
 	/** Dev seeding only: re-resolve the demo companies when the database already has them. */
 	Optional<Company> findByCodeIgnoreCase(String code);
 

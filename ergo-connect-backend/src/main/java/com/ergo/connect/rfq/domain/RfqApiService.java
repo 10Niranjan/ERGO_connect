@@ -107,7 +107,7 @@ class RfqApiService implements RfqApi {
 		Rfq r = rfqService.visible(me, rfqId);
 		// A read-only RFQ module offers no quoting work: every flag below is what lets the quotation module act.
 		boolean open = ModuleSwitch.writable(Module.RFQ);
-		return new RfqRef(r.id, r.number, r.customerCompanyId, r.currencyId, r.paymentTermId,
+		return new RfqRef(r.id, r.number, r.supplierRef, r.customerCompanyId, r.currencyId, r.paymentTermId,
 				open && INVITING.contains(r.status), open && QUOTING.contains(r.status),
 				items.findByRfqIdOrderByLineNo(r.id).stream().map(RfqApiService::itemRef).toList());
 	}
@@ -199,7 +199,7 @@ class RfqApiService implements RfqApi {
 			.collect(Collectors.toSet()));
 		return found.stream().collect(Collectors.toMap(i -> i.id, i -> {
 			Rfq r = owners.get(i.rfqId);
-			return new SupplierRfqItem(r.id, r.number, i.id, i.partNumber, i.revision, i.description, i.eau,
+			return new SupplierRfqItem(r.id, r.supplierRef, i.id, i.partNumber, i.revision, i.description, i.eau,
 					i.netWeightKg, i.grossWeightKg, name(materials, i.materialId), i.materialSpec,
 					name(coatings, i.coatingId), i.coatingSpec,
 					i.processSteps.stream()
@@ -221,7 +221,7 @@ class RfqApiService implements RfqApi {
 			.collect(Collectors.toMap(r -> r.id, Function.identity()));
 		return found.stream().collect(Collectors.toMap(i -> i.id, i -> {
 			Rfq r = owners.get(i.rfqId);
-			return new SupplierItemRef(i.id, r.number, i.partNumber, open && SUPPLIER_OPEN.contains(r.status));
+			return new SupplierItemRef(i.id, r.supplierRef, i.partNumber, open && SUPPLIER_OPEN.contains(r.status));
 		}));
 	}
 
@@ -232,10 +232,13 @@ class RfqApiService implements RfqApi {
 			return Set.of();
 		}
 		String pattern = "%" + needle.toLowerCase(java.util.Locale.ROOT).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+		// A supplier searches by the neutral reference only: the real number carries the customer's prefix.
+		String number = CurrentUser.get().companyType() == CompanyType.SUPPLIER ? "r.supplier_ref" : "r.rfq_number";
 		return new java.util.HashSet<>(jdbc.queryForList("""
 				SELECT i.rfq_item_id FROM rfq_items i JOIN rfqs r ON r.rfq_id = i.rfq_id
-				WHERE i.rfq_item_id = ANY (?) AND (lower(r.rfq_number) LIKE ? OR lower(i.part_number) LIKE ?
-				OR lower(i.description) LIKE ?)""", Long.class, (Object) itemIds.toArray(Long[]::new), pattern, pattern, pattern));
+				WHERE i.rfq_item_id = ANY (?) AND (lower(%s) LIKE ? OR lower(i.part_number) LIKE ?
+				OR lower(i.description) LIKE ?)""".formatted(number), Long.class, (Object) itemIds.toArray(Long[]::new), pattern,
+				pattern, pattern));
 	}
 
 	@Override
@@ -260,7 +263,7 @@ class RfqApiService implements RfqApi {
 		if (!INVITING.contains(rfq.status)) {
 			throw ApiException.conflict("Parts can be sent to suppliers once ERGO is reviewing the RFQ");
 		}
-		RfqService.requireComplete(rfq, items.findByRfqIdOrderByLineNo(rfqId));
+		RfqService.requireDistributable(rfq, items.findByRfqIdOrderByLineNo(rfqId));
 		if (rfq.status == UNDER_REVIEW) {
 			rfq.status = SENT_TO_SUPPLIERS;
 		}

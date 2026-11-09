@@ -33,6 +33,27 @@ export type CustomerRfqStatus =
 
 export type Priority = 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT'
 export type Visibility = 'INTERNAL' | 'CUSTOMER' | 'SUPPLIER' | 'ALL'
+/** The four attachment slots of a part in the customer's RFQ table. */
+export type FileKind = 'DRAWING_2D' | 'MODEL_3D' | 'SPECIFICATION' | 'ADDITIONAL'
+
+/** A file in one of a part's slots. */
+export interface ItemFile {
+  id: number
+  kind: FileKind
+  fileName: string
+  size: number
+  ownCompany: boolean
+  canDelete: boolean
+  createdAt: string
+}
+
+/** Allowed extensions (lower case, no dot) and size limit of one slot; the backend is the source, read once. */
+export interface AttachmentRule {
+  kind: FileKind
+  extensions: string[]
+  maxBytes: number
+}
+
 export type SourcingType = 'INHOUSE' | 'OUTSOURCED'
 
 /** Buttons the backend allows for this user, role and status right now. */
@@ -85,16 +106,30 @@ export interface ItemView {
   coatingSpec: string | null
   targets: TargetsView
   processSteps: StepView[]
+  remarks: string | null
+  files: ItemFile[]
+}
+
+/** A part as its own customer sees it: only what the customer entered, plus its files. */
+export interface CustomerItemView {
+  id: number
+  lineNo: number
+  partNumber: string
+  description: string | null
+  eau: number | null
+  targetPrice: number | null
+  remarks: string | null
+  files: ItemFile[]
 }
 
 interface RfqViewBase {
   id: number
   number: string
+  title: string | null
+  description: string | null
+  specialInstructions: string | null
   targetQuoteDate: string | null
-  priority: Priority
   currency: Named
-  paymentTerm: Named | null
-  items: ItemView[]
   customerRemarks: string | null
   clarificationQuestion: string | null
   clarificationAnswer: string | null
@@ -105,17 +140,23 @@ interface RfqViewBase {
 
 export interface ErgoRfqView extends RfqViewBase {
   audience: 'ERGO'
+  /** The reference suppliers see instead of the number (the number carries the customer's prefix). */
+  supplierRef: string
   status: RfqStatus
   sourceType: 'CUSTOMER' | 'ERGO'
   customer: Named
   createdBy: string | null
   owner: string | null
   internalNotes: string | null
+  priority: Priority
+  paymentTerm: Named | null
+  items: ItemView[]
 }
 
 export interface CustomerRfqView extends RfqViewBase {
   audience: 'CUSTOMER'
   status: CustomerRfqStatus
+  items: CustomerItemView[]
 }
 
 export type RfqView = ErgoRfqView | CustomerRfqView
@@ -123,6 +164,7 @@ export type RfqView = ErgoRfqView | CustomerRfqView
 export interface RfqRow {
   id: number
   number: string
+  title: string | null
   status: RfqStatus | CustomerRfqStatus
   /** ERGO only */
   customer?: string
@@ -131,7 +173,8 @@ export interface RfqRow {
   /** The part numbers of the RFQ's items, in order. */
   parts: string[]
   targetQuoteDate: string | null
-  priority: Priority
+  /** ERGO only */
+  priority?: Priority
   createdAt: string
 }
 
@@ -157,10 +200,14 @@ export interface ItemForm {
   productionLeadTimeDays: number | null
   moq: number | null
   processSteps: ProcessStep[]
+  remarks: string | null
 }
 
 export interface RfqForm {
   customerCompanyId: number | null
+  title: string | null
+  description: string | null
+  specialInstructions: string | null
   targetQuoteDate: string | null
   priority: Priority
   currencyId: number | null
@@ -252,6 +299,16 @@ export const rfqApi = api.enhanceEndpoints({ addTagTypes: ['Rfq', 'RfqDocuments'
       query: (id) => `/rfqs/${id}/documents`,
       providesTags: (_r, _e, id) => [{ type: 'RfqDocuments', id }],
     }),
+    attachmentRules: build.query<AttachmentRule[], void>({ query: () => '/rfqs/attachment-rules' }),
+    /** Several files into one slot of one part, in one request; resolves to the stored files. */
+    uploadItemFiles: build.mutation<ItemFile[], { id: number; itemId: number; kind: FileKind; files: File[] }>({
+      query: ({ id, itemId, kind, files }) => {
+        const body = new FormData()
+        files.forEach((file) => body.append('files', file))
+        return { url: `/rfqs/${id}/items/${itemId}/files`, method: 'POST', params: { kind }, body }
+      },
+      invalidatesTags: (_r, _e, { id }) => [{ type: 'RfqDocuments', id }],
+    }),
     uploadRfqDocument: build.mutation<DocumentView, { id: number; file: File; visibility?: Visibility; itemIds?: number[] }>({
       query: ({ id, file, visibility, itemIds }) => {
         const body = new FormData()
@@ -295,6 +352,8 @@ export const {
   useRfqCommandMutation,
   useCloneRfqMutation,
   useRfqDocumentsQuery,
+  useAttachmentRulesQuery,
+  useUploadItemFilesMutation,
   useUploadRfqDocumentMutation,
   useSetRfqDocumentVisibilityMutation,
   useDeleteRfqDocumentMutation,

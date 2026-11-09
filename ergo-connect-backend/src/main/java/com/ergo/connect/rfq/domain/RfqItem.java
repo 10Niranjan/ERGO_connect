@@ -75,6 +75,9 @@ class RfqItem {
 
 	Integer moq;
 
+	/** The customer's part-specific notes (never shown to suppliers). */
+	String remarks;
+
 	/** Audited explicitly as one PROCESS_FLOW change (collections are not diffed field by field). */
 	@ElementCollection
 	@CollectionTable(name = "rfq_item_process_steps", joinColumns = @JoinColumn(name = "rfq_item_id"))

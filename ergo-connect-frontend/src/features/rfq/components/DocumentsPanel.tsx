@@ -31,7 +31,6 @@ import {
   useRfqQuery,
   useSetRfqDocumentVisibilityMutation,
   useUploadRfqDocumentMutation,
-  type ItemView,
   type Visibility,
 } from '../rfqApi'
 import { useConfirm } from '@/components/ui/useConfirm'
@@ -56,7 +55,7 @@ export function DocumentsPanel({ rfqId, canUpload, isErgo }: Props) {
   const [remove] = useDeleteRfqDocumentMutation()
   const [confirm, confirmDialog] = useConfirm()
   const [visibility, setNewVisibility] = useState<Visibility>('INTERNAL')
-  const [uploadParts, setUploadParts] = useState<ItemView[]>([])
+  const [uploadParts, setUploadParts] = useState<PartRef[]>([])
   const [choosing, setChoosing] = useState<{ documentId: number; visibility: Visibility; current: number[] } | null>(null)
   const [actionError, setActionError] = useState<unknown>(null)
   const fileInput = useRef<HTMLInputElement>(null)
@@ -222,8 +221,11 @@ export function DocumentsPanel({ rfqId, canUpload, isErgo }: Props) {
 }
 
 /** Which parts a file shared with suppliers is shared for. */
-function ChoosePartsDialog({ parts, initial, onClose, onConfirm }: { parts: ItemView[]; initial: number[]; onClose: () => void; onConfirm: (itemIds: number[]) => void }) {
-  const [selected, setSelected] = useState<ItemView[]>(() => parts.filter((p) => initial.includes(p.id)))
+/** What the panel needs of a part: the customer's view has no more than this in common with ERGO's. */
+type PartRef = { id: number; partNumber: string }
+
+function ChoosePartsDialog({ parts, initial, onClose, onConfirm }: { parts: PartRef[]; initial: number[]; onClose: () => void; onConfirm: (itemIds: number[]) => void }) {
+  const [selected, setSelected] = useState<PartRef[]>(() => parts.filter((p) => initial.includes(p.id)))
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="sm">
       <DialogTitle>Share with suppliers for which parts?</DialogTitle>

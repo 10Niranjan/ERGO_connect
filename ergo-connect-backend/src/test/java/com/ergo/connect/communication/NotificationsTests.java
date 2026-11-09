@@ -376,22 +376,24 @@ class NotificationsTests {
 		TestRfq.invite(mvc, ergoRfq, rfqId, supplierX, supplierY);
 		long ix = invitationOf(sellerX, rfqId);
 		long iy = invitationOf(sellerY, rfqId);
-		assertLatest(sellerX, "New quote request", "ACTION_REQUIRED", number + " - Respond by " + LocalDate.now().plusDays(7),
+		// suppliers are told the neutral reference, never the customer-prefixed number
+		String supplierRef = TestRfq.supplierRefOf(mvc, ergoRfq, rfqId);
+		assertLatest(sellerX, "New quote request", "ACTION_REQUIRED", supplierRef + " - Respond by " + LocalDate.now().plusDays(7),
 				"/quotes/" + ix);
-		assertLatest(sellerY, "New quote request", "ACTION_REQUIRED", number + " - Respond by " + LocalDate.now().plusDays(7),
+		assertLatest(sellerY, "New quote request", "ACTION_REQUIRED", supplierRef + " - Respond by " + LocalDate.now().plusDays(7),
 				"/quotes/" + iy);
 		assertCount(buyerA, 1); // the customer is told nothing about suppliers being invited
 
 		// supplier X quotes part 1: ERGO is told, the other supplier and the customer are not
 		call(put("/api/quotes/{id}", ix), sellerX, quoteForm()).andExpect(status().isOk());
 		call(post("/api/quotes/{id}/submit", ix), sellerX, null).andExpect(status().isOk());
-		assertLatest(ergoRfq, "Supplier quote submitted", "RESPONSE_RECEIVED", number + " - PN-1", "/quotes/" + ix);
+		assertLatest(ergoRfq, "Supplier quote submitted", "RESPONSE_RECEIVED", supplierRef + " - PN-1", "/quotes/" + ix);
 		assertCount(sellerY, 1);
 		assertCount(buyerA, 1);
 
 		// ERGO sends the part's quote back for revision: only that supplier hears
 		call(post("/api/quotes/{id}/revision", ix), ergoRfq, "{\"comment\": \"price check\"}").andExpect(status().isOk());
-		assertLatest(sellerX, "Revision required on your quote", "ACTION_REQUIRED", number + " - Revision required: PN-1",
+		assertLatest(sellerX, "Revision required on your quote", "ACTION_REQUIRED", supplierRef + " - Revision required: PN-1",
 				"/quotes/" + ix);
 		assertCount(sellerY, 1);
 
@@ -687,7 +689,7 @@ class NotificationsTests {
 
 	private long invitationOf(Login supplier, long rfqId) throws Exception {
 		String number = JsonPath.read(call(get("/api/rfqs/{id}", rfqId), ergoRfq, null).andReturn().getResponse()
-			.getContentAsString(), "$.number");
+			.getContentAsString(), "$.supplierRef");
 		List<Number> ids = JsonPath.read(call(get("/api/quotes"), supplier, null).andReturn().getResponse()
 			.getContentAsString(), "$.items[?(@.rfqNumber == '" + number + "')].id");
 		return ids.get(0).longValue();

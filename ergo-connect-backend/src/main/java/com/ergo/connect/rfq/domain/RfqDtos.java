@@ -42,12 +42,14 @@ public final class RfqDtos {
 			@PositiveOrZero @Digits(integer = 14, fraction = 4) BigDecimal targetProductionPiecePrice,
 			@PositiveOrZero Integer materialLeadTimeWeeks, @PositiveOrZero Integer toolingLeadTimeDays,
 			@PositiveOrZero Integer sampleLeadTimeDays, @PositiveOrZero Integer productionLeadTimeDays,
-			@Positive Integer moq, @Size(max = 50) List<@Valid @NotNull ProcessStep> processSteps) {
+			@Positive Integer moq, @Size(max = 50) List<@Valid @NotNull ProcessStep> processSteps,
+			@Size(max = 1000) String remarks) {
 	}
 
 	/** Create / edit. {@code customerCompanyId} and {@code internalNotes} are used for ERGO callers only. */
-	public record RfqForm(Long customerCompanyId, LocalDate targetQuoteDate, Priority priority,
-			@NotNull Long currencyId, Long paymentTermId, @Size(max = 4000) String customerRemarks,
+	public record RfqForm(Long customerCompanyId, @Size(max = 200) String title,
+			@Size(max = 4000) String description, @Size(max = 4000) String specialInstructions,
+			LocalDate targetQuoteDate, Priority priority, @NotNull Long currencyId, Long paymentTermId, @Size(max = 4000) String customerRemarks,
 			@Size(max = 4000) String internalNotes,
 			@NotEmpty @Size(max = 100) List<@Valid @NotNull ItemForm> items) {
 	}
@@ -83,22 +85,42 @@ public final class RfqDtos {
 	/** A part and its technical and commercial data: what ERGO and the RFQ's own customer may see. */
 	public record ItemView(long id, int lineNo, String partNumber, String revision, String description, Integer eau,
 			BigDecimal netWeightKg, BigDecimal grossWeightKg, Named material, String materialSpec, Named coating,
-			String coatingSpec, TargetsView targets, List<StepView> processSteps) {
+			String coatingSpec, TargetsView targets, List<StepView> processSteps, String remarks,
+			List<ItemFile> files) {
+	}
+
+	/** What one slot accepts: extensions (lower case, no dot) and the largest file in bytes. */
+	public record AttachmentRule(FileKind kind, List<String> extensions, long maxBytes) {
+	}
+
+	/** A file in one of a part's four attachment slots (the customer's own drawings, models, specs and extras). */
+	public record ItemFile(long id, FileKind kind, String fileName, long size, boolean ownCompany, boolean canDelete,
+			Instant createdAt) {
+	}
+
+	/**
+	 * A part as its own customer sees it: what the customer entered (part number, description, volume, its target
+	 * price, remarks) and its files. Nothing ERGO adds during the review (tooling and PPAP targets, MOQ, lead times,
+	 * weights, material, process route) is in this type, so it cannot reach the customer, whatever the UI shows.
+	 */
+	public record CustomerItemView(long id, int lineNo, String partNumber, String description, Integer eau,
+			BigDecimal targetPrice, String remarks, List<ItemFile> files) {
 	}
 
 	public sealed interface RfqView permits ErgoRfqView, CustomerRfqView {
 	}
 
-	public record ErgoRfqView(String audience, long id, String number, RfqStatus status, SourceType sourceType,
-			Named customer, String createdBy, String owner, LocalDate targetQuoteDate, Priority priority,
+	public record ErgoRfqView(String audience, long id, String number, String supplierRef, RfqStatus status, SourceType sourceType,
+			Named customer, String createdBy, String owner, String title, String description,
+			String specialInstructions, LocalDate targetQuoteDate, Priority priority,
 			Named currency, Named paymentTerm, List<ItemView> items, String customerRemarks, String internalNotes,
 			String clarificationQuestion, String clarificationAnswer, Set<RfqAction> actions, Instant createdAt,
 			Instant updatedAt) implements RfqView {
 	}
 
-	public record CustomerRfqView(String audience, long id, String number, CustomerStatus status,
-			LocalDate targetQuoteDate, Priority priority, Named currency, Named paymentTerm, List<ItemView> items,
-			String customerRemarks, String clarificationQuestion, String clarificationAnswer, Set<RfqAction> actions,
+	public record CustomerRfqView(String audience, long id, String number, CustomerStatus status, String title,
+			String description, String specialInstructions, LocalDate targetQuoteDate, Named currency,
+			List<CustomerItemView> items, String customerRemarks, String clarificationQuestion, String clarificationAnswer, Set<RfqAction> actions,
 			Instant createdAt, Instant updatedAt) implements RfqView {
 	}
 
@@ -110,12 +132,13 @@ public final class RfqDtos {
 	}
 
 	/** {@code parts}: the part numbers of the RFQ's items, in order. */
-	public record ErgoRfqRow(long id, String number, RfqStatus status, String customer, List<String> parts,
+	public record ErgoRfqRow(long id, String number, RfqStatus status, String title, String customer,
+			List<String> parts,
 			LocalDate targetQuoteDate, Priority priority, String owner, Instant createdAt) implements RfqRow {
 	}
 
-	public record CustomerRfqRow(long id, String number, CustomerStatus status, List<String> parts,
-			LocalDate targetQuoteDate, Priority priority, Instant createdAt) implements RfqRow {
+	public record CustomerRfqRow(long id, String number, CustomerStatus status, String title, List<String> parts,
+			LocalDate targetQuoteDate, Instant createdAt) implements RfqRow {
 	}
 
 	public record DocumentView(long id, String fileName, long size, Visibility visibility, boolean ownCompany,

@@ -21,7 +21,8 @@ public final class CompanyDtos {
 			@Size(max = 200) String addressLine2, @Size(max = 100) String city, @Size(max = 100) String state,
 			@Size(max = 100) String country, @Size(max = 20) String postalCode, @Size(max = 50) String taxId,
 			@Size(max = 200) String website, @Size(max = 200) String primaryContactName,
-			@Email @Size(max = 254) String primaryContactEmail, @Size(max = 30) String primaryContactPhone) {
+			@Email @Size(max = 254) String primaryContactEmail, @Size(max = 30) String primaryContactPhone,
+			@Pattern(regexp = "[A-Z0-9]{2,6}") String rfqPrefix) {
 	}
 
 	public record CompanyRequest(@NotBlank @Pattern(regexp = "[A-Z0-9][A-Z0-9_-]{1,29}") String code,

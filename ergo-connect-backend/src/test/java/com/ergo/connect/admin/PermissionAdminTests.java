@@ -363,7 +363,7 @@ class PermissionAdminTests {
 		long material = users.masterEntry("materials", "material");
 		long process = users.masterEntry("processes", "process");
 		return """
-				{"targetQuoteDate": "%2$s", "currencyId": %3$d, "customerRemarks": "Urgent",
+				{"title": "T", "targetQuoteDate": "%2$s", "currencyId": %3$d, "customerRemarks": "Urgent",
 				 "items": [{"partNumber": "PN-ISO", "revision": "A", "description": "Flange, machined", "eau": 5000,
 				  "materialId": %1$d, "targetProductionPiecePrice": 42.50,
 				  "processSteps": [{"processId": %4$d, "stepName": "Step 1 forging"}]}]}"""

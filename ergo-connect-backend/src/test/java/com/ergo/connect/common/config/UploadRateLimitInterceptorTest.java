@@ -26,7 +26,7 @@ class UploadRateLimitInterceptorTest {
 	void ignoresNonMultipartRequests() {
 		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/rfqs/1");
 
-		boolean allowed = new UploadRateLimitInterceptor(limiter, 30).preHandle(request, new MockHttpServletResponse(),
+		boolean allowed = new UploadRateLimitInterceptor(limiter, 30, 120).preHandle(request, new MockHttpServletResponse(),
 				null);
 
 		assertThat(allowed).isTrue();
@@ -38,7 +38,7 @@ class UploadRateLimitInterceptorTest {
 		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/rfqs/1/documents");
 		request.setContentType("multipart/form-data");
 
-		boolean allowed = new UploadRateLimitInterceptor(limiter, 30).preHandle(request, new MockHttpServletResponse(),
+		boolean allowed = new UploadRateLimitInterceptor(limiter, 30, 120).preHandle(request, new MockHttpServletResponse(),
 				null);
 
 		assertThat(allowed).isTrue(); // security itself rejects this before the interceptor matters; don't double-guess
@@ -52,7 +52,7 @@ class UploadRateLimitInterceptorTest {
 			request.setContentType("multipart/form-data; boundary=x");
 			when(limiter.increment(eq("upload-attempts:42"), eq(300))).thenReturn(31L);
 
-			assertThatThrownBy(() -> new UploadRateLimitInterceptor(limiter, 30).preHandle(request,
+			assertThatThrownBy(() -> new UploadRateLimitInterceptor(limiter, 30, 120).preHandle(request,
 					new MockHttpServletResponse(), null)).isInstanceOf(ApiException.class);
 			return null;
 		});

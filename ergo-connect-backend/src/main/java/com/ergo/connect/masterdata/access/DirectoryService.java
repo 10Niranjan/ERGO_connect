@@ -41,6 +41,22 @@ class DirectoryService implements Directory {
 	}
 
 	@Override
+	public String rfqPrefix(long companyId) {
+		Company c = companies.findById(companyId).orElseThrow();
+		if (c.rfqPrefix != null) {
+			return c.rfqPrefix;
+		}
+		// No prefix set yet: initials of the name's words ("International Consortium" -> IC), at most four.
+		StringBuilder initials = new StringBuilder();
+		for (String word : c.name.split("[^\\p{L}\\p{N}]+")) {
+			String letter = word.isEmpty() ? "" : word.substring(0, 1).toUpperCase().replaceAll("[^A-Z0-9]", "");
+			initials.append(letter);
+		}
+		String prefix = initials.length() > 4 ? initials.substring(0, 4) : initials.toString();
+		return prefix.length() < 2 ? "RFQ" : prefix;
+	}
+
+	@Override
 	public Set<Long> companyIdsByName(String fragment) {
 		return companies.findByNameContainingIgnoreCase(fragment).stream().map(c -> c.id).collect(Collectors.toSet());
 	}

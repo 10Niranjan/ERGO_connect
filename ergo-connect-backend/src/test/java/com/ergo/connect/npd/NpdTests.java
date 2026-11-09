@@ -1195,7 +1195,7 @@ class NpdTests {
 
 	private long invitationOf(long rfqId, Login supplierLogin) throws Exception {
 		String number = JsonPath.read(call(get("/api/rfqs/{id}", rfqId), ergoRfq, null).andReturn().getResponse()
-			.getContentAsString(), "$.number");
+			.getContentAsString(), "$.supplierRef");
 		List<Number> ids = JsonPath.read(call(get("/api/quotes"), supplierLogin, null).andReturn().getResponse()
 			.getContentAsString(), "$.items[?(@.rfqNumber == '" + number + "')].id");
 		return ids.get(0).longValue();

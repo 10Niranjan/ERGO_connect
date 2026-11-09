@@ -84,13 +84,13 @@ class RfqTests {
 	@Test
 	void aCustomerDraftCanOnlyBeSubmittedWhenComplete() throws Exception {
 		long id = create(buyerA, "{\"currencyId\": %d, \"items\": [{\"partNumber\": \"PN-100\"}]}".formatted(inr))
-			.andExpect(jsonPath("$.number", matchesPattern("RFQ-\\d{4}-\\d{5}")))
+			.andExpect(jsonPath("$.number", matchesPattern("[A-Z0-9]{2,6}-\\d{4}-\\d{3,}")))
 			.andExpect(jsonPath("$.status").value("DRAFT"))
 			.andExpect(jsonPath("$.audience").value("CUSTOMER"))
 			.andReturn().getResponse().getContentAsString().transform(RfqTests::idOf);
 
 		act(buyerA, id, "submit", null).andExpect(status().isUnprocessableContent())
-			.andExpect(jsonPath("$.detail", containsString("process flow")));
+			.andExpect(jsonPath("$.detail", containsString("RFQ title")));
 		mvc.perform(json(put("/api/rfqs/{id}", id), completeForm(null, "PN-100"), buyerA)).andExpect(status().isOk());
 		act(buyerA, id, "submit", null).andExpect(jsonPath("$.status").value("SUBMITTED"))
 			.andExpect(jsonPath("$.internalNotes").doesNotExist())
@@ -100,8 +100,8 @@ class RfqTests {
 	@Test
 	void anRfqNeedsAtLeastOnePartAndEveryPartNeedsItsOwnData() throws Exception {
 		create(buyerA, "{\"currencyId\": %d, \"items\": []}".formatted(inr)).andExpect(status().isBadRequest());
-		long id = create(buyerA, ("{\"currencyId\": %d, \"targetQuoteDate\": \"%s\", \"items\": ["
-				+ "{\"partNumber\": \"PN-A\", \"description\": \"Flange\", \"materialSpec\": \"EN8\", "
+		long id = create(buyerA, ("{\"title\": \"Two parts\", \"currencyId\": %d, \"targetQuoteDate\": \"%s\", \"items\": ["
+				+ "{\"partNumber\": \"PN-A\", \"description\": \"Flange\", \"eau\": 100, \"materialSpec\": \"EN8\", "
 				+ "\"processSteps\": [{\"stepName\": \"Forging\"}]}, {\"partNumber\": \"PN-B\"}]}")
 			.formatted(inr, LocalDate.now().plusDays(14))).andExpect(status().isCreated())
 			.andExpect(jsonPath("$.items", hasSize(2)))
@@ -266,7 +266,9 @@ class RfqTests {
 
 	@Test
 	void onlyErgoDecidesWhichFilesAreSharedAndCustomersSeeOnlyTheirs() throws Exception {
-		long id = submitted(buyerA);
+		// customers attach files while the RFQ is a draft (it is read-only to them once submitted)
+		long id = create(buyerA, completeForm(null, "PN-100")).andReturn().getResponse().getContentAsString()
+			.transform(RfqTests::idOf);
 		long customerFile = idOf(upload(buyerA, id, "drawing.pdf", "ALL").andExpect(status().isCreated())
 			.andExpect(jsonPath("$.visibility").value("CUSTOMER")) // customers cannot share with suppliers
 			.andReturn().getResponse().getContentAsString());
@@ -318,7 +320,11 @@ class RfqTests {
 			.andExpect(jsonPath("$.status").value("DRAFT"))
 			.andExpect(jsonPath("$.number", not(JsonPath.<String>read(original, "$.number"))))
 			.andExpect(jsonPath("$.items", hasSize(2)))
-			.andExpect(jsonPath("$.items[*].partNumber", contains("PN-101", "PN-100")))
+			.andExpect(jsonPath("$.items[*].partNumber", contains("PN-101", "PN-100")));
+		// the copy keeps ERGO-visible data the customer's own view does not carry (the process route)
+		long copy = JsonPath.<Number>read(mvc.perform(get("/api/rfqs").header(HttpHeaders.AUTHORIZATION, ergoRfq.bearer()))
+			.andReturn().getResponse().getContentAsString(), "$.items[0].id").longValue();
+		mvc.perform(get("/api/rfqs/{id}", copy).header(HttpHeaders.AUTHORIZATION, ergoRfq.bearer()))
 			.andExpect(jsonPath("$.items[1].processSteps[*].stepName", everyItem(containsString("Step"))))
 			.andExpect(jsonPath("$.items[1].processSteps", hasSize(2)));
 	}
@@ -334,7 +340,7 @@ class RfqTests {
 
 	private String completeForm(Long customerId, String partNumber) {
 		return """
-				{"customerCompanyId": %s, "targetQuoteDate": "%s", "currencyId": %d, "customerRemarks": "Urgent",
+				{"customerCompanyId": %s, "title": "Flange RFQ", "targetQuoteDate": "%s", "currencyId": %d, "customerRemarks": "Urgent",
 				 "items": [
 				  {"partNumber": "%s", "revision": "A", "description": "Flange, machined", "eau": 5000,
 				   "materialId": %d, "targetProductionPiecePrice": 42.50,

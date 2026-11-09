@@ -152,6 +152,7 @@ class QuotationApiService implements QuotationApi {
 		mine = mine.stream().filter(i -> i.status != QuoteStatus.RECALLED).toList();
 		Map<Long, SupplierRfqItem> parts = rfqs.forSupplierItems(mine.stream().map(i -> i.rfqItemId).toList());
 		Map<Long, Boolean> scope = new java.util.HashMap<>();
+		Map<Long, String> numbers = new java.util.HashMap<>(); // ERGO sees the real RFQ number; SupplierRfqItem carries the supplier's
 		Map<Long, CompanyRef> suppliers = me.companyType() == CompanyType.ERGO
 				? directory.companies(mine.stream().map(i -> i.supplierCompanyId).collect(Collectors.toSet()))
 				: Map.of();
@@ -166,7 +167,7 @@ class QuotationApiService implements QuotationApi {
 							i.status.forSupplier().name(), null);
 					case CUSTOMER -> new PartStatusItem(i.rfqId, p.rfqNumber(), i.rfqItemId, p.partNumber(),
 							i.status.forCustomer().name(), null);
-					case ERGO -> new PartStatusItem(i.rfqId, p.rfqNumber(), i.rfqItemId, p.partNumber(),
+					case ERGO -> new PartStatusItem(i.rfqId, numbers.computeIfAbsent(i.rfqId, rfqs::numberOf), i.rfqItemId, p.partNumber(),
 							i.status.name(), suppliers.get(i.supplierCompanyId).name());
 				};
 			})

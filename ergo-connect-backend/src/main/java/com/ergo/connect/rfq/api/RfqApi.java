@@ -33,7 +33,7 @@ public interface RfqApi {
 	 * out with suppliers and not finished, so quote work on its parts is possible (each part's own status decides
 	 * what exactly).
 	 */
-	record RfqRef(long id, String number, long customerCompanyId, long currencyId, Long paymentTermId,
+	record RfqRef(long id, String number, String supplierRef, long customerCompanyId, long currencyId, Long paymentTermId,
 			boolean acceptsInvitations, boolean quotingOpen, List<ItemRef> items) {
 	}
 

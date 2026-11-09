@@ -264,7 +264,8 @@ public class QuoteService {
 				invitations.save(invitation);
 				first = first == null ? invitation : first;
 			}
-			notifier.send(NotificationKind.QUOTE_REQUESTED, "quotation", first.id, rfq.number(),
+			notifier.send(NotificationKind.QUOTE_REQUESTED, "quotation", first.id, rfq.supplierRef(), // the supplier never sees the number
+					
 					"Respond by " + form.responseDueDate(), supplierSide(first));
 		}
 		progress(rfqId);

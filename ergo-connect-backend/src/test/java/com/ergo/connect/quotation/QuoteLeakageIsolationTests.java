@@ -38,6 +38,9 @@ import com.jayway.jsonpath.JsonPath;
 @IntegrationTest
 class QuoteLeakageIsolationTests extends AdversarialSupport {
 
+	/** The customer's RFQ prefix of this scenario; unique per build (the index lives as long as the test database). */
+	private String prefix;
+
 	/** Everything the scenario creates, with the sentinel strings that must stay on their side. */
 	record Scn(long rfq, String number, List<Long> parts, long x1, long x2, long y3, long quotationA, long quotationB,
 			long internalDoc, long sharedDoc, long customerDoc, String customerName, String customerCode, String xName,
@@ -54,7 +57,7 @@ class QuoteLeakageIsolationTests extends AdversarialSupport {
 
 	private static String part(String number, boolean sentinels) {
 		return """
-				{"partNumber": "%s", "description": "Flange", "materialSpec": "EN8", "targetProductionPiecePrice": 77.7777,
+				{"partNumber": "%s", "description": "Flange", "eau": 1000, "remarks": "SECRET-PART-REMARK", "materialSpec": "EN8", "targetProductionPiecePrice": 77.7777,
 				 "targetToolingCost": 55555.5, "processSteps": [{"stepName": "Forge", "cycleTimeSeconds": 12.34,
 				 "sourcingType": "OUTSOURCED", "outsourcedSupplierName": "SECRET-SUBSUPPLIER", "remarks": "SECRET-STEP-REMARK"}]}"""
 			.formatted(number);
@@ -62,15 +65,18 @@ class QuoteLeakageIsolationTests extends AdversarialSupport {
 
 	private Scn build() throws Exception {
 		String form = """
-				{"targetQuoteDate": "%s", "currencyId": %d, "customerRemarks": "SECRET-CUSTOMER-REMARK", "items": [%s, %s, %s]}"""
+				{"title": "SECRET-TITLE", "description": "SECRET-DESC", "specialInstructions": "SECRET-INSTR", "targetQuoteDate": "%s", "currencyId": %d, "customerRemarks": "SECRET-CUSTOMER-REMARK", "items": [%s, %s, %s]}"""
 			.formatted(LocalDate.now().plusDays(10), inr, part("PN-LK1", true), part("PN-LK2", true), part("PN-LK3", true));
+		// the number carries the customer's prefix: suppliers must see the neutral reference instead
+		prefix = "S" + Long.toString(System.nanoTime() % 1_679_616L + 1_679_616L, 36).toUpperCase().substring(0, 4);
+		jdbc.update("UPDATE companies SET rfq_prefix = ? WHERE company_id = ?", prefix, customer);
 		long rfq = TestRfq.create(mvc, buyer, form);
 		call(post("/api/rfqs/{id}/submit", rfq), buyer, "{}").andExpect(status().isOk());
 		call(post("/api/rfqs/{id}/start-review", rfq), ergoRfq, null).andExpect(status().isOk());
 		call(put("/api/rfqs/{id}/internal-notes", rfq), ergoRfq, "{\"internalNotes\": \"SECRET-INTERNAL-NOTE\"}")
 			.andExpect(status().isOk());
 		List<Long> p = parts(rfq);
-		long customerDoc = idOf(upload("/api/rfqs/{id}/documents", rfq, buyer, "customer-drawing.pdf").andReturn());
+		long customerDoc = idOf(upload("/api/rfqs/{id}/documents", rfq, ergoRfq, "customer-drawing.pdf", "c".getBytes(StandardCharsets.UTF_8), "visibility", "CUSTOMER").andReturn());
 		long internalDoc = idOf(upload("/api/rfqs/{id}/documents", rfq, ergoRfq, "costing-internal.xlsx").andReturn());
 		long sharedDoc = idOf(upload("/api/rfqs/{id}/documents", rfq, ergoRfq, "shared-drawing.pdf").andReturn());
 		call(put("/api/rfqs/{id}/documents/{doc}/visibility", rfq, sharedDoc), ergoRfq,
@@ -147,10 +153,11 @@ class QuoteLeakageIsolationTests extends AdversarialSupport {
 				"123.4321", "130.5555", "CUSTOMER-COMMENT-SENTINEL", "CUSTOMER-FACING-NOTE", "margin", "Hidden",
 				"customerView", "ergoQuote", "WITH_CUSTOMER", "CUSTOMER_ON_HOLD", "CUSTOMER_CORRECTION", "CUSTOMER_APPROVED",
 				"CUSTOMER_REJECTED", "costing-internal.xlsx", "customer-drawing.pdf", "\"customer\"", "targetProduction",
-				"internalNotes");
+				"internalNotes", prefix, s.number(), "SECRET-TITLE", "SECRET-DESC", "SECRET-INSTR", "SECRET-PART-REMARK");
 		// what X is meant to see is there (so the scan above is not vacuous) - and its own numbering, not the global one
 		String own = bodies.entrySet().stream().filter(e -> e.getKey().startsWith("/api/quotes/" + s.x1 + " ")).findFirst().orElseThrow().getValue();
 		assertThat(own).contains("PN-LK1", "X-SUPPLIER-REMARK", "ERGO-REVISION-COMMENT", "\"subRfqNo\":1");
+		assertThat(own).contains("\"rfqNumber\":\"RFQ-"); // the neutral reference, not the customer-prefixed number
 		assertThat(bodies.get("/api/quotes [200]")).contains("PN-LK1", "PN-LK2").contains("\"subRfqNo\":1").doesNotContain("\"subRfqNo\":2");
 		assertThat(bodies.get("/api/quotes/" + s.x1 + "/documents [200]")).contains("shared-drawing.pdf", "x-process-sheet.pdf");
 		assertThat(bodies.get("/api/quotes/" + s.x2 + "/documents [200]")).doesNotContain("shared-drawing.pdf"); // shared for part 1 only
@@ -163,7 +170,7 @@ class QuoteLeakageIsolationTests extends AdversarialSupport {
 				"77.7777", "55555.5", "SECRET-SUBSUPPLIER", "SECRET-STEP-REMARK", s.xName, s.xCode, "PN-LK1", "PN-LK2",
 				"71.7171", "X-SUPPLIER-REMARK", "123.4321", "130.5555", "CUSTOMER-COMMENT-SENTINEL", "CUSTOMER-FACING-NOTE",
 				"margin", "Hidden", "customerView", "ergoQuote", "WITH_CUSTOMER", "CUSTOMER_CORRECTION", "shared-drawing.pdf",
-				"x-process-sheet.pdf", "ERGO-REVISION-COMMENT");
+				"x-process-sheet.pdf", "ERGO-REVISION-COMMENT", prefix, s.number(), "SECRET-TITLE", "SECRET-DESC", "SECRET-INSTR", "SECRET-PART-REMARK");
 		assertThat(y.get("/api/quotes/" + s.y3 + " [200]")).contains("PN-LK3").contains("\"subRfqNo\":1");
 	}
 
@@ -344,9 +351,9 @@ class QuoteLeakageIsolationTests extends AdversarialSupport {
 		upload("/api/rfqs/{id}/documents", rfq, ergoRfq, "d3.pdf", "d3".getBytes(StandardCharsets.UTF_8), "visibility", "ALL", "itemIds", String.valueOf(foreignPart))
 			.andExpect(status().isUnprocessableContent());
 		assertThat(count("SELECT count(*) FROM documents WHERE linked_module = 'rfq' AND linked_record_id = ?", rfq)).isEqualTo((int) before);
-		// a customer cannot pick parts or visibility
+		// a customer cannot upload once the RFQ is submitted (read-only until ERGO asks for a clarification)
 		upload("/api/rfqs/{id}/documents", rfq, buyer, "mine.pdf", "m".getBytes(StandardCharsets.UTF_8), "visibility", "ALL", "itemIds", String.valueOf(p.get(0)))
-			.andExpect(status().isCreated()).andExpect(jsonPath("$.visibility").value("CUSTOMER")).andExpect(jsonPath("$.itemIds").isEmpty());
+			.andExpect(status().isConflict());
 
 		call(put("/api/rfqs/{id}/documents/{doc}/visibility", rfq, doc), ergoRfq,
 				"{\"visibility\": \"ALL\", \"itemIds\": [%d]}".formatted(p.get(0))).andExpect(status().isOk());
@@ -392,7 +399,7 @@ class QuoteLeakageIsolationTests extends AdversarialSupport {
 	void aFileMadeVisibleToSuppliersInTheLibraryWithoutPartsFailsClosedAndTheVisibilityFilterIsNotBypassedByPartRows() throws Exception {
 		long rfq = reviewedRfq("PN-1", "PN-2");
 		List<Long> p = parts(rfq);
-		long customerFile = idOf(upload("/api/rfqs/{id}/documents", rfq, buyer, "cust.pdf").andReturn());
+		long customerFile = idOf(upload("/api/rfqs/{id}/documents", rfq, ergoRfq, "cust.pdf", "c".getBytes(StandardCharsets.UTF_8), "visibility", "CUSTOMER").andReturn());
 		long ergoFile = idOf(upload("/api/rfqs/{id}/documents", rfq, ergoRfq, "ergo.pdf").andReturn());
 		long internal = idOf(upload("/api/rfqs/{id}/documents", rfq, ergoRfq, "internal.pdf").andReturn());
 		long shared = idOf(upload("/api/rfqs/{id}/documents", rfq, ergoRfq, "shared.pdf").andReturn());

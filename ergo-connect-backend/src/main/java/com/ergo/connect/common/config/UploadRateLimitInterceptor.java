@@ -30,10 +30,17 @@ class UploadRateLimitInterceptor implements HandlerInterceptor {
 
 	private final int maxUploads;
 
+	/** The RFQ table uploads one batch per part and slot, so it has its own budget (the other endpoints keep theirs). */
+	private final int maxPartUploads;
+
+	private static final java.util.regex.Pattern PART_FILES = java.util.regex.Pattern.compile("/api/rfqs/\\d+/items/\\d+/files");
+
 	UploadRateLimitInterceptor(RedisFixedWindowLimiter limiter,
-			@Value("${ergo.security.upload-rate-limit.max-attempts:30}") int maxUploads) {
+			@Value("${ergo.security.upload-rate-limit.max-attempts:30}") int maxUploads,
+			@Value("${ergo.security.rfq-part-upload-rate-limit.max-attempts:120}") int maxPartUploads) {
 		this.limiter = limiter;
 		this.maxUploads = maxUploads;
+		this.maxPartUploads = maxPartUploads;
 	}
 
 	@Override
@@ -42,8 +49,10 @@ class UploadRateLimitInterceptor implements HandlerInterceptor {
 		if (contentType == null || !contentType.toLowerCase(Locale.ROOT).startsWith("multipart/")) {
 			return true; // most requests - no point touching Redis for every GET/PATCH
 		}
+		boolean partFiles = PART_FILES.matcher(request.getRequestURI()).matches();
 		CurrentUser.find().ifPresent(user -> {
-			if (limiter.increment("upload-attempts:" + user.userId(), WINDOW_SECONDS) > maxUploads) {
+			String key = (partFiles ? "rfq-part-upload-attempts:" : "upload-attempts:") + user.userId();
+			if (limiter.increment(key, WINDOW_SECONDS) > (partFiles ? maxPartUploads : maxUploads)) {
 				throw ApiException.tooManyRequests("Too many uploads. Please try again later.");
 			}
 		});

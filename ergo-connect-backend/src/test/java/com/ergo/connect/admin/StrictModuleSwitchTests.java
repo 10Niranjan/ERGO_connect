@@ -483,7 +483,7 @@ class StrictModuleSwitchTests {
 
 	private String rfqForm() {
 		return """
-				{"targetQuoteDate": "%s", "currencyId": %d, "items": [{"partNumber": "PN-SW1", "description": "Flange", "materialSpec": "EN8",
+				{"title": "T", "targetQuoteDate": "%s", "currencyId": %d, "items": [{"partNumber": "PN-SW1", "description": "Flange", "eau": 1000, "materialSpec": "EN8",
 				 "targetProductionPiecePrice": 99.5,
 				 "processSteps": [{"stepName": "Forging", "cycleTimeSeconds": 55, "sourcingType": "INHOUSE"},
 				                  {"stepName": "Machining"}]}]}"""
@@ -517,7 +517,7 @@ class StrictModuleSwitchTests {
 
 	private long invitationOf(long rfq) throws Exception {
 		String number = JsonPath.read(call(get("/api/rfqs/{id}", rfq), ergoRfq, null).andReturn().getResponse()
-			.getContentAsString(), "$.number");
+			.getContentAsString(), "$.supplierRef");
 		List<Number> ids = JsonPath.read(call(get("/api/quotes"), seller, null).andReturn().getResponse()
 			.getContentAsString(), "$.items[?(@.rfqNumber == '" + number + "')].id");
 		return ids.get(0).longValue();

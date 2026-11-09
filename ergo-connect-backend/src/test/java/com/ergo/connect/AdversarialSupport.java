@@ -235,7 +235,7 @@ public abstract class AdversarialSupport {
 	}
 
 	protected long quoteOf(Login seller, long rfq, String part) throws Exception {
-		return TestRfq.quoteOf(mvc, seller, TestRfq.numberOf(mvc, ergoRfq, rfq), part);
+		return TestRfq.quoteOf(mvc, seller, TestRfq.supplierRefOf(mvc, ergoRfq, rfq), part);
 	}
 
 	protected long rfqOf(long quote) {

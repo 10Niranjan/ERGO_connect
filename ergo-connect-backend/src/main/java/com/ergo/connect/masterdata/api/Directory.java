@@ -29,6 +29,12 @@ public interface Directory {
 
 	Map<Long, CompanyRef> companies(Collection<Long> ids);
 
+	/**
+	 * The prefix of this customer's RFQ numbers (IC in IC-2026-001): the one ERGO set, else initials of its name.
+	 * Always 2-6 letters or digits.
+	 */
+	String rfqPrefix(long companyId);
+
 	Map<Long, UserRef> users(Collection<Long> ids);
 
 	/** Customer accounts assigned to an ERGO Key Account Manager (SRS §13.2.5). */

@@ -68,6 +68,8 @@ class CustomerQuotationTests {
 
 	String number;
 
+	String supplierRef;
+
 	long x1;
 
 	long x2;
@@ -91,13 +93,14 @@ class CustomerQuotationTests {
 		call(post("/api/rfqs/{id}/submit", rfqId), buyer, "{}").andExpect(status().isOk());
 		call(post("/api/rfqs/{id}/start-review", rfqId), ergoRfq, null).andExpect(status().isOk());
 		number = TestRfq.numberOf(mvc, ergoRfq, rfqId);
+		supplierRef = TestRfq.supplierRefOf(mvc, ergoRfq, rfqId);
 		List<Long> parts = TestRfq.itemIds(mvc, ergoRfq, rfqId);
 		call(post("/api/rfqs/{id}/quotes", rfqId), ergoRfq,
 				TestRfq.distribution(supplierX, List.of(parts.get(0), parts.get(1)), supplierY, List.of(parts.get(2))))
 			.andExpect(status().isOk());
-		x1 = TestRfq.quoteOf(mvc, sellerX, number, "PN-C1");
-		x2 = TestRfq.quoteOf(mvc, sellerX, number, "PN-C2");
-		y3 = TestRfq.quoteOf(mvc, sellerY, number, "PN-C3");
+		x1 = TestRfq.quoteOf(mvc, sellerX, supplierRef, "PN-C1");
+		x2 = TestRfq.quoteOf(mvc, sellerX, supplierRef, "PN-C2");
+		y3 = TestRfq.quoteOf(mvc, sellerY, supplierRef, "PN-C3");
 	}
 
 	@Test

@@ -125,7 +125,7 @@ public class CompanyService {
 		boolean adminAddedCustomer = me.role() == Role.ERGO_ADMIN && request.type() == CompanyType.CUSTOMER;
 		company.status = adminAddedCustomer ? ACTIVE : PENDING_APPROVAL;
 		company.createdByUserId = me.userId();
-		apply(company, request.profile());
+		apply(company, request.profile(), me);
 		companies.save(company);
 		if (company.status == PENDING_APPROVAL) {
 			notifyReviewers(company);
@@ -144,7 +144,7 @@ public class CompanyService {
 		if (!canEdit(me, company)) {
 			throw ApiException.forbidden("You cannot edit this company");
 		}
-		apply(company, profile);
+		apply(company, profile, me);
 		return toResponse(company, me);
 	}
 
@@ -264,7 +264,15 @@ public class CompanyService {
 		return users.findById(me.userId()).map(user -> Set.copyOf(user.accountIds)).orElse(Set.of());
 	}
 
-	private static void apply(Company company, CompanyProfile profile) {
+	private void apply(Company company, CompanyProfile profile, CurrentUser me) {
+		// The RFQ prefix shapes ERGO's RFQ numbers, so only ERGO sets it; a customer's own edit leaves it as it is.
+		if (me.companyType() == CompanyType.ERGO) {
+			String prefix = profile.rfqPrefix();
+			if (prefix != null && companies.findByRfqPrefix(prefix).filter(other -> !other.id.equals(company.id)).isPresent()) {
+				throw ApiException.conflict("Another company already uses the RFQ prefix " + prefix);
+			}
+			company.rfqPrefix = prefix;
+		}
 		company.name = profile.name().trim();
 		company.addressLine1 = profile.addressLine1();
 		company.addressLine2 = profile.addressLine2();
@@ -303,7 +311,8 @@ public class CompanyService {
 			}
 		}
 		CompanyProfile profile = new CompanyProfile(c.name, c.addressLine1, c.addressLine2, c.city, c.state, c.country,
-				c.postalCode, c.taxId, c.website, c.primaryContactName, c.primaryContactEmail, c.primaryContactPhone);
+				c.postalCode, c.taxId, c.website, c.primaryContactName, c.primaryContactEmail, c.primaryContactPhone,
+				c.rfqPrefix);
 		return new CompanyResponse(c.id, c.code, c.type, c.status, profile, actions);
 	}
 

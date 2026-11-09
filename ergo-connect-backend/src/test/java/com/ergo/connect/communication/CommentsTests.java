@@ -614,7 +614,7 @@ class CommentsTests {
 	private long invitationOf(Login supplier, long rfqId) throws Exception {
 		String number = JsonPath.read(
 				call(get("/api/rfqs/{id}", rfqId), ergoRfq, null).andReturn().getResponse().getContentAsString(),
-				"$.number");
+				"$.supplierRef");
 		List<Number> ids = JsonPath.read(call(get("/api/quotes"), supplier, null).andReturn().getResponse()
 			.getContentAsString(), "$.items[?(@.rfqNumber == '" + number + "')].id");
 		return ids.get(0).longValue();

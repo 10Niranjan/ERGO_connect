@@ -35,12 +35,12 @@ import com.jayway.jsonpath.JsonPath;
 class RfqAdversarialTests extends AdversarialSupport {
 
 	private static String item(String number) {
-		return "{\"partNumber\": \"%s\", \"description\": \"Bracket\", \"materialSpec\": \"EN8\", \"processSteps\": [{\"stepName\": \"Casting\"}]}"
+		return "{\"partNumber\": \"%s\", \"description\": \"Bracket\", \"eau\": 1000, \"materialSpec\": \"EN8\", \"processSteps\": [{\"stepName\": \"Casting\"}]}"
 			.formatted(number);
 	}
 
 	private String form(String... items) {
-		return "{\"targetQuoteDate\": \"%s\", \"currencyId\": %d, \"items\": [%s]}".formatted(LocalDate.now().plusDays(10), inr,
+		return "{\"title\": \"Test RFQ\", \"targetQuoteDate\": \"%s\", \"currencyId\": %d, \"items\": [%s]}".formatted(LocalDate.now().plusDays(10), inr,
 				String.join(", ", items));
 	}
 
@@ -132,8 +132,8 @@ class RfqAdversarialTests extends AdversarialSupport {
 		List<String> badItems = new ArrayList<>(List.of(
 				ok.replace("PN-1", ""), ok.replace("PN-1", "   "), ok.replace("PN-1", "P".repeat(101)),
 				ok.replace("\"description\"", "\"revision\": \"%s\", \"description\"".formatted("R".repeat(31))),
-				ok.replace("Bracket", "d".repeat(1001)), ok.replace("\"description\"", "\"eau\": 0, \"description\""),
-				ok.replace("\"description\"", "\"eau\": -5, \"description\""), ok.replace("\"description\"", "\"moq\": 0, \"description\""),
+				ok.replace("Bracket", "d".repeat(1001)), ok.replace("\"eau\": 1000", "\"eau\": 0"),
+				ok.replace("\"eau\": 1000", "\"eau\": -5"), ok.replace("\"description\"", "\"moq\": 0, \"description\""),
 				ok.replace("\"description\"", "\"targetProductionPiecePrice\": -1, \"description\""),
 				ok.replace("\"description\"", "\"targetProductionPiecePrice\": 1.00001, \"description\""),
 				ok.replace("\"description\"", "\"targetToolingCost\": 123456789012345, \"description\""),
@@ -156,7 +156,8 @@ class RfqAdversarialTests extends AdversarialSupport {
 			.as("101 parts").isEqualTo(400);
 		assertThat(send(post("/api/rfqs"), buyer, "{broken")).isEqualTo(400);
 		assertThat(send(post("/api/rfqs"), buyer, "{\"currencyId\": 987654321, \"items\": [%s]}".formatted(ok))).as("unknown currency").isEqualTo(422);
-		assertThat(send(post("/api/rfqs"), buyer, "{\"currencyId\": %d, \"paymentTermId\": 987654321, \"items\": [%s]}".formatted(inr, ok)))
+		// payment terms are ERGO's to set: a customer's is ignored, ERGO's must be an active master entry
+		assertThat(send(post("/api/rfqs"), ergoRfq, "{\"customerCompanyId\": %d, \"currencyId\": %d, \"paymentTermId\": 987654321, \"items\": [%s]}".formatted(customer, inr, ok)))
 			.as("unknown payment term").isEqualTo(422);
 		assertThat(send(post("/api/rfqs"), buyer, form(ok.replace("\"description\"", "\"materialId\": 987654321, \"description\""))))
 			.as("unknown material").isEqualTo(422);
@@ -166,8 +167,8 @@ class RfqAdversarialTests extends AdversarialSupport {
 			.as("unknown process").isEqualTo(422);
 		assertThat(count("SELECT count(*) FROM rfqs WHERE created_by_user_id = ?", buyer.userId())).isEqualTo(before);
 		// the largest values that are legal are kept exactly
-		String max = ok.replace("PN-1", "P".repeat(100)).replace("\"description\"",
-				"\"revision\": \"%s\", \"targetToolingCost\": 12345678901234.5678, \"eau\": 2147483647, \"description\"".formatted("R".repeat(30)));
+		String max = ok.replace("PN-1", "P".repeat(100)).replace("\"eau\": 1000", "\"eau\": 2147483647").replace("\"description\"",
+				"\"revision\": \"%s\", \"targetToolingCost\": 12345678901234.5678, \"description\"".formatted("R".repeat(30)));
 		long id = JsonPath.<Number>read(call(post("/api/rfqs"), buyer, form(max)).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString(), "$.id").longValue();
 		assertThat(jdbc.queryForObject("SELECT target_tooling_cost FROM rfq_items WHERE rfq_id = ?", java.math.BigDecimal.class, id))
 			.isEqualByComparingTo("12345678901234.5678");
@@ -227,7 +228,7 @@ class RfqAdversarialTests extends AdversarialSupport {
 	void anRfqIncompleteAtSubmissionOrAtDistributionIsRefusedWithoutMovingIt() throws Exception {
 		long id = TestRfq.create(mvc, buyer, "{\"currencyId\": %d, \"items\": [{\"partNumber\": \"PN-A\"}, {\"partNumber\": \"PN-B\", \"description\": \"x\"}]}".formatted(inr));
 		call(post("/api/rfqs/{id}/submit", id), buyer, "{}").andExpect(status().isUnprocessableContent())
-			.andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("target quote date")));
+			.andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("expected quote receipt date")));
 		assertThat(rfqStatus(id)).isEqualTo("DRAFT");
 		// ERGO strips the process flow of a part while reviewing: distribution is refused and the RFQ stays under review
 		long ok = reviewedRfq("PN-1", "PN-2");

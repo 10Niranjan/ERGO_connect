@@ -193,6 +193,15 @@ Decisions (defaults to confirm with the client) in `ARCHITECTURE.md` §8, two en
 - **Defaults to confirm with the client:** the KAM (not ERGO OFP) creates the OFP project and assigns the ERGO OFP; the customer's final approval is kept for production projects; old sample projects at handover now need a production PO; Customer OFP is not an approver; Supplier Quality chooses the return stage on a rejection; the KAM's A on OFP means production-order decisions only.
 - **Known gaps:** approvals linked to a reopened step stay approved; no browser smoke test of any flow; `pendingApprovalsCount` counts OFP projects even when OFP is hidden; no saved reusable plan template; the responsible-person picker on the supplier's step dialog.
 
+### Slice 7 — client's revised RFQ entry format (V44) ✅
+
+The customer's Create RFQ screen now follows `ERGO_Connect_Revised_Complete_RFQ_Format.docx`: header (title, expected quote receipt date, quote currency, description, special instructions) and one scrollable part table with four attachment slots per part, target price and remarks. Full list of decisions and guards: `ARCHITECTURE.md` §8, 2026-11-09. Where to look:
+
+- Backend: `rfq/domain/RfqService.java` (`nextNumber`, `requireComplete` vs `requireDistributable`, `uploadItemFiles`, `applyItem(full)`), `RfqAttachmentRules.java`, `FileKind.java`, `V44__rfq_new_format.sql`; `masterdata` gained `Directory.rfqPrefix` and `CompanyProfile.rfqPrefix`.
+- Frontend: `features/rfq/pages/RfqEditPage.tsx` (table, save/submit sequence), `components/AttachmentCell.tsx`, detail page `ItemOverview` / `ItemFiles`, list Title column; the company dialog has the ERGO-only RFQ prefix field.
+- Tests: `RfqNewFormatTests`, `RfqItemFileTests`, the supplier sentinels in `QuoteLeakageIsolationTests`; `TestRfq.quoteOf` finds a supplier's quote by part number because a supplier sees `supplier_ref`, not the number; any test that builds RFQ JSON by hand now needs `title` and `eau` on every part to submit (see `TestRfq.form`).
+- Not done on purpose: files are not copied by Clone; `docs/SRS.md` text is not rewritten (see §8 note).
+
 ## 4. What is left
 
 All six slices of the flow document are built. Open items are the "defaults to confirm" and "known gaps" lists above and

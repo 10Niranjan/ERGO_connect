@@ -29,11 +29,11 @@ public final class TestRfq {
 		List<String> items = new ArrayList<>();
 		for (String part : partNumbers) {
 			items.add("""
-					{"partNumber": "%s", "description": "Bracket", "materialSpec": "EN8",
+					{"partNumber": "%s", "description": "Bracket", "eau": 1000, "materialSpec": "EN8",
 					 "targetProductionPiecePrice": 99.5, "processSteps": [{"stepName": "Casting"}]}""".formatted(part));
 		}
 		return """
-				{"targetQuoteDate": "%s", "currencyId": %d, "items": [%s]}"""
+				{"title": "Test RFQ", "targetQuoteDate": "%s", "currencyId": %d, "items": [%s]}"""
 			.formatted(LocalDate.now().plusDays(10), currencyId, String.join(", ", items));
 	}
 
@@ -78,17 +78,26 @@ public final class TestRfq {
 	}
 
 	/**
-	 * The quote (invitation) id of a part for a supplier login, found through the supplier's own list; the part is
-	 * identified by its number.
+	 * The quote (invitation) id of a part for a supplier login, found through the supplier's own list. A supplier sees
+	 * a neutral reference instead of the RFQ number (the number carries the customer's prefix): pass
+	 * {@link #supplierRefOf}, not {@link #numberOf}.
 	 */
-	public static long quoteOf(MockMvc mvc, Login supplier, String rfqNumber, String partNumber) throws Exception {
+	public static long quoteOf(MockMvc mvc, Login supplier, String supplierRef, String partNumber) throws Exception {
 		String json = mvc.perform(get("/api/quotes").header(HttpHeaders.AUTHORIZATION, supplier.bearer()))
 			.andReturn()
 			.getResponse()
 			.getContentAsString();
 		List<Number> ids = JsonPath.read(json,
-				"$.items[?(@.rfqNumber == '" + rfqNumber + "' && @.partNumber == '" + partNumber + "')].id");
+				"$.items[?(@.rfqNumber == '" + supplierRef + "' && @.partNumber == '" + partNumber + "')].id");
 		return ids.get(0).longValue();
+	}
+
+	/** The reference suppliers see for this RFQ instead of its number, as ERGO's view shows it. */
+	public static String supplierRefOf(MockMvc mvc, Login ergo, long rfqId) throws Exception {
+		return JsonPath.read(mvc.perform(get("/api/rfqs/{id}", rfqId).header(HttpHeaders.AUTHORIZATION, ergo.bearer()))
+			.andReturn()
+			.getResponse()
+			.getContentAsString(), "$.supplierRef");
 	}
 
 	public static String numberOf(MockMvc mvc, Login ergo, long rfqId) throws Exception {
@@ -149,7 +158,7 @@ public final class TestRfq {
 	public static void approveWhole(MockMvc mvc, Login customer, Login ergo, Login seller, long supplierId,
 			long currencyId, long rfqId, String supplierPrice) throws Exception {
 		send(mvc, post("/api/rfqs/{id}/quotes", rfqId), ergo, wholeTo(mvc, ergo, rfqId, supplierId));
-		String number = numberOf(mvc, ergo, rfqId);
+		String number = supplierRefOf(mvc, ergo, rfqId);
 		List<String> lines = new ArrayList<>();
 		for (String part : partNumbers(mvc, ergo, rfqId)) {
 			long quote = quoteOf(mvc, seller, number, part);

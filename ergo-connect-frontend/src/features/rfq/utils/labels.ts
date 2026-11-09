@@ -1,4 +1,4 @@
-import type { CustomerRfqStatus, Priority, RfqStatus, Visibility } from '../services/rfqApi'
+import type { CustomerRfqStatus, FileKind, Priority, RfqStatus, Visibility } from '../services/rfqApi'
 import type { ChipColor } from '@/types'
 
 export { type ChipColor }
@@ -19,7 +19,7 @@ export const STATUS: Record<RfqStatus | CustomerRfqStatus, { label: string; colo
   CLOSED: { label: 'Closed', color: 'default' },
   CANCELLED: { label: 'Cancelled', color: 'default' },
   IN_PROGRESS: { label: 'Quotation in progress', color: 'primary' },
-  QUOTE_RECEIVED: { label: 'Quote received', color: 'secondary' },
+  QUOTE_RECEIVED: { label: 'Quotation submitted', color: 'secondary' },
   ON_HOLD: { label: 'On hold', color: 'warning' },
   REVISION_REQUESTED: { label: 'Correction required', color: 'warning' },
   APPROVED: { label: 'Approved', color: 'success' },
@@ -35,6 +35,14 @@ export const CUSTOMER_STATUS_FILTER: CustomerRfqStatus[] = [
   'DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'CLARIFICATION_REQUIRED', 'IN_PROGRESS', 'QUOTE_RECEIVED', 'ON_HOLD', 'REVISION_REQUESTED',
   'APPROVED', 'DECLINED', 'CLOSED', 'CANCELLED',
 ]
+
+/** The four attachment slots of a part, as the client's RFQ table names them. */
+export const FILE_KIND_LABELS: Record<FileKind, string> = {
+  DRAWING_2D: '2D Drawing',
+  MODEL_3D: '3D Models',
+  SPECIFICATION: 'Specifications',
+  ADDITIONAL: 'Additional Data File',
+}
 
 export const PRIORITIES: Record<Priority, string> = { LOW: 'Low', NORMAL: 'Normal', HIGH: 'High', URGENT: 'Urgent' }
 
