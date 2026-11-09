@@ -197,6 +197,51 @@ class RfqItemFileTests {
 				"{\"visibility\": \"ALL\", \"itemIds\": [%d]}".formatted(second)).andExpect(status().isForbidden());
 	}
 
+	@Test
+	void aNewVersionFromTheLibraryTakesOverTheSlotAndAPartWithLockedFilesCanStillBeRemoved() throws Exception {
+		long second = TestRfq.itemIds(mvc, ergoRfq, rfq).get(1);
+		long doc = JsonPath.<Number>read(upload(buyer, rfq, part, "DRAWING_2D", "v1.pdf").andExpect(status().isCreated())
+			.andReturn().getResponse().getContentAsString(), "$[0].id").longValue();
+		upload(buyer, rfq, second, "DRAWING_2D", "keep.pdf").andExpect(status().isCreated());
+		long locked = JsonPath.<Number>read(upload(buyer, rfq, second, "SPECIFICATION", "locked.pdf").andExpect(status().isCreated())
+			.andReturn().getResponse().getContentAsString(), "$[0].id").longValue();
+
+		// the customer replaces v1 in the Document Library: the slot shows the new version only, and it cannot be erased
+		mvc.perform(multipart("/api/documents/{id}/replace", doc)
+			.file(new MockMultipartFile("file", "v2.pdf", "application/pdf", "v2".getBytes(StandardCharsets.UTF_8)))
+			.header(HttpHeaders.AUTHORIZATION, buyer.bearer())).andExpect(status().isOk());
+		call(get("/api/rfqs/{id}", rfq), buyer, null)
+			.andExpect(jsonPath("$.items[0].files", hasSize(1)))
+			.andExpect(jsonPath("$.items[0].files[0].fileName").value("v2.pdf"))
+			.andExpect(jsonPath("$.items[0].files[0].kind").value("DRAWING_2D"))
+			.andExpect(jsonPath("$.items[0].files[0].canDelete").value(false));
+		call(get("/api/rfqs/{id}", rfq), ergoRfq, null).andExpect(jsonPath("$.items[0].files", hasSize(1)));
+
+		// a locked file stays in the library when its part is removed; the removal itself succeeds
+		call(post("/api/documents/{id}/lock", locked), users.login(users.company("ERGO"), "ERGO_ADMIN"), "{\"comment\": \"final\"}").andExpect(status().isOk());
+		call(put("/api/rfqs/{id}", rfq), buyer, "{\"title\": \"T\", \"currencyId\": %d, \"items\": [{\"partNumber\": \"PN-3\", \"eau\": 1}]}".formatted(inr))
+			.andExpect(status().isOk()).andExpect(jsonPath("$.items", hasSize(1)));
+		assertThat(count("SELECT count(*) FROM documents WHERE document_id = ?", locked)).isEqualTo(1);
+		assertThat(count("SELECT count(*) FROM rfq_item_files WHERE document_id = ?", locked)).isZero(); // unlinked with its part
+	}
+
+	@Test
+	void twoCustomersWithTheSameInitialsGetSeparateNumberSeries() throws Exception {
+		long a = users.company("CUSTOMER");
+		long b = users.company("CUSTOMER");
+		jdbc.update("UPDATE companies SET company_name = 'Zeta Works', rfq_prefix = NULL WHERE company_id = ?", a);
+		jdbc.update("UPDATE companies SET company_name = 'Zebra Wheels', rfq_prefix = NULL WHERE company_id = ?", b);
+		Login buyerA = users.login(a, "CUSTOMER_RFQ");
+		Login buyerB = users.login(b, "CUSTOMER_RFQ");
+		String numberA = TestRfq.numberOf(mvc, ergoRfq, TestRfq.create(mvc, buyerA, TestRfq.form(inr, "PN-1")));
+		String numberB = TestRfq.numberOf(mvc, ergoRfq, TestRfq.create(mvc, buyerB, TestRfq.form(inr, "PN-1")));
+		assertThat(numberA).startsWith("ZW-");
+		assertThat(numberB).startsWith("ZW2-"); // same initials, so the second gets its own series
+		assertThat(jdbc.queryForObject("SELECT rfq_prefix FROM companies WHERE company_id = ?", String.class, a)).isEqualTo("ZW");
+		// the stored prefix is stable
+		assertThat(TestRfq.numberOf(mvc, ergoRfq, TestRfq.create(mvc, buyerA, TestRfq.form(inr, "PN-2")))).startsWith("ZW-");
+	}
+
 	// ---------------------------------------------------------------- helpers
 
 	private long fileCount() {

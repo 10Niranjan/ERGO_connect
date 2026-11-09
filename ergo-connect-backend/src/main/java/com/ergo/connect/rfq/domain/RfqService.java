@@ -58,7 +58,9 @@ import com.ergo.connect.common.security.ModuleAccess;
 import com.ergo.connect.common.security.ModuleAccess.Module;
 import com.ergo.connect.common.security.Role;
 import com.ergo.connect.common.validation.Blank;
+import com.ergo.connect.documents.api.ApprovalStatus;
 import com.ergo.connect.documents.api.DocumentStore;
+import com.ergo.connect.documents.api.LockStatus;
 import com.ergo.connect.documents.api.DocumentStore.DocumentInfo;
 import com.ergo.connect.documents.api.DocumentStore.Visibility;
 import com.ergo.connect.masterdata.api.Directory;
@@ -605,11 +607,19 @@ public class RfqService {
 		return stored;
 	}
 
+	private boolean erasable(DocumentInfo d) {
+		return d.lockStatus() == LockStatus.UNLOCKED && d.approvalStatus() != ApprovalStatus.APPROVED
+				&& d.supersedesDocumentId() == null
+				&& jdbc.queryForObject("SELECT count(*) FROM documents WHERE supersedes_document_id = ?", Integer.class, d.id()) == 0;
+	}
+
 	/** A removed part takes its files with it, so no orphan stays on the RFQ's document list. */
 	private void removeFiles(Rfq rfq, RfqItem item) {
 		for (Long documentId : jdbc.queryForList("SELECT document_id FROM rfq_item_files WHERE rfq_item_id = ?", Long.class,
 				item.id)) {
-			documents.find(MODULE, rfq.id, documentId).ifPresent(d -> {
+			// A file that is locked, approved or has versions cannot be erased (documents rule): it stays in the
+			// library and only loses its part link, so removing the part still works.
+			documents.find(MODULE, rfq.id, documentId).filter(this::erasable).ifPresent(d -> {
 				documents.delete(d);
 				audit.record(RfqItem.class, item.id, "FILE_REMOVED", "file", d.fileName(), null);
 			});
@@ -977,6 +987,10 @@ public class RfqService {
 		if (!BEFORE_FLOAT.contains(rfq.status)) {
 			return false;
 		}
+		if (document.lockStatus() == LockStatus.LOCKED || document.approvalStatus() == ApprovalStatus.APPROVED
+				|| document.supersedesDocumentId() != null) {
+			return false; // the documents module never erases these; the button must not be offered
+		}
 		return ERGO_EDITORS.contains(me.role()) || CUSTOMER_EDITORS.contains(me.role())
 				&& CUSTOMER_EDITABLE.contains(rfq.status) && document.uploadedByCompanyId() == me.companyId();
 	}
@@ -1049,9 +1063,18 @@ public class RfqService {
 					slots.put(rs.getLong(1), new Slot(rs.getLong(2), FileKind.valueOf(rs.getString(3))));
 				}, (Object) parts.stream().map(p -> p.id).toArray(Long[]::new));
 		Map<Long, List<ItemFile>> result = new java.util.HashMap<>();
-		for (DocumentInfo d : documents.list(MODULE, rfq.id)) {
+		// A new version made in the Document Library takes over the slot of the version it replaces (ids only grow).
+		List<DocumentInfo> all = documents.list(MODULE, rfq.id).stream().sorted(Comparator.comparingLong(DocumentInfo::id)).toList();
+		Set<Long> superseded = new HashSet<>();
+		for (DocumentInfo d : all) {
+			if (d.supersedesDocumentId() != null && slots.containsKey(d.supersedesDocumentId())) {
+				slots.put(d.id(), slots.get(d.supersedesDocumentId()));
+				superseded.add(d.supersedesDocumentId());
+			}
+		}
+		for (DocumentInfo d : all) {
 			Slot slot = slots.get(d.id());
-			if (slot != null && canSee(me, d)) {
+			if (slot != null && !superseded.contains(d.id()) && canSee(me, d)) {
 				result.computeIfAbsent(slot.itemId(), k -> new ArrayList<>())
 					.add(new ItemFile(d.id(), slot.kind(), d.fileName(), d.size(), d.uploadedByCompanyId() == me.companyId(),
 							canDelete(me, rfq, d), d.createdAt()));

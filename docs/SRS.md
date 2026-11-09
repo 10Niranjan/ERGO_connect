@@ -96,6 +96,9 @@
 
 ### 5.4 RFQ / Quote Fields
 
+> **Superseded for the customer's create screen (2026-11-09).** The client's `ERGO_Connect_Revised_Complete_RFQ_Format.docx` replaced the customer RFQ entry: title, expected quote receipt date, quote currency, description, special instructions; one part table (part #, description, EAU, four attachment-only slots, target price, remarks); RFQ numbers `PREFIX-YEAR-SERIAL`; read-only after submit except in Clarification Required. Material, coating, weights, lead times, MOQ and the process flow are now entered by ERGO during the review. What was built and why: `ARCHITECTURE.md` §8, 2026-11-09, and `docs/FLOW_ALIGNMENT.md` slice 7.
+
+
 - Summary
 - RFQ Number (auto)
 - Quotation Date (auto)
@@ -131,6 +134,9 @@
 - Free text
 
 ### 5.5 Process Flow Table
+
+> **Superseded for the customer's create screen (2026-11-09).** The client's `ERGO_Connect_Revised_Complete_RFQ_Format.docx` replaced the customer RFQ entry: title, expected quote receipt date, quote currency, description, special instructions; one part table (part #, description, EAU, four attachment-only slots, target price, remarks); RFQ numbers `PREFIX-YEAR-SERIAL`; read-only after submit except in Clarification Required. Material, coating, weights, lead times, MOQ and the process flow are now entered by ERGO during the review. What was built and why: `ARCHITECTURE.md` §8, 2026-11-09, and `docs/FLOW_ALIGNMENT.md` slice 7.
+
 
 - Expandable rows, starting with 2 rows
 
@@ -848,6 +854,9 @@ Filters:
 - currency
 
 #### 12.6.2 RFQ Create / Edit Screen
+
+> **Superseded for the customer's create screen (2026-11-09).** The client's `ERGO_Connect_Revised_Complete_RFQ_Format.docx` replaced the customer RFQ entry: title, expected quote receipt date, quote currency, description, special instructions; one part table (part #, description, EAU, four attachment-only slots, target price, remarks); RFQ numbers `PREFIX-YEAR-SERIAL`; read-only after submit except in Clarification Required. Material, coating, weights, lead times, MOQ and the process flow are now entered by ERGO during the review. What was built and why: `ARCHITECTURE.md` §8, 2026-11-09, and `docs/FLOW_ALIGNMENT.md` slice 7.
+
 
 Sections:
 
@@ -1594,6 +1603,9 @@ Suggested fields:
 ### 13.3 Transactional Tables – RFQ and Quotation
 
 #### 13.3.1 rfqs
+
+> **Superseded for the customer's create screen (2026-11-09).** The client's `ERGO_Connect_Revised_Complete_RFQ_Format.docx` replaced the customer RFQ entry: title, expected quote receipt date, quote currency, description, special instructions; one part table (part #, description, EAU, four attachment-only slots, target price, remarks); RFQ numbers `PREFIX-YEAR-SERIAL`; read-only after submit except in Clarification Required. Material, coating, weights, lead times, MOQ and the process flow are now entered by ERGO during the review. What was built and why: `ARCHITECTURE.md` §8, 2026-11-09, and `docs/FLOW_ALIGNMENT.md` slice 7.
+
 
 Suggested fields:
 

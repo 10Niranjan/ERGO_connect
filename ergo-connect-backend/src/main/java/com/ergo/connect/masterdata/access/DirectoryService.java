@@ -40,20 +40,37 @@ class DirectoryService implements Directory {
 		return companies.findById(id).map(DirectoryService::ref);
 	}
 
+	/**
+	 * The prefix of this customer's RFQ numbers: the one ERGO set, else initials of its name ("International
+	 * Consortium" -> IC), at most four. A derived prefix is stored the first time it is needed and made unique (a digit
+	 * is added when another company already has it), so two customers never share a number series.
+	 */
 	@Override
+	@Transactional
 	public String rfqPrefix(long companyId) {
 		Company c = companies.findById(companyId).orElseThrow();
 		if (c.rfqPrefix != null) {
 			return c.rfqPrefix;
 		}
-		// No prefix set yet: initials of the name's words ("International Consortium" -> IC), at most four.
 		StringBuilder initials = new StringBuilder();
 		for (String word : c.name.split("[^\\p{L}\\p{N}]+")) {
 			String letter = word.isEmpty() ? "" : word.substring(0, 1).toUpperCase().replaceAll("[^A-Z0-9]", "");
 			initials.append(letter);
 		}
-		String prefix = initials.length() > 4 ? initials.substring(0, 4) : initials.toString();
-		return prefix.length() < 2 ? "RFQ" : prefix;
+		String base = initials.length() > 4 ? initials.substring(0, 4) : initials.toString();
+		if (base.length() < 2) {
+			base = "RFQ";
+		}
+		String prefix = base;
+		for (int n = 2; n <= 99 && companies.findByRfqPrefix(prefix).isPresent(); n++) {
+			prefix = base + n;
+		}
+		if (companies.findByRfqPrefix(prefix).isPresent()) {
+			// 99 other companies share these initials: the company's own id is unique by construction
+			prefix = "C" + Long.toString(companyId, 36).toUpperCase();
+		}
+		c.rfqPrefix = prefix;
+		return prefix;
 	}
 
 	@Override
