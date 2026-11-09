@@ -353,15 +353,20 @@ function RfqFormEditor({ view }: { view: RfqView | undefined }) {
 
       for (const part of withIds) {
         for (const { kind, label } of KINDS) {
+          // One request per file: a request is capped (about 51 MB) so several large files in one cell could never go
+          // together, and a failure part-way keeps the files that already arrived.
           const files = part.pending[kind]
-          if (files.length === 0) continue
-          setProgress(`Uploading ${label} for ${part.partNumber.trim()}: ${files.map((f) => f.name).join(', ')}`)
-          const stored = await uploadItemFiles({ id: saved.id, itemId: part.id as number, kind, files }).unwrap()
-          setParts((list) =>
-            list.map((p) =>
-              p.key === part.key ? { ...p, existing: { ...p.existing, [kind]: [...p.existing[kind], ...stored] }, pending: { ...p.pending, [kind]: [] } } : p,
-            ),
-          )
+          for (const [n, file] of files.entries()) {
+            setProgress(`Uploading ${label} for ${part.partNumber.trim()}: ${file.name} (${n + 1} of ${files.length})`)
+            const stored = await uploadItemFiles({ id: saved.id, itemId: part.id as number, kind, files: [file] }).unwrap()
+            setParts((list) =>
+              list.map((p) =>
+                p.key === part.key
+                  ? { ...p, existing: { ...p.existing, [kind]: [...p.existing[kind], ...stored] }, pending: { ...p.pending, [kind]: p.pending[kind].filter((f) => f !== file) } }
+                  : p,
+              ),
+            )
+          }
         }
       }
       setProgress(null)
