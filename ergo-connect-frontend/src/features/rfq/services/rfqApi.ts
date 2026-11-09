@@ -307,7 +307,7 @@ export const rfqApi = api.enhanceEndpoints({ addTagTypes: ['Rfq', 'RfqDocuments'
         files.forEach((file) => body.append('files', file))
         return { url: `/rfqs/${id}/items/${itemId}/files`, method: 'POST', params: { kind }, body }
       },
-      invalidatesTags: (_r, _e, { id }) => [{ type: 'RfqDocuments', id }],
+      invalidatesTags: (_r, _e, { id }) => [{ type: 'RfqDocuments', id }, { type: 'Rfq', id }],
     }),
     uploadRfqDocument: build.mutation<DocumentView, { id: number; file: File; visibility?: Visibility; itemIds?: number[] }>({
       query: ({ id, file, visibility, itemIds }) => {
@@ -317,7 +317,7 @@ export const rfqApi = api.enhanceEndpoints({ addTagTypes: ['Rfq', 'RfqDocuments'
         itemIds?.forEach((itemId) => body.append('itemIds', String(itemId)))
         return { url: `/rfqs/${id}/documents`, method: 'POST', body }
       },
-      invalidatesTags: (_r, _e, { id }) => [{ type: 'RfqDocuments', id }],
+      invalidatesTags: (_r, _e, { id }) => [{ type: 'RfqDocuments', id }, { type: 'Rfq', id }],
     }),
     setRfqDocumentVisibility: build.mutation<DocumentView, { id: number; documentId: number; visibility: Visibility; itemIds?: number[] }>({
       query: ({ id, documentId, visibility, itemIds }) => ({
@@ -325,11 +325,11 @@ export const rfqApi = api.enhanceEndpoints({ addTagTypes: ['Rfq', 'RfqDocuments'
         method: 'PUT',
         body: { visibility, itemIds: itemIds ?? [] },
       }),
-      invalidatesTags: (_r, _e, { id }) => [{ type: 'RfqDocuments', id }],
+      invalidatesTags: (_r, _e, { id }) => [{ type: 'RfqDocuments', id }, { type: 'Rfq', id }],
     }),
     deleteRfqDocument: build.mutation<void, { id: number; documentId: number }>({
       query: ({ id, documentId }) => ({ url: `/rfqs/${id}/documents/${documentId}`, method: 'DELETE' }),
-      invalidatesTags: (_r, _e, { id }) => [{ type: 'RfqDocuments', id }],
+      invalidatesTags: (_r, _e, { id }) => [{ type: 'RfqDocuments', id }, { type: 'Rfq', id }],
     }),
     /** Resolves to an object URL (the caller downloads it, then revokes it). */
     downloadRfqDocument: build.mutation<string, { id: number; documentId: number }>({

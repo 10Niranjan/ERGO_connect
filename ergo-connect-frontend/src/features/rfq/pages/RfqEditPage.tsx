@@ -232,9 +232,13 @@ const today = () => new Date().toLocaleDateString('en-CA')
 export function RfqEditPage() {
   const { id } = useParams()
   const { data: view, isLoading, error } = useRfqQuery(Number(id), { skip: id === undefined })
+  // Whether the RFQ may be edited is decided when the page opens: saving or submitting refreshes it into a read-only
+  // state, and that must not replace the form (and its confirmation) underneath the user.
+  const [openedEditable, setOpenedEditable] = useState<boolean | null>(null)
+  if (view && openedEditable === null) setOpenedEditable(view.actions.includes('EDIT'))
   if (id !== undefined && isLoading) return <LinearProgress />
   if (error) return <Alert severity="error">{problemMessage(error)}</Alert>
-  if (view && !view.actions.includes('EDIT')) {
+  if (view && openedEditable === false) {
     return (
       <Stack spacing={2} sx={{ maxWidth: 800 }}>
         <Alert severity="info">{view.number} can no longer be edited. It is read-only unless ERGO asks for a clarification.</Alert>
