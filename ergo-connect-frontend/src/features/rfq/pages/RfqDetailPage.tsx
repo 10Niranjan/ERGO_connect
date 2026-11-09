@@ -80,7 +80,8 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
   const canSeeQuotes = useCan(QUOTATION_CUSTOMER_VIEW)
   const canSeeParts = useCan(QUOTATION_VIEW) && (isErgo || canSeeQuotes)
   const can = (action: RfqView['actions'][number]) => rfq.actions.includes(action)
-  const answering = rfq.status === 'CLARIFICATION_REQUIRED' && can('SUBMIT')
+  // a customer sees clarification as Under Review: submitting from anywhere but a draft is the answer
+  const answering = rfq.status !== 'DRAFT' && can('SUBMIT')
 
   async function command(name: RfqCommand, comment?: string) {
     setActionError(null)
@@ -162,7 +163,7 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
         </Alert>
       )}
       {rfq.clarificationQuestion && (
-        <Alert severity={rfq.status === 'CLARIFICATION_REQUIRED' ? 'warning' : 'info'}>
+        <Alert severity={answering ? 'warning' : 'info'}>
           <strong>ERGO asked:</strong> {rfq.clarificationQuestion}
           {rfq.clarificationAnswer && (
             <>
@@ -288,7 +289,7 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
 }
 
 /** Before ERGO sends the RFQ out nothing is being quoted, so the customer has no part status to read yet. */
-const NOT_YET_QUOTED = new Set(['DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'CLARIFICATION_REQUIRED'])
+const NOT_YET_QUOTED = new Set(['DRAFT', 'SUBMITTED', 'UNDER_REVIEW'])
 
 /** Where each part stands (flow doc §4): ERGO sees the quote status, the customer where its quotation stands. */
 function PartStatus({ rfqId }: { rfqId: number }) {

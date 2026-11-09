@@ -18,13 +18,11 @@ export type RfqStatus =
   | 'CLOSED'
   | 'CANCELLED'
 
-/** What customers see (internal progress collapsed into IN_PROGRESS). */
+/** What customers see: Draft, Submitted, Under Review (clarification and supplier progress included), Quotation Submitted, then their own decision. */
 export type CustomerRfqStatus =
   | 'DRAFT'
   | 'SUBMITTED'
   | 'UNDER_REVIEW'
-  | 'CLARIFICATION_REQUIRED'
-  | 'IN_PROGRESS'
   | 'QUOTE_RECEIVED'
   | 'ON_HOLD'
   | 'REVISION_REQUESTED'

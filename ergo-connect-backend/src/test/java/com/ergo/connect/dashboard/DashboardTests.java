@@ -218,7 +218,7 @@ class DashboardTests {
 		// The customer sees only the collapsed, customer-facing status (SRS §8 2026-09-24), and no awaiting field.
 		mvc.perform(get("/api/dashboard").header(HttpHeaders.AUTHORIZATION, buyerA.bearer()))
 			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.rfqItems[0].status").value("IN_PROGRESS"))
+			.andExpect(jsonPath("$.rfqItems[0].status").value("UNDER_REVIEW"))
 			.andExpect(jsonPath("$.rfqItems[0].awaiting").value(nullValue()))
 			.andExpect(jsonPath("$.rfqItems[0].customerName").value(nullValue()))
 			// flow doc §4: the dashboard shows each part's status; a customer reads it collapsed and never sees a supplier

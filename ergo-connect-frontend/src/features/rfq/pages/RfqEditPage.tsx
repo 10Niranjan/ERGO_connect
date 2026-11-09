@@ -70,6 +70,10 @@ interface HeaderState {
 
 type PartFields = Exclude<keyof ItemForm, 'id' | 'processSteps'>
 
+/** The currencies the client's RFQ format lists by name; any other currency is picked under "Other". */
+const MAIN_CURRENCIES = ['USD', 'EUR', 'GBP', 'INR', 'AUD']
+const OTHER_CURRENCY = 'other'
+
 const KINDS: { kind: FileKind; label: string }[] = [
   { kind: 'DRAWING_2D', label: '2D Drawing' },
   { kind: 'MODEL_3D', label: '3D Models' },
@@ -269,6 +273,7 @@ function RfqFormEditor({ view }: { view: RfqView | undefined }) {
   const [failure, setFailure] = useState<unknown>(null)
   const [rejections, setRejections] = useState<string[]>([])
   const [submittedNumber, setSubmittedNumber] = useState<string | null>(null)
+  const [pickingOther, setPickingOther] = useState(false) // the quote currency is chosen from the "Other" list
   const [createRfq] = useCreateRfqMutation()
   const [updateRfq] = useUpdateRfqMutation()
   const [rfqCommand] = useRfqCommandMutation()
@@ -289,14 +294,24 @@ function RfqFormEditor({ view }: { view: RfqView | undefined }) {
   // a select cannot show a saved value before its options arrive
   if (lists.some((list) => list.isLoading)) return <LinearProgress />
 
-  if (!view && !header.currencyId && currencies.length > 0) {
+  if (!view && !pickingOther && !header.currencyId && currencies.length > 0) {
     const inr = currencies.find((c) => c.code === 'INR') ?? currencies[0]
     setHeader((h) => ({ ...h, currencyId: String(inr.id) }))
   }
 
   const currencyCode = currencies.find((c) => String(c.id) === header.currencyId)?.code
+  // the client's format lists five currencies and "Other"; Other holds every other active currency of the master list
+  const mainCurrencies = MAIN_CURRENCIES.flatMap((code) => currencies.find((c) => c.code === code) ?? [])
+  const otherCurrencies = currencies.filter((c) => !mainCurrencies.includes(c))
+  const inOther = pickingOther || otherCurrencies.some((c) => String(c.id) === header.currencyId)
+  const pickCurrency = (value: string) => {
+    setPickingOther(value === OTHER_CURRENCY)
+    setHeader((h) => ({ ...h, currencyId: value === OTHER_CURRENCY ? '' : value }))
+  }
   const setH = (key: keyof HeaderState) => (event: { target: { value: string } }) => setHeader((h) => ({ ...h, [key]: event.target.value }))
   const updatePart = (key: number, patch: Partial<PartState>) => setParts((list) => list.map((p) => (p.key === key ? { ...p, ...patch } : p)))
+  // submitting an RFQ that is already past Draft is the answer to a clarification (a customer sees that as Under Review)
+  const answering = view != null && view.status !== 'DRAFT'
   const customers = companies.filter((c) => c.type === 'CUSTOMER' && c.status === 'ACTIVE')
   const ruleOf = (kind: FileKind) => rules?.find((r) => r.kind === kind)
 
@@ -384,7 +399,7 @@ function RfqFormEditor({ view }: { view: RfqView | undefined }) {
       setUploadPct(null)
 
       // Answering a clarification needs the written answer, which the RFQ page asks for: save, then go there.
-      if (submit && view?.status !== 'CLARIFICATION_REQUIRED') {
+      if (submit && !answering) {
         const done = await rfqCommand({ id: saved.id, command: 'submit' }).unwrap()
         setSubmittedNumber(done.number)
       } else {
@@ -446,13 +461,30 @@ function RfqFormEditor({ view }: { view: RfqView | undefined }) {
           fullWidth
           slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: today() } }}
         />
-        <TextField select label="Quote Currency" value={header.currencyId} onChange={setH('currencyId')} required fullWidth>
-          {currencies.map((c: MasterOption) => (
+        <TextField
+          select
+          label="Quote Currency"
+          value={inOther ? OTHER_CURRENCY : header.currencyId}
+          onChange={(e) => pickCurrency(e.target.value)}
+          required
+          fullWidth
+        >
+          {mainCurrencies.map((c: MasterOption) => (
             <MenuItem key={c.id} value={String(c.id)}>
               {c.code ? `${c.code} – ${c.name}` : c.name}
             </MenuItem>
           ))}
+          {otherCurrencies.length > 0 && <MenuItem value={OTHER_CURRENCY}>Other</MenuItem>}
         </TextField>
+        {inOther && (
+          <TextField select label="Other Currency" value={header.currencyId} onChange={setH('currencyId')} required fullWidth>
+            {otherCurrencies.map((c: MasterOption) => (
+              <MenuItem key={c.id} value={String(c.id)}>
+                {c.code ? `${c.code} – ${c.name}` : c.name}
+              </MenuItem>
+            ))}
+          </TextField>
+        )}
         <TextField
           label="RFQ Description"
           value={header.description}
@@ -621,7 +653,7 @@ function RfqFormEditor({ view }: { view: RfqView | undefined }) {
         </Button>
         {(!view || view.actions.includes('SUBMIT')) && (
           <Button variant="contained" onClick={() => void persist(true)} disabled={busy}>
-            {view?.status === 'CLARIFICATION_REQUIRED' ? 'Save and answer →' : 'Submit RFQ →'}
+            {answering ? 'Save and answer →' : 'Submit RFQ →'}
           </Button>
         )}
       </Stack>

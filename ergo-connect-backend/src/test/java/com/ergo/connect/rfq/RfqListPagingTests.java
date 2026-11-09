@@ -128,11 +128,17 @@ class RfqListPagingTests {
 		long quotesComplete = rfq(buyerA, "ST-COMPLETE");
 		jdbc.update("UPDATE rfqs SET status = 'SENT_TO_SUPPLIERS' WHERE rfq_id = ?", inFloat);
 		jdbc.update("UPDATE rfqs SET status = 'QUOTES_COMPLETE' WHERE rfq_id = ?", quotesComplete);
+		long clarifying = rfq(buyerA, "ST-CLARIFY");
+		jdbc.update("UPDATE rfqs SET status = 'CLARIFICATION_REQUIRED' WHERE rfq_id = ?", clarifying);
 
-		// IN_PROGRESS is how a customer sees both internal statuses
-		assertThat(ids(list(buyerA, "status=IN_PROGRESS"))).containsExactlyInAnyOrder((int) inFloat, (int) quotesComplete);
+		// the client's status line has no step between review and quotation: all three internal statuses read Under Review
+		assertThat(ids(list(buyerA, "status=UNDER_REVIEW"))).containsExactlyInAnyOrder((int) inFloat, (int) quotesComplete, (int) clarifying);
+		mvc.perform(get("/api/rfqs?status=IN_PROGRESS").header(HttpHeaders.AUTHORIZATION, buyerA.bearer()))
+			.andExpect(status().isUnprocessableContent());
+		mvc.perform(get("/api/rfqs?status=CLARIFICATION_REQUIRED").header(HttpHeaders.AUTHORIZATION, buyerA.bearer()))
+			.andExpect(status().isUnprocessableContent());
 		assertThat(ids(list(buyerA, "status=DRAFT"))).containsExactly((int) draft);
-		// an internal name is not accepted from a customer: it would confirm the vocabulary behind IN_PROGRESS
+		// an internal name is not accepted from a customer: it would confirm the vocabulary behind Under Review
 		mvc.perform(get("/api/rfqs?status=SENT_TO_SUPPLIERS").header(HttpHeaders.AUTHORIZATION, buyerA.bearer()))
 			.andExpect(status().isUnprocessableContent());
 		mvc.perform(get("/api/rfqs?status=NOPE").header(HttpHeaders.AUTHORIZATION, buyerA.bearer()))

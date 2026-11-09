@@ -128,6 +128,7 @@ class RfqTests {
 		act(ergoRfq, id, "request-clarification", "Which surface finish?")
 			.andExpect(jsonPath("$.status").value("CLARIFICATION_REQUIRED"));
 		mvc.perform(get("/api/rfqs/{id}", id).header(HttpHeaders.AUTHORIZATION, buyerA.bearer()))
+			.andExpect(jsonPath("$.status").value("UNDER_REVIEW")) // the customer's status line has no clarification step
 			.andExpect(jsonPath("$.clarificationQuestion").value("Which surface finish?"))
 			.andExpect(jsonPath("$.actions", hasItem("SUBMIT")));
 

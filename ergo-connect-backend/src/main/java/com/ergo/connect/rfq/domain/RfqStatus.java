@@ -13,14 +13,13 @@ public enum RfqStatus {
 
 	static final Set<RfqStatus> FINAL = Set.of(CUSTOMER_DECLINED, CLOSED, CANCELLED);
 
-	/** What customers see: internal progress (supplier float, comparison) is shown as one step. */
+	/** What customers see: the client's status line (Draft, Submitted, Under Review, Quotation Submitted) plus the outcome of their own
+	 * decision. Clarification and the internal progress (supplier float, comparison) are shown as part of Under Review. */
 	public CustomerStatus forCustomer() {
 		return switch (this) {
 			case DRAFT -> CustomerStatus.DRAFT;
 			case SUBMITTED -> CustomerStatus.SUBMITTED;
-			case UNDER_REVIEW -> CustomerStatus.UNDER_REVIEW;
-			case CLARIFICATION_REQUIRED -> CustomerStatus.CLARIFICATION_REQUIRED;
-			case SENT_TO_SUPPLIERS, QUOTES_PARTIAL, QUOTES_COMPLETE -> CustomerStatus.IN_PROGRESS;
+			case UNDER_REVIEW, CLARIFICATION_REQUIRED, SENT_TO_SUPPLIERS, QUOTES_PARTIAL, QUOTES_COMPLETE -> CustomerStatus.UNDER_REVIEW;
 			case SENT_TO_CUSTOMER -> CustomerStatus.QUOTE_RECEIVED;
 			case CUSTOMER_ON_HOLD -> CustomerStatus.ON_HOLD;
 			case CUSTOMER_REVISION_REQUESTED -> CustomerStatus.REVISION_REQUESTED;
@@ -32,7 +31,7 @@ public enum RfqStatus {
 	}
 
 	public enum CustomerStatus {
-		DRAFT, SUBMITTED, UNDER_REVIEW, CLARIFICATION_REQUIRED, IN_PROGRESS, QUOTE_RECEIVED, ON_HOLD, REVISION_REQUESTED,
+		DRAFT, SUBMITTED, UNDER_REVIEW, QUOTE_RECEIVED, ON_HOLD, REVISION_REQUESTED,
 		APPROVED, DECLINED, CLOSED, CANCELLED
 	}
 

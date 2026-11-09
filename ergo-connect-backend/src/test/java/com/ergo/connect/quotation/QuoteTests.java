@@ -145,7 +145,7 @@ class QuoteTests {
 			.andExpect(jsonPath("$.parts[*].status", contains("NOT_STARTED", "NOT_STARTED", "NOT_STARTED")))
 			.andExpect(jsonPath("$.canDistribute").value(false)); // every part is with a supplier
 		call(get("/api/rfqs/{id}", rfqId), ergoRfq, null).andExpect(jsonPath("$.status").value("SENT_TO_SUPPLIERS"));
-		call(get("/api/rfqs/{id}", rfqId), buyer, null).andExpect(jsonPath("$.status").value("IN_PROGRESS"));
+		call(get("/api/rfqs/{id}", rfqId), buyer, null).andExpect(jsonPath("$.status").value("UNDER_REVIEW"));
 
 		call(get("/api/quotes"), sellerX, null).andExpect(jsonPath("$.items", hasSize(2)))
 			.andExpect(jsonPath("$.items[*].partNumber", containsInAnyOrder("PN-Q1", "PN-Q2")));
@@ -279,7 +279,7 @@ class QuoteTests {
 		call(put("/api/quotes/{id}", y3), sellerY, quote("95")).andExpect(status().isOk());
 		call(post("/api/quotes/{id}/submit", y3), sellerY, null).andExpect(status().isOk());
 		call(get("/api/rfqs/{id}", rfqId), ergoRfq, null).andExpect(jsonPath("$.status").value("QUOTES_COMPLETE"));
-		call(get("/api/rfqs/{id}", rfqId), buyer, null).andExpect(jsonPath("$.status").value("IN_PROGRESS"));
+		call(get("/api/rfqs/{id}", rfqId), buyer, null).andExpect(jsonPath("$.status").value("UNDER_REVIEW"));
 		// sending one part back makes the RFQ wait for that supplier again
 		call(post("/api/quotes/{id}/revision", y3), ergoRfq, "{\"comment\": \"Price check\"}").andExpect(status().isOk());
 		call(get("/api/rfqs/{id}", rfqId), ergoRfq, null).andExpect(jsonPath("$.status").value("QUOTES_PARTIAL"));

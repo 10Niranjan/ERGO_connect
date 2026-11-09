@@ -6,7 +6,7 @@ export { type ChipColor }
 export const STATUS: Record<RfqStatus | CustomerRfqStatus, { label: string; color: ChipColor }> = {
   DRAFT: { label: 'Draft', color: 'default' },
   SUBMITTED: { label: 'Submitted', color: 'info' },
-  UNDER_REVIEW: { label: 'Under ERGO review', color: 'info' },
+  UNDER_REVIEW: { label: 'Under Review', color: 'info' },
   CLARIFICATION_REQUIRED: { label: 'Clarification required', color: 'warning' },
   SENT_TO_SUPPLIERS: { label: 'Sent to suppliers', color: 'primary' },
   QUOTES_PARTIAL: { label: 'Quotes partly received', color: 'primary' },
@@ -18,8 +18,7 @@ export const STATUS: Record<RfqStatus | CustomerRfqStatus, { label: string; colo
   CUSTOMER_DECLINED: { label: 'Rejected', color: 'error' },
   CLOSED: { label: 'Closed', color: 'default' },
   CANCELLED: { label: 'Cancelled', color: 'default' },
-  IN_PROGRESS: { label: 'Quotation in progress', color: 'primary' },
-  QUOTE_RECEIVED: { label: 'Quotation submitted', color: 'secondary' },
+  QUOTE_RECEIVED: { label: 'Quotation Submitted', color: 'secondary' },
   ON_HOLD: { label: 'On hold', color: 'warning' },
   REVISION_REQUESTED: { label: 'Correction required', color: 'warning' },
   APPROVED: { label: 'Approved', color: 'success' },
@@ -32,7 +31,7 @@ export const ERGO_STATUS_FILTER: RfqStatus[] = [
   'SENT_TO_CUSTOMER', 'CUSTOMER_ON_HOLD', 'CUSTOMER_REVISION_REQUESTED', 'CUSTOMER_APPROVED', 'CUSTOMER_DECLINED', 'CLOSED', 'CANCELLED',
 ]
 export const CUSTOMER_STATUS_FILTER: CustomerRfqStatus[] = [
-  'DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'CLARIFICATION_REQUIRED', 'IN_PROGRESS', 'QUOTE_RECEIVED', 'ON_HOLD', 'REVISION_REQUESTED',
+  'DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'QUOTE_RECEIVED', 'ON_HOLD', 'REVISION_REQUESTED',
   'APPROVED', 'DECLINED', 'CLOSED', 'CANCELLED',
 ]
 
