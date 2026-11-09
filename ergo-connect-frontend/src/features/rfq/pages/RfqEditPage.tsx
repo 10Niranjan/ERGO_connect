@@ -5,7 +5,6 @@ import {
   Alert,
   Box,
   Button,
-  Collapse,
   Dialog,
   DialogActions,
   DialogContent,
@@ -363,7 +362,8 @@ function RfqFormEditor({ view }: { view: RfqView | undefined }) {
       }
       setProgress(null)
 
-      if (submit) {
+      // Answering a clarification needs the written answer, which the RFQ page asks for: save, then go there.
+      if (submit && view?.status !== 'CLARIFICATION_REQUIRED') {
         const done = await rfqCommand({ id: saved.id, command: 'submit' }).unwrap()
         setSubmittedNumber(done.number)
       } else {
@@ -510,6 +510,12 @@ function RfqFormEditor({ view }: { view: RfqView | undefined }) {
             </TableBody>
           </Table>
         </TableContainer>
+        {isErgo &&
+          parts.map((part, index) =>
+            expanded.includes(part.key) ? (
+              <ErgoPartPanel key={part.key} index={index} part={part} materials={materials} coatings={coatings} processes={processes} onChange={(patch) => updatePart(part.key, patch)} />
+            ) : null,
+          )}
         <Button sx={{ mt: 1.5 }} variant="outlined" onClick={() => setParts((list) => [...list, emptyPart()])} disabled={busy || parts.length >= 100}>
           + Add Another Part
         </Button>
@@ -588,11 +594,13 @@ function RfqFormEditor({ view }: { view: RfqView | undefined }) {
           Cancel
         </Button>
         <Button variant="outlined" onClick={() => void persist(false)} disabled={busy}>
-          Save as Draft
+          {view && view.status !== 'DRAFT' ? 'Save changes' : 'Save as Draft'}
         </Button>
-        <Button variant="contained" onClick={() => void persist(true)} disabled={busy}>
-          Submit RFQ →
-        </Button>
+        {(!view || view.actions.includes('SUBMIT')) && (
+          <Button variant="contained" onClick={() => void persist(true)} disabled={busy}>
+            {view?.status === 'CLARIFICATION_REQUIRED' ? 'Save and answer →' : 'Submit RFQ →'}
+          </Button>
+        )}
       </Stack>
 
       <Dialog open={submittedNumber != null} maxWidth="xs" fullWidth>
@@ -645,9 +653,6 @@ function PartRows({
   stickyNo,
   stickyPart,
   ruleOf,
-  materials,
-  coatings,
-  processes,
   onChange,
   onToggle,
   onRemove,
@@ -687,7 +692,7 @@ function PartRows({
         <TableCell>{cell('remarks', { placeholder: 'Remarks', multiline: true, slotProps: { htmlInput: { maxLength: 1000, 'aria-label': `Remarks ${index + 1}` } } })}</TableCell>
         <TableCell sx={{ whiteSpace: 'nowrap' }}>
           {isErgo && (
-            <IconButton size="small" onClick={onToggle} aria-label={open ? 'Hide ERGO details' : 'Show ERGO details'} title="ERGO details: material, process flow and other technical data">
+            <IconButton size="small" onClick={onToggle} aria-label={open ? 'Hide ERGO details' : 'Show ERGO details'} title="ERGO details below the table: material, process flow and other technical data">
               {open ? <ExpandLessIcon /> : <ExpandMoreIcon />}
             </IconButton>
           )}
@@ -696,40 +701,41 @@ function PartRows({
           </IconButton>
         </TableCell>
       </TableRow>
-      {isErgo && (
-        <TableRow>
-          <TableCell colSpan={12} sx={{ p: 0, border: open ? undefined : 0 }}>
-            <Collapse in={open} unmountOnExit>
-              <Box sx={{ p: 2, display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: 'repeat(4, 1fr)' }, position: 'sticky', left: 0, maxWidth: '100vw' }}>
-                <Typography variant="subtitle2" sx={{ gridColumn: '1 / -1' }}>
-                  ERGO details for part {index + 1}: not part of the customer's form and never shown to suppliers except material and the process route.
-                </Typography>
-                {cell('revision', { label: 'Revision', slotProps: { htmlInput: { maxLength: 30 } } })}
-                {cell('netWeightKg', { label: 'Net weight (kg)', type: 'number', slotProps: { htmlInput: { min: 0, step: 'any' } } })}
-                {cell('grossWeightKg', { label: 'Gross weight (kg)', type: 'number', slotProps: { htmlInput: { min: 0, step: 'any' } } })}
-                {cell('moq', { label: 'MOQ (pieces)', type: 'number', slotProps: { htmlInput: { min: 1 } } })}
-                {cell('materialId', { label: 'Material', select: true, children: optionItems(materials) })}
-                {cell('materialSpec', { label: 'Material specification (if not in the list)', slotProps: { htmlInput: { maxLength: 500 } } })}
-                {cell('coatingId', { label: 'Coating / surface treatment', select: true, children: optionItems(coatings) })}
-                {cell('coatingSpec', { label: 'Coating specification', slotProps: { htmlInput: { maxLength: 500 } } })}
-                {cell('targetToolingCost', { label: 'Target tooling cost', type: 'number', slotProps: { htmlInput: { min: 0, step: 'any' } } })}
-                {cell('targetPpapPiecePrice', { label: 'Target PPAP piece price', type: 'number', slotProps: { htmlInput: { min: 0, step: 'any' } } })}
-                {cell('materialLeadTimeWeeks', { label: 'Material lead time (weeks)', type: 'number', slotProps: { htmlInput: { min: 0 } } })}
-                {cell('toolingLeadTimeDays', { label: 'Tooling lead time (days)', type: 'number', slotProps: { htmlInput: { min: 0 } } })}
-                {cell('sampleLeadTimeDays', { label: 'Sample lead time (days)', type: 'number', slotProps: { htmlInput: { min: 0 } } })}
-                {cell('productionLeadTimeDays', { label: 'Production lead time from PO (days)', type: 'number', slotProps: { htmlInput: { min: 0 } } })}
-                <Box sx={{ gridColumn: '1 / -1' }}>
-                  <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                    Process flow
-                  </Typography>
-                  <ProcessFlowTable steps={part.steps} processes={processes} onChange={(steps) => onChange({ steps })} />
-                </Box>
-              </Box>
-            </Collapse>
-          </TableCell>
-        </TableRow>
-      )}
     </>
+  )
+}
+
+/** What ERGO adds to a part during the review. Outside the table so it never scrolls out of view with the wide rows. */
+function ErgoPartPanel({ index, part, materials, coatings, processes, onChange }: Pick<PartRowsProps, 'index' | 'part' | 'materials' | 'coatings' | 'processes' | 'onChange'>) {
+  const cell = (key: PartFields, extra: object = {}) => (
+    <TextField size="small" value={part[key]} onChange={(e) => onChange({ [key]: e.target.value })} fullWidth {...extra} />
+  )
+  return (
+    <Box sx={{ mt: 2, p: 2, border: 1, borderColor: 'divider', borderRadius: 1, display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: 'repeat(4, 1fr)' } }}>
+      <Typography variant="subtitle2" sx={{ gridColumn: '1 / -1' }}>
+        ERGO details for part {index + 1}{part.partNumber.trim() ? ` (${part.partNumber.trim()})` : ''}: not part of the customer's form. Suppliers see only the material and the process route.
+      </Typography>
+      {cell('revision', { label: 'Revision', slotProps: { htmlInput: { maxLength: 30 } } })}
+      {cell('netWeightKg', { label: 'Net weight (kg)', type: 'number', slotProps: { htmlInput: { min: 0, step: 'any' } } })}
+      {cell('grossWeightKg', { label: 'Gross weight (kg)', type: 'number', slotProps: { htmlInput: { min: 0, step: 'any' } } })}
+      {cell('moq', { label: 'MOQ (pieces)', type: 'number', slotProps: { htmlInput: { min: 1 } } })}
+      {cell('materialId', { label: 'Material', select: true, children: optionItems(materials) })}
+      {cell('materialSpec', { label: 'Material specification (if not in the list)', slotProps: { htmlInput: { maxLength: 500 } } })}
+      {cell('coatingId', { label: 'Coating / surface treatment', select: true, children: optionItems(coatings) })}
+      {cell('coatingSpec', { label: 'Coating specification', slotProps: { htmlInput: { maxLength: 500 } } })}
+      {cell('targetToolingCost', { label: 'Target tooling cost', type: 'number', slotProps: { htmlInput: { min: 0, step: 'any' } } })}
+      {cell('targetPpapPiecePrice', { label: 'Target PPAP piece price', type: 'number', slotProps: { htmlInput: { min: 0, step: 'any' } } })}
+      {cell('materialLeadTimeWeeks', { label: 'Material lead time (weeks)', type: 'number', slotProps: { htmlInput: { min: 0 } } })}
+      {cell('toolingLeadTimeDays', { label: 'Tooling lead time (days)', type: 'number', slotProps: { htmlInput: { min: 0 } } })}
+      {cell('sampleLeadTimeDays', { label: 'Sample lead time (days)', type: 'number', slotProps: { htmlInput: { min: 0 } } })}
+      {cell('productionLeadTimeDays', { label: 'Production lead time from PO (days)', type: 'number', slotProps: { htmlInput: { min: 0 } } })}
+      <Box sx={{ gridColumn: '1 / -1' }}>
+        <Typography variant="subtitle2" sx={{ mb: 1 }}>
+          Process flow
+        </Typography>
+        <ProcessFlowTable steps={part.steps} processes={processes} onChange={(steps) => onChange({ steps })} />
+      </Box>
+    </Box>
   )
 }
 
