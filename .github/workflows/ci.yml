@@ -41,8 +41,11 @@ jobs:
       - run: npm run lint
       - run: npm run build
       # Dependency hygiene (ARCHITECTURE.md §4/§8 Phase 8a): fail on high/critical CVEs. npm's own
-      # auditor, no extra tool needed for this half - the Trivy job below covers the backend.
-      - run: npm audit --audit-level=high
+      # auditor, no extra tool needed for this half - the Trivy job below covers the backend. The script allows
+      # only the advisories it lists, each until a set date (§8 2026-11-18).
+      - run: node ../.github/scripts/npm-audit-gate.mjs
+      # Packages that ship to the browser: no exceptions, whatever the list above allows.
+      - run: npm audit --omit=dev --audit-level=high
 
   # Backend dependency CVE gate (ARCHITECTURE.md §8, Phase 8a; Trivy since 2026-11-06). OWASP Dependency-Check needed
   # an NVD API key as a repo secret, which nobody with admin could add, so no image was ever built. Trivy needs no key:
