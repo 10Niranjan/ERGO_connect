@@ -23,8 +23,8 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import { useState } from 'react'
-import { Link as RouterLink, useNavigate, useParams } from 'react-router'
+import { useEffect, useRef, useState } from 'react'
+import { Link as RouterLink, useBlocker, useNavigate, useParams } from 'react-router'
 import { useAppSelector } from '../../../app/store'
 import { saveObjectUrl } from '../../../shared/download'
 import { FormSection as Section } from '../../../shared/components/FormSection'
@@ -274,6 +274,17 @@ function RfqFormEditor({ view }: { view: RfqView | undefined }) {
   const [rejections, setRejections] = useState<string[]>([])
   const [submittedNumber, setSubmittedNumber] = useState<string | null>(null)
   const [pickingOther, setPickingOther] = useState(false) // the quote currency is chosen from the "Other" list
+  // Whether the user changed something that is not saved yet. A ref, so a save can clear it just before navigating away.
+  const dirty = useRef(false)
+  // Leaving inside the app (Cancel, the sidebar, Back) asks first; closing or reloading the tab gets the browser's prompt.
+  const blocker = useBlocker(() => dirty.current)
+  useEffect(() => {
+    const warn = (event: BeforeUnloadEvent) => {
+      if (dirty.current) event.preventDefault()
+    }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [])
   const [createRfq] = useCreateRfqMutation()
   const [updateRfq] = useUpdateRfqMutation()
   const [rfqCommand] = useRfqCommandMutation()
@@ -305,11 +316,22 @@ function RfqFormEditor({ view }: { view: RfqView | undefined }) {
   const otherCurrencies = currencies.filter((c) => !mainCurrencies.includes(c))
   const inOther = pickingOther || otherCurrencies.some((c) => String(c.id) === header.currencyId)
   const pickCurrency = (value: string) => {
+    dirty.current = true
     setPickingOther(value === OTHER_CURRENCY)
     setHeader((h) => ({ ...h, currencyId: value === OTHER_CURRENCY ? '' : value }))
   }
-  const setH = (key: keyof HeaderState) => (event: { target: { value: string } }) => setHeader((h) => ({ ...h, [key]: event.target.value }))
-  const updatePart = (key: number, patch: Partial<PartState>) => setParts((list) => list.map((p) => (p.key === key ? { ...p, ...patch } : p)))
+  const setH = (key: keyof HeaderState) => (event: { target: { value: string } }) => {
+    dirty.current = true
+    setHeader((h) => ({ ...h, [key]: event.target.value }))
+  }
+  const updatePart = (key: number, patch: Partial<PartState>) => {
+    dirty.current = true
+    setParts((list) => list.map((p) => (p.key === key ? { ...p, ...patch } : p)))
+  }
+  const editParts = (change: (list: PartState[]) => PartState[]) => {
+    dirty.current = true
+    setParts(change)
+  }
   // submitting an RFQ that is already past Draft is the answer to a clarification (a customer sees that as Under Review)
   const answering = view != null && view.status !== 'DRAFT'
   const customers = companies.filter((c) => c.type === 'CUSTOMER' && c.status === 'ACTIVE')
@@ -397,6 +419,7 @@ function RfqFormEditor({ view }: { view: RfqView | undefined }) {
       }
       setProgress(null)
       setUploadPct(null)
+      dirty.current = false // the RFQ and every file are saved: leaving loses nothing
 
       // Answering a clarification needs the written answer, which the RFQ page asks for: save, then go there.
       if (submit && !answering) {
@@ -433,178 +456,182 @@ function RfqFormEditor({ view }: { view: RfqView | undefined }) {
         {view ? `Edit ${view.number}` : 'New Request for Quotation (RFQ)'}
       </Typography>
 
-      <Section title="Section 1 | General information" note="Fields marked * are mandatory. The quote currency applies to every target price in Section 2.">
-        <TextField label="RFQ Number" value={view?.number ?? 'Auto-generated'} disabled fullWidth />
-        <TextField label="RFQ Date" value={view ? formatDate(view.createdAt) : 'Auto-generated'} disabled fullWidth />
-        {isErgo ? (
-          view ? (
-            <TextField label="Customer" value={view.audience === 'ERGO' ? view.customer.name : ''} disabled fullWidth />
+      {/* Locked while saving: an edit typed now would not be in the save already sent, and is lost when the page moves on. */}
+      <Stack spacing={2} inert={busy} sx={busy ? { opacity: 0.6 } : undefined}>
+        <Section title="Section 1 | General information" note="Fields marked * are mandatory. The quote currency applies to every target price in Section 2.">
+          <TextField label="RFQ Number" value={view?.number ?? 'Auto-generated'} disabled fullWidth />
+          <TextField label="RFQ Date" value={view ? formatDate(view.createdAt) : 'Auto-generated'} disabled fullWidth />
+          {isErgo ? (
+            view ? (
+              <TextField label="Customer" value={view.audience === 'ERGO' ? view.customer.name : ''} disabled fullWidth />
+            ) : (
+              <TextField select label="Customer" value={header.customerCompanyId} onChange={setH('customerCompanyId')} required fullWidth>
+                {customers.map((c) => (
+                  <MenuItem key={c.id} value={String(c.id)}>
+                    {c.profile.name}
+                  </MenuItem>
+                ))}
+              </TextField>
+            )
           ) : (
-            <TextField select label="Customer" value={header.customerCompanyId} onChange={setH('customerCompanyId')} required fullWidth>
-              {customers.map((c) => (
-                <MenuItem key={c.id} value={String(c.id)}>
-                  {c.profile.name}
-                </MenuItem>
-              ))}
-            </TextField>
-          )
-        ) : (
-          <Box />
-        )}
-        <TextField label="RFQ Title" value={header.title} onChange={setH('title')} required fullWidth slotProps={{ htmlInput: { maxLength: 200 } }} placeholder="Enter RFQ title" />
-        <TextField
-          label="Expected Quote Receipt Date"
-          type="date"
-          value={header.targetQuoteDate}
-          onChange={setH('targetQuoteDate')}
-          required
-          fullWidth
-          slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: today() } }}
-        />
-        <TextField
-          select
-          label="Quote Currency"
-          value={inOther ? OTHER_CURRENCY : header.currencyId}
-          onChange={(e) => pickCurrency(e.target.value)}
-          required
-          fullWidth
-        >
-          {mainCurrencies.map((c: MasterOption) => (
-            <MenuItem key={c.id} value={String(c.id)}>
-              {c.code ? `${c.code} – ${c.name}` : c.name}
-            </MenuItem>
-          ))}
-          {otherCurrencies.length > 0 && <MenuItem value={OTHER_CURRENCY}>Other</MenuItem>}
-        </TextField>
-        {inOther && (
-          <TextField select label="Other Currency" value={header.currencyId} onChange={setH('currencyId')} required fullWidth>
-            {otherCurrencies.map((c: MasterOption) => (
+            <Box />
+          )}
+          <TextField label="RFQ Title" value={header.title} onChange={setH('title')} required fullWidth slotProps={{ htmlInput: { maxLength: 200 } }} placeholder="Enter RFQ title" />
+          <TextField
+            label="Expected Quote Receipt Date"
+            type="date"
+            value={header.targetQuoteDate}
+            onChange={setH('targetQuoteDate')}
+            required
+            fullWidth
+            slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: today() } }}
+          />
+          <TextField
+            select
+            label="Quote Currency"
+            value={inOther ? OTHER_CURRENCY : header.currencyId}
+            onChange={(e) => pickCurrency(e.target.value)}
+            required
+            fullWidth
+          >
+            {mainCurrencies.map((c: MasterOption) => (
               <MenuItem key={c.id} value={String(c.id)}>
                 {c.code ? `${c.code} – ${c.name}` : c.name}
               </MenuItem>
             ))}
+            {otherCurrencies.length > 0 && <MenuItem value={OTHER_CURRENCY}>Other</MenuItem>}
           </TextField>
-        )}
-        <TextField
-          label="RFQ Description"
-          value={header.description}
-          onChange={setH('description')}
-          multiline
-          minRows={3}
-          fullWidth
-          sx={{ gridColumn: '1 / -1' }}
-          slotProps={{ htmlInput: { maxLength: 4000 } }}
-          placeholder="Enter description"
-        />
-        <TextField
-          label="Special Instructions"
-          value={header.specialInstructions}
-          onChange={setH('specialInstructions')}
-          multiline
-          minRows={3}
-          fullWidth
-          sx={{ gridColumn: '1 / -1' }}
-          slotProps={{ htmlInput: { maxLength: 4000 } }}
-          placeholder="Enter instructions"
-        />
-      </Section>
-
-      <Paper variant="outlined" sx={{ p: 2 }}>
-        <Typography variant="h6" component="h2">
-          Section 2 | Part details
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-          One row per part. Scroll sideways to reach every column; the part number stays in view. The file columns take files only, several per cell.
-        </Typography>
-        <TableContainer sx={{ maxHeight: '70vh', overflow: 'auto' }}>
-          <Table size="small" stickyHeader sx={{ minWidth: 1700 }}>
-            <TableHead>
-              <TableRow>
-                <TableCell sx={{ ...stickyHead, ...stickyNo, zIndex: 4 }}>#</TableCell>
-                <TableCell sx={{ ...stickyHead, ...stickyPart, zIndex: 4 }}>Part # *</TableCell>
-                <TableCell sx={{ ...stickyHead, minWidth: 220 }}>Part Description</TableCell>
-                <TableCell sx={{ ...stickyHead, minWidth: 140 }}>Annual Volume (EAU) *</TableCell>
-                {KINDS.map(({ kind, label }) => (
-                  <TableCell key={kind} sx={{ ...stickyHead, minWidth: 190 }}>
-                    {label}
-                  </TableCell>
-                ))}
-                <TableCell sx={{ ...stickyHead, minWidth: 140 }}>Target Price{currencyCode ? ` (${currencyCode})` : ''}</TableCell>
-                <TableCell sx={{ ...stickyHead, minWidth: 220 }}>Remarks</TableCell>
-                <TableCell sx={{ ...stickyHead, minWidth: isErgo ? 130 : 90 }}>Action</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {parts.map((part, index) => (
-                <PartRows
-                  key={part.key}
-                  index={index}
-                  part={part}
-                  isErgo={isErgo}
-                  open={expanded.includes(part.key)}
-                  canRemove={parts.length > 1}
-                  disabled={busy}
-                  stickyNo={stickyNo}
-                  stickyPart={stickyPart}
-                  ruleOf={ruleOf}
-                  materials={materials}
-                  coatings={coatings}
-                  processes={processes}
-                  onChange={(patch) => updatePart(part.key, patch)}
-                  onToggle={() => setExpanded((list) => (list.includes(part.key) ? list.filter((k) => k !== part.key) : [...list, part.key]))}
-                  onRemove={() => setParts((list) => list.filter((p) => p.key !== part.key))}
-                  onRemoveExisting={(file) => {
-                    setRemoved((list) => [...list, file.id])
-                    updatePart(part.key, { existing: { ...part.existing, [file.kind]: part.existing[file.kind].filter((f) => f.id !== file.id) } })
-                  }}
-                  onDownload={(file) => void download(file)}
-                  onReject={(message) => setRejections((list) => [...list, message])}
-                />
+          {inOther && (
+            <TextField select label="Other Currency" value={header.currencyId} onChange={setH('currencyId')} required fullWidth>
+              {otherCurrencies.map((c: MasterOption) => (
+                <MenuItem key={c.id} value={String(c.id)}>
+                  {c.code ? `${c.code} – ${c.name}` : c.name}
+                </MenuItem>
               ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
-        {isErgo &&
-          parts.map((part, index) =>
-            expanded.includes(part.key) ? (
-              <ErgoPartPanel key={part.key} index={index} part={part} materials={materials} coatings={coatings} processes={processes} onChange={(patch) => updatePart(part.key, patch)} />
-            ) : null,
+            </TextField>
           )}
-        <Button sx={{ mt: 1.5 }} variant="outlined" onClick={() => setParts((list) => [...list, emptyPart()])} disabled={busy || parts.length >= 100}>
-          + Add Another Part
-        </Button>
-      </Paper>
-
-      {isErgo && (
-        <Section title="ERGO only" note="Not part of the customer's form. Never shown to suppliers.">
-          <TextField select label="Priority" value={header.priority} onChange={setH('priority')} fullWidth>
-            {Object.entries(PRIORITIES).map(([value, label]) => (
-              <MenuItem key={value} value={value}>
-                {label}
-              </MenuItem>
-            ))}
-          </TextField>
-          <TextField select label="Payment terms" value={header.paymentTermId} onChange={setH('paymentTermId')} fullWidth>
-            <MenuItem value="">—</MenuItem>
-            {paymentTerms.map((t) => (
-              <MenuItem key={t.id} value={String(t.id)}>
-                {t.name}
-              </MenuItem>
-            ))}
-          </TextField>
-          <Box />
           <TextField
-            label="Internal notes (ERGO only)"
-            value={header.internalNotes}
-            onChange={setH('internalNotes')}
+            label="RFQ Description"
+            value={header.description}
+            onChange={setH('description')}
             multiline
             minRows={3}
             fullWidth
             sx={{ gridColumn: '1 / -1' }}
             slotProps={{ htmlInput: { maxLength: 4000 } }}
+            placeholder="Enter description"
+          />
+          <TextField
+            label="Special Instructions"
+            value={header.specialInstructions}
+            onChange={setH('specialInstructions')}
+            multiline
+            minRows={3}
+            fullWidth
+            sx={{ gridColumn: '1 / -1' }}
+            slotProps={{ htmlInput: { maxLength: 4000 } }}
+            placeholder="Enter instructions"
           />
         </Section>
-      )}
+
+        <Paper variant="outlined" sx={{ p: 2 }}>
+          <Typography variant="h6" component="h2">
+            Section 2 | Part details
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+            One row per part. Scroll sideways to reach every column; the part number stays in view. The file columns take files only, several per cell.
+          </Typography>
+          <TableContainer sx={{ maxHeight: '70vh', overflow: 'auto' }}>
+            <Table size="small" stickyHeader sx={{ minWidth: 1700 }}>
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ ...stickyHead, ...stickyNo, zIndex: 4 }}>#</TableCell>
+                  <TableCell sx={{ ...stickyHead, ...stickyPart, zIndex: 4 }}>Part # *</TableCell>
+                  <TableCell sx={{ ...stickyHead, minWidth: 220 }}>Part Description</TableCell>
+                  <TableCell sx={{ ...stickyHead, minWidth: 140 }}>Annual Volume (EAU) *</TableCell>
+                  {KINDS.map(({ kind, label }) => (
+                    <TableCell key={kind} sx={{ ...stickyHead, minWidth: 190 }}>
+                      {label}
+                    </TableCell>
+                  ))}
+                  <TableCell sx={{ ...stickyHead, minWidth: 140 }}>Target Price{currencyCode ? ` (${currencyCode})` : ''}</TableCell>
+                  <TableCell sx={{ ...stickyHead, minWidth: 220 }}>Remarks</TableCell>
+                  <TableCell sx={{ ...stickyHead, minWidth: isErgo ? 130 : 90 }}>Action</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {parts.map((part, index) => (
+                  <PartRows
+                    key={part.key}
+                    index={index}
+                    part={part}
+                    isErgo={isErgo}
+                    open={expanded.includes(part.key)}
+                    canRemove={parts.length > 1}
+                    disabled={busy}
+                    stickyNo={stickyNo}
+                    stickyPart={stickyPart}
+                    ruleOf={ruleOf}
+                    materials={materials}
+                    coatings={coatings}
+                    processes={processes}
+                    onChange={(patch) => updatePart(part.key, patch)}
+                    onToggle={() => setExpanded((list) => (list.includes(part.key) ? list.filter((k) => k !== part.key) : [...list, part.key]))}
+                    onRemove={() => editParts((list) => list.filter((p) => p.key !== part.key))}
+                    onRemoveExisting={(file) => {
+                      dirty.current = true
+                      setRemoved((list) => [...list, file.id])
+                      updatePart(part.key, { existing: { ...part.existing, [file.kind]: part.existing[file.kind].filter((f) => f.id !== file.id) } })
+                    }}
+                    onDownload={(file) => void download(file)}
+                    onReject={(message) => setRejections((list) => [...list, message])}
+                  />
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+          {isErgo &&
+            parts.map((part, index) =>
+              expanded.includes(part.key) ? (
+                <ErgoPartPanel key={part.key} index={index} part={part} materials={materials} coatings={coatings} processes={processes} onChange={(patch) => updatePart(part.key, patch)} />
+              ) : null,
+            )}
+          <Button sx={{ mt: 1.5 }} variant="outlined" onClick={() => editParts((list) => [...list, emptyPart()])} disabled={busy || parts.length >= 100}>
+            + Add Another Part
+          </Button>
+        </Paper>
+
+        {isErgo && (
+          <Section title="ERGO only" note="Not part of the customer's form. Never shown to suppliers.">
+            <TextField select label="Priority" value={header.priority} onChange={setH('priority')} fullWidth>
+              {Object.entries(PRIORITIES).map(([value, label]) => (
+                <MenuItem key={value} value={value}>
+                  {label}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField select label="Payment terms" value={header.paymentTermId} onChange={setH('paymentTermId')} fullWidth>
+              <MenuItem value="">—</MenuItem>
+              {paymentTerms.map((t) => (
+                <MenuItem key={t.id} value={String(t.id)}>
+                  {t.name}
+                </MenuItem>
+              ))}
+            </TextField>
+            <Box />
+            <TextField
+              label="Internal notes (ERGO only)"
+              value={header.internalNotes}
+              onChange={setH('internalNotes')}
+              multiline
+              minRows={3}
+              fullWidth
+              sx={{ gridColumn: '1 / -1' }}
+              slotProps={{ htmlInput: { maxLength: 4000 } }}
+            />
+          </Section>
+        )}
+      </Stack>
 
       {problems.length > 0 && (
         <Alert severity="warning">
@@ -657,6 +684,19 @@ function RfqFormEditor({ view }: { view: RfqView | undefined }) {
           </Button>
         )}
       </Stack>
+
+      <Dialog open={blocker.state === 'blocked'} onClose={() => blocker.reset?.()} maxWidth="xs" fullWidth>
+        <DialogTitle>Leave without saving?</DialogTitle>
+        <DialogContent>
+          <Typography>Your changes to this RFQ, and any files not yet uploaded, will be lost. Use Save as Draft to keep them.</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => blocker.reset?.()}>Stay on this page</Button>
+          <Button color="error" onClick={() => blocker.proceed?.()}>
+            Leave without saving
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={submittedNumber != null} maxWidth="xs" fullWidth>
         <DialogTitle>RFQ submitted</DialogTitle>
