@@ -32,9 +32,10 @@ import { useMasterOptionsQuery } from '../../../shared/masterData'
 import { problemMessage } from '../../../shared/problem'
 import { CustomerQuotesPanel, ErgoQuotationsPanel } from '../../quotation/components/CustomerQuotesPanel'
 import { PartsPanel } from '../../quotation/components/PartsPanel'
+import { SupplierQuotesPanel } from '../../quotation/components/SupplierQuotesPanel'
 import { partStatusLabel } from '../../quotation/utils/labels'
 import { useCustomerQuotesQuery } from '../../quotation/services/customerQuoteApi'
-import { useRfqPartsQuery } from '../../quotation/services/quoteApi'
+import { useRfqPartsQuery, useRfqQuotesQuery } from '../../quotation/services/quoteApi'
 import { DocumentsPanel } from '../components/DocumentsPanel'
 import { FILE_KIND_LABELS, PRIORITIES, STATUS, formatDate, formatMoney, formatNumber } from '../labels'
 import {
@@ -85,6 +86,9 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
   // ERGO's "Customer quotation" tab exists only once a quotation has been generated for the customer
   const sent = useCustomerQuotesQuery(rfq.id, { skip: !isErgo || !canSeeParts })
   const quotationSent = (sent.data?.quotations.length ?? 0) > 0
+  // the supplier quotations tab exists once a part has been sent to a supplier
+  const sentParts = useRfqQuotesQuery(rfq.id, { skip: !isErgo || !canSeeParts })
+  const hasQuotes = (sentParts.data?.parts.some((p) => p.quoteId !== null)) ?? false
   const can = (action: RfqView['actions'][number]) => rfq.actions.includes(action)
   // a customer sees clarification as Under Review: submitting from anywhere but a draft is the answer
   const answering = rfq.status !== 'DRAFT' && can('SUBMIT')
@@ -185,6 +189,7 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
         <Tab value="documents" label="Documents" />
         {!isErgo && canSeeQuotes && <Tab value="quotes" label="Quotation" />}
         {isErgo && <Tab value="parts" label="Parts & suppliers" />}
+        {isErgo && hasQuotes && <Tab value="supplierQuotes" label="Supplier quotations" />}
         {isErgo && quotationSent && <Tab value="quotation" label="Customer quotation" />}
         {isErgo && <Tab value="history" label="Audit trail" />}
         <Tab value="comments" label="Comments" />
@@ -224,7 +229,8 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
 
       {tab === 'documents' && <DocumentsPanel rfqId={rfq.id} canUpload={can('UPLOAD')} isErgo={isErgo} />}
       {tab === 'quotes' && !isErgo && canSeeQuotes && <CustomerQuotesPanel rfqId={rfq.id} />}
-      {tab === 'parts' && isErgo && <PartsPanel rfqId={rfq.id} />}
+      {tab === 'parts' && isErgo && <PartsPanel rfqId={rfq.id} onOpenQuotes={() => setTab('supplierQuotes')} />}
+      {tab === 'supplierQuotes' && isErgo && hasQuotes && <SupplierQuotesPanel rfqId={rfq.id} />}
       {tab === 'quotation' && isErgo && quotationSent && <ErgoQuotationsPanel rfqId={rfq.id} />}
       {tab === 'history' && isErgo && <History rfqId={rfq.id} />}
       {tab === 'comments' && <CommentsPanel linkedModule="rfq" recordId={rfq.id} />}
