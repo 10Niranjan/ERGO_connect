@@ -178,18 +178,6 @@ function PartDetails({ part }: { part: SupplierRfqItem }) {
           ['Coating / surface', [part.coating, part.coatingSpec].filter(Boolean).join(' · ') || '—'],
         ]}
       />
-      <Facts
-        title="ERGO's planned process route"
-        note="Your quote starts with a copy of this route."
-        facts={[
-          [
-            '',
-            part.processSteps
-              .map((s, i) => `${i + 1}. ${s.stepName}${s.processName ? ` (${s.processName})` : ''}`)
-              .join('\n') || '—',
-          ],
-        ]}
-      />
     </Box>
   )
 }

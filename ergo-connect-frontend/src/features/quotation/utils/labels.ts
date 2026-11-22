@@ -18,6 +18,7 @@ export const QUOTE_STATUS: Record<QuoteStatus, { label: string; color: ChipColor
   CUSTOMER_APPROVED: { label: 'Approved by customer', color: 'success' },
   CUSTOMER_REJECTED: { label: 'Rejected by customer', color: 'error' },
   RECALLED: { label: 'Taken back', color: 'default' },
+  CLOSED: { label: 'Closed', color: 'default' },
 }
 
 /** What a customer reads for a part (no supplier, nothing before ERGO's quotation). */

@@ -15,6 +15,7 @@ export type QuoteStatus =
   | 'CUSTOMER_APPROVED'
   | 'CUSTOMER_REJECTED'
   | 'RECALLED'
+  | 'CLOSED'
 
 /** What a customer sees of a part: where its quotation stands, nothing about suppliers. */
 export type CustomerPartStatus = 'IN_PROGRESS' | 'QUOTATION_RECEIVED' | 'ON_HOLD' | 'CORRECTION_REQUIRED' | 'APPROVED' | 'REJECTED'
@@ -56,13 +57,6 @@ export interface QuoteData {
   remarks: string | null
 }
 
-/** One step of the part's planned route as suppliers see it: names only; each supplier fills in the rest. */
-export interface PlannedStep {
-  processId: number | null
-  processName: string | null
-  stepName: string
-}
-
 /** What a supplier sees of one RFQ part sent to it: no customer, targets, notes or remarks, and no other part. */
 export interface SupplierRfqItem {
   rfqId: number
@@ -78,7 +72,6 @@ export interface SupplierRfqItem {
   materialSpec: string | null
   coating: string | null
   coatingSpec: string | null
-  processSteps: PlannedStep[]
   quotingOpen: boolean
 }
 
@@ -168,6 +161,11 @@ export interface PartRow {
   toolingCostTotal: number | null
   moq: number | null
   productionLeadTimeDays: number | null
+  validityDate: string | null
+  /** The production piece price in the RFQ currency at today's rate (null when ERGO has no rate), to compare quotes. */
+  priceInRfqCurrency: number | null
+  /** The quote ERGO selected for the customer. */
+  selected: boolean
   actions: QuoteAction[]
 }
 
@@ -181,6 +179,8 @@ export interface SupplierQuotePage {
 
 export interface RfqQuotes {
   canDistribute: boolean
+  /** The parts that may still be sent to (more) suppliers. */
+  sendableItemIds: number[]
   parts: PartRow[]
 }
 
@@ -259,7 +259,7 @@ const quoteApi = api.enhanceEndpoints({ addTagTypes: ['Quote', 'QuoteDocuments',
   endpoints: (build) => ({
     rfqQuotes: build.query<RfqQuotes, number>({ query: (rfqId) => `/rfqs/${rfqId}/quotes`, providesTags: ['Quote'] }),
     rfqParts: build.query<PartStatusRow[], number>({ query: (rfqId) => `/rfqs/${rfqId}/parts`, providesTags: ['Quote'] }),
-    distributeRfq: build.mutation<RfqQuotes, { rfqId: number; subRfqs: SubRfqForm[]; responseDueDate: string }>({
+    distributeRfq: build.mutation<RfqQuotes, { rfqId: number; subRfqs: SubRfqForm[]; responseDueDate: string; sharedDocumentIds?: number[] }>({
       query: ({ rfqId, ...body }) => ({ url: `/rfqs/${rfqId}/quotes`, method: 'POST', body }),
       invalidatesTags: ['Quote', 'Rfq'],
     }),

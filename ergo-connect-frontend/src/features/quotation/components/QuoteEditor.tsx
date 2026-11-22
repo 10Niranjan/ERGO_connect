@@ -25,8 +25,8 @@ import { problemMessage } from '../../../shared/problem'
 import { ProcessFlowTable } from '../../rfq/components/ProcessFlowTable'
 import { formatMoney } from '../../rfq/labels'
 import { toProcessSteps, toStepRows, type StepRow } from '../../rfq/processFlow'
-import { useQuoteCommandMutation, useSaveQuoteMutation, type QuoteForm, type SupplierQuoteView } from '../quoteApi'
-import { useConfirm } from '@/components/ui/useConfirm'
+import { useQuoteCommandMutation, useSaveQuoteMutation, type QuoteData, type QuoteForm, type SupplierQuoteView } from '../quoteApi'
+import { QuotePreviewDialog } from './QuotePreviewDialog'
 
 type Field = Exclude<keyof QuoteForm, 'tooling' | 'processSteps'>
 
@@ -64,12 +64,8 @@ function fromView(view: SupplierQuoteView): FormState {
     assumptionsDeviations: text(q?.assumptionsDeviations),
     remarks: text(q?.remarks),
     tooling: q?.tooling.map((t) => ({ toolName: t.toolName, toolingCost: text(t.toolingCost), remarks: text(t.remarks) })) ?? [],
-    // Client decision: each supplier's route starts as a copy of ERGO's planned route.
-    steps: toStepRows(
-      q?.processSteps.length
-        ? q.processSteps.map((s) => ({ ...s, processId: s.process?.id ?? null }))
-        : view.part.processSteps.map((s) => ({ processId: s.processId, stepName: s.stepName, cycleTimeSeconds: null, sourcingType: null, outsourcedSupplierName: null, remarks: null })),
-    ),
+    // The supplier's own route is optional and starts empty (2026-11-22: ERGO no longer plans one on the RFQ).
+    steps: toStepRows(q?.processSteps.map((s) => ({ ...s, processId: s.process?.id ?? null })) ?? []),
   }
 }
 
@@ -110,7 +106,8 @@ export function QuoteEditor({ view }: { view: SupplierQuoteView }) {
   const [pending, setPending] = useState<'save' | 'submit' | null>(null)
   const [save] = useSaveQuoteMutation()
   const [command] = useQuoteCommandMutation()
-  const [confirm, confirmDialog] = useConfirm()
+  const [preview, setPreview] = useState<QuoteData | null>(null) // the saved quote, shown before it is submitted
+  const [submitError, setSubmitError] = useState<unknown>(null)
   const lists = [useMasterOptionsQuery('currencies'), useMasterOptionsQuery('incoterms'), useMasterOptionsQuery('payment-terms'), useMasterOptionsQuery('processes')]
   const [currencies, incoterms, paymentTerms, processes] = lists.map((list) => list.data ?? [])
 
@@ -160,15 +157,30 @@ export function QuoteEditor({ view }: { view: SupplierQuoteView }) {
     setPending(null)
   }
 
-  async function submit() {
-    if (!(await confirm('Submit this quote to ERGO? It is locked once submitted; ERGO can re-open it if a revision is needed.', 'Submit quote'))) return
+  /** Saves what is on screen, then shows it read-only: what is previewed is exactly what gets submitted. */
+  async function openPreview() {
     setError(null)
-    setPending('submit')
+    setPending('save')
     try {
-      await save({ id: view.id, form: toForm(state) }).unwrap() // what is on screen is what gets submitted
-      await command({ id: view.id, command: 'submit' }).unwrap()
+      const saved = await save({ id: view.id, form: toForm(state) }).unwrap()
+      if (saved.audience === 'SUPPLIER' && saved.quote) {
+        setSubmitError(null)
+        setPreview(saved.quote)
+      }
     } catch (e) {
       setError(e)
+    }
+    setPending(null)
+  }
+
+  async function submit() {
+    setSubmitError(null)
+    setPending('submit')
+    try {
+      await command({ id: view.id, command: 'submit' }).unwrap()
+      setPreview(null)
+    } catch (e) {
+      setSubmitError(e)
     }
     setPending(null)
   }
@@ -263,10 +275,10 @@ export function QuoteEditor({ view }: { view: SupplierQuoteView }) {
       <Card variant="outlined">
         <CardContent sx={{ display: 'grid', gap: 1.5 }}>
           <Typography variant="h6" component="h2">
-            Your process route
+            Your process flow (optional)
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Starts with ERGO&apos;s planned steps. Fill in your cycle times and sourcing, and change the steps to match how you would make the part.
+            Describe how you would make the part: the steps, cycle times and sourcing. You may leave it empty.
           </Typography>
           <ProcessFlowTable steps={state.steps} processes={processes} onChange={(steps) => change({ steps })} />
         </CardContent>
@@ -284,12 +296,21 @@ export function QuoteEditor({ view }: { view: SupplierQuoteView }) {
           Save draft
         </Button>
         {view.actions.includes('SUBMIT') && (
-          <Button variant="contained" onClick={() => void submit()} loading={pending === 'submit'} disabled={pending !== null}>
-            {view.version > 0 ? `Resubmit as version ${view.version + 1}` : 'Submit quote'}
+          <Button variant="contained" onClick={() => void openPreview()} loading={pending === 'save'} disabled={pending !== null}>
+            {view.version > 0 ? `Preview and resubmit as version ${view.version + 1}` : 'Preview and submit'}
           </Button>
         )}
       </Stack>
-      {confirmDialog}
+      {preview && (
+        <QuotePreviewDialog
+          quote={preview}
+          confirmLabel={view.version > 0 ? `Resubmit as version ${view.version + 1}` : 'Confirm and submit'}
+          busy={pending === 'submit'}
+          error={submitError}
+          onBack={() => setPreview(null)}
+          onConfirm={() => void submit()}
+        />
+      )}
     </Stack>
   )
 }

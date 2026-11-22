@@ -194,18 +194,11 @@ class RfqApiService implements RfqApi {
 				found.stream().map(i -> i.materialId).filter(Objects::nonNull).collect(Collectors.toSet()));
 		Map<Long, Named> coatings = masterData.describe(Ref.COATING,
 				found.stream().map(i -> i.coatingId).filter(Objects::nonNull).collect(Collectors.toSet()));
-		Map<Long, Named> processes = masterData.describe(Ref.PROCESS, found.stream()
-			.flatMap(i -> i.processSteps.stream().map(ProcessStep::processId)).filter(Objects::nonNull)
-			.collect(Collectors.toSet()));
 		return found.stream().collect(Collectors.toMap(i -> i.id, i -> {
 			Rfq r = owners.get(i.rfqId);
 			return new SupplierRfqItem(r.id, r.supplierRef, i.id, i.partNumber, i.revision, i.description, i.eau,
 					i.netWeightKg, i.grossWeightKg, name(materials, i.materialId), i.materialSpec,
-					name(coatings, i.coatingId), i.coatingSpec,
-					i.processSteps.stream()
-						.map(s -> new PlannedStep(s.processId(), name(processes, s.processId()), s.stepName()))
-						.toList(),
-					open && SUPPLIER_OPEN.contains(r.status));
+					name(coatings, i.coatingId), i.coatingSpec, open && SUPPLIER_OPEN.contains(r.status));
 		}));
 	}
 
@@ -254,6 +247,12 @@ class RfqApiService implements RfqApi {
 			.filter(d -> d.visibility() == Visibility.SUPPLIER || d.visibility() == Visibility.ALL)
 			.filter(d -> shared.contains(d.id()))
 			.toList();
+	}
+
+	@Override
+	public void shareFilesWithSuppliers(long rfqId, Collection<Long> documentIds, Collection<Long> itemIds) {
+		ModuleSwitch.requireWritable(Module.RFQ);
+		rfqService.shareItemFiles(rfqId, documentIds, itemIds);
 	}
 
 	@Override

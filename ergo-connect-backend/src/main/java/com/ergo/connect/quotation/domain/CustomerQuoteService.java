@@ -273,8 +273,20 @@ public class CustomerQuoteService {
 		quote.responseComment = comment;
 		Set<Long> assignmentIds = lines.findBySubmissionIdIn(List.of(quote.id)).stream().map(l -> l.assignmentId)
 			.collect(Collectors.toSet());
-		for (Invitation invitation : invitations.findByIdIn(assignmentIds)) {
+		List<Invitation> answered = invitations.findByIdIn(assignmentIds);
+		for (Invitation invitation : answered) {
 			invitation.status = answer.partStatus();
+		}
+		// Once the customer has decided a part, the other suppliers' unfinished quotes on it close (2026-11-22). Their
+		// submitted quotes stay as they are and nobody is told. On hold and correction leave the part open.
+		if (answer == ResponseStatus.APPROVED || answer == ResponseStatus.DECLINED) {
+			Set<Long> decided = answered.stream().map(i -> i.rfqItemId).collect(Collectors.toSet());
+			for (Invitation other : invitations.findByRfqIdOrderById(quote.rfqId)) {
+				if (decided.contains(other.rfqItemId) && QuoteStatus.EDITABLE.contains(other.status)) {
+					other.status = QuoteStatus.CLOSED;
+					other.quoteEditOpen = false;
+				}
+			}
 		}
 		quoteService.progress(quote.rfqId);
 		notifier.send(NotificationKind.CUSTOMER_QUOTE_RESPONDED, "rfq", quote.rfqId, rfqRef.number(),

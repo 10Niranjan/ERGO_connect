@@ -13,6 +13,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -110,11 +111,23 @@ public class QuoteService {
 	/** Supplier roles that create, edit (when open) and submit quotes. */
 	static final Set<Role> SUPPLIER_QUOTERS = ModuleAccess.actors(Module.QUOTATION, CompanyType.SUPPLIER);
 
-	/** The RFQ-side fact the rule book needs: whether quote work is open on the RFQ at all. */
-	record RfqState(boolean quotingOpen) {
+	/**
+	 * The facts the rule book needs beyond the quote itself: whether quote work is open on the RFQ at all, and
+	 * {@code partLocked}: another supplier's quote on the same part is with the customer or decided, so this one can no
+	 * longer be selected or sent back.
+	 */
+	record RfqState(boolean quotingOpen, boolean partLocked) {
+
+		RfqState(boolean quotingOpen) {
+			this(quotingOpen, false);
+		}
 
 		static RfqState of(RfqRef rfq) {
 			return new RfqState(rfq.quotingOpen());
+		}
+
+		RfqState locked(boolean locked) {
+			return new RfqState(quotingOpen, locked);
 		}
 
 	}
@@ -147,6 +160,9 @@ public class QuoteService {
 
 	private final Notifier notifier;
 
+	@jakarta.persistence.PersistenceContext
+	private jakarta.persistence.EntityManager entityManager;
+
 	QuoteService(InvitationRepository invitations, SubRfqRepository subRfqs, SupplierQuoteRepository quotes,
 			RfqApi rfqs, Directory directory, MasterDataApi masterData, DocumentStore documents, AuditLogService audit,
 			JdbcTemplate jdbc, JsonMapper json, QuoteReader reader, Notifier notifier) {
@@ -166,59 +182,93 @@ public class QuoteService {
 
 	// ---------------------------------------------------------------- ERGO: the parts of an RFQ and their suppliers
 
-	/** The RFQ's parts, each with the supplier it is with (if any) and that supplier's quote and status. */
+	/**
+	 * The RFQ's parts, each with every supplier it is with and that supplier's quote and status: a part with several
+	 * suppliers has a row per supplier, which is the comparison ERGO selects from.
+	 */
 	@Transactional(readOnly = true)
 	public RfqQuotes forRfq(long rfqId) {
 		CurrentUser me = CurrentUser.get();
 		RfqRef rfq = rfqs.forErgo(rfqId);
-		Map<Long, Invitation> byItem = activeByItem(rfqId);
-		Map<Long, SupplierQuote> byInvitation = reader.byInvitation(byItem.values());
+		List<Invitation> active = activeOf(rfqId);
+		Map<Long, SupplierQuote> byInvitation = reader.byInvitation(active);
 		Map<Long, QuoteData> submitted = reader.lastSubmitted(byInvitation.values());
 		Map<Long, CompanyRef> suppliers = directory
-			.companies(byItem.values().stream().map(i -> i.supplierCompanyId).collect(Collectors.toSet()));
+			.companies(active.stream().map(i -> i.supplierCompanyId).collect(Collectors.toSet()));
 		Map<Long, SubRfq> subs = subRfqs.findByRfqIdOrderBySubNo(rfqId).stream()
 			.collect(Collectors.toMap(s -> s.id, Function.identity()));
-		List<PartRow> rows = rfq.items().stream().map(item -> {
+		Map<Long, List<Invitation>> byItem = active.stream()
+			.collect(Collectors.groupingBy(i -> i.rfqItemId, LinkedHashMap::new, Collectors.toList()));
+		LocalDate today = LocalDate.now();
+		List<PartRow> rows = new ArrayList<>();
+		List<Long> sendable = new ArrayList<>();
+		for (ItemRef item : rfq.items()) {
 			PartRef part = partRef(item);
-			Invitation i = byItem.get(item.id());
-			if (i == null) {
-				return new PartRow(part, null, null, null, null, null, null, null, null, null, null, null, null,
-						Set.of());
+			List<Invitation> held = byItem.getOrDefault(item.id(), List.of());
+			if (held.stream().noneMatch(i -> QuoteStatus.LOCKS_PART.contains(i.status))) {
+				sendable.add(item.id()); // not with the customer and not decided: more suppliers may still quote it
 			}
-			SupplierQuote q = byInvitation.get(i.id);
-			CompanyRef s = suppliers.get(i.supplierCompanyId);
-			// ERGO works with what the supplier submitted, never with unsent drafts
-			QuoteData sent = q == null ? null : submitted.get(q.id);
-			return new PartRow(part, i.id, subs.get(i.subRfqId).subNo, new Named(s.id(), s.code(), s.name()), i.status,
-					i.responseDueDate, q == null ? 0 : q.currentVersion, q == null ? null : q.submittedAt,
-					sent == null || sent.currency() == null ? null : sent.currency().code(),
-					sent == null ? null : sent.productionPiecePrice(), sent == null ? null : sent.toolingCostTotal(),
-					sent == null ? null : sent.moq(), sent == null ? null : sent.productionLeadTimeDays(),
-					actions(me, i, RfqState.of(rfq)));
-		}).toList();
-		boolean unassigned = rows.stream().anyMatch(r -> r.quoteId() == null);
-		return new RfqQuotes(ERGO_BUYERS.contains(me.role()) && rfq.acceptsInvitations() && unassigned, rows);
+			if (held.isEmpty()) {
+				rows.add(new PartRow(part, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+						false, Set.of()));
+			}
+			for (Invitation i : held) {
+				SupplierQuote q = byInvitation.get(i.id);
+				CompanyRef s = suppliers.get(i.supplierCompanyId);
+				// ERGO works with what the supplier submitted, never with unsent drafts
+				QuoteData sent = q == null ? null : submitted.get(q.id);
+				rows.add(new PartRow(part, i.id, subs.get(i.subRfqId).subNo, new Named(s.id(), s.code(), s.name()), i.status,
+						i.responseDueDate, q == null ? 0 : q.currentVersion, q == null ? null : q.submittedAt,
+						sent == null || sent.currency() == null ? null : sent.currency().code(),
+						sent == null ? null : sent.productionPiecePrice(), sent == null ? null : sent.toolingCostTotal(),
+						sent == null ? null : sent.moq(), sent == null ? null : sent.productionLeadTimeDays(),
+						sent == null ? null : sent.validityDate(), inRfqCurrency(sent, rfq.currencyId(), today),
+						QuoteStatus.SELECTED.contains(i.status),
+						actions(me, i, RfqState.of(rfq).locked(lockedFor(i, active)))));
+			}
+		}
+		boolean canSend = ERGO_BUYERS.contains(me.role()) && rfq.acceptsInvitations() && !sendable.isEmpty();
+		return new RfqQuotes(canSend, canSend ? sendable : List.of(), rows);
+	}
+
+	/** The supplier's production piece price in the RFQ's currency (today's rate), so quotes in different currencies compare. */
+	private BigDecimal inRfqCurrency(QuoteData sent, long rfqCurrencyId, LocalDate today) {
+		if (sent == null || sent.currency() == null || sent.productionPiecePrice() == null) {
+			return null;
+		}
+		if (sent.currency().id() == rfqCurrencyId) {
+			return sent.productionPiecePrice();
+		}
+		return masterData.rate(sent.currency().id(), rfqCurrencyId, today)
+			.map(rate -> sent.productionPiecePrice().multiply(rate).setScale(4, java.math.RoundingMode.HALF_UP))
+			.orElse(null);
 	}
 
 	/**
-	 * Flow doc §2 "ERGO RFQ review and supplier distribution": the whole RFQ to one supplier, or sub-RFQs of some of
-	 * its parts to different suppliers. Each part goes to one supplier; a part that was recalled can be sent again.
+	 * Flow doc §2 "ERGO RFQ review and supplier distribution": the selected parts to one or several suppliers, one
+	 * sub-RFQ per supplier. The same part may go to several suppliers (they compete, ERGO selects one quote, 2026-11-22);
+	 * a supplier holds a part once, and a part already with the customer or decided takes no more suppliers. A part
+	 * that was recalled from a supplier can be sent to it again.
 	 */
 	public RfqQuotes distribute(long rfqId, DistributeForm form) {
 		CurrentUser me = CurrentUser.get();
 		// Distributing writes quotations and moves the RFQ: both modules must accept changes before anything is saved.
 		ModuleSwitch.requireWritable(Module.QUOTATION, Module.RFQ);
-		// Two ERGO users distributing at once must not send the same part to two suppliers, and the parts are read only
-		// after the lock: an RFQ edit that held it may have removed one.
+		// Two ERGO users distributing at once must not send the same part to the same supplier twice, and the parts are
+		// read only after the lock: an RFQ edit that held it may have removed one.
 		jdbc.queryForList("SELECT rfq_id FROM rfqs WHERE rfq_id = ? FOR UPDATE", Long.class, rfqId);
 		RfqRef rfq = rfqs.forErgo(rfqId);
 		if (!rfq.acceptsInvitations()) {
 			throw ApiException.conflict("Parts can be sent to suppliers while ERGO reviews the RFQ or once it is out");
 		}
 		Set<Long> partIds = rfq.items().stream().map(ItemRef::id).collect(Collectors.toSet());
-		Set<Long> taken = activeByItem(rfqId).keySet();
+		List<Invitation> active = activeOf(rfqId);
+		Set<Long> locked = active.stream().filter(i -> QuoteStatus.LOCKS_PART.contains(i.status)).map(i -> i.rfqItemId)
+			.collect(Collectors.toSet());
+		Map<Long, Set<Long>> holders = active.stream().collect(Collectors.groupingBy(i -> i.rfqItemId,
+				Collectors.mapping(i -> i.supplierCompanyId, Collectors.toSet())));
 		Set<Long> supplierIds = new HashSet<>();
-		Set<Long> chosen = new HashSet<>();
+		Set<Long> sentItems = new HashSet<>();
 		Map<Long, CompanyRef> companies = directory
 			.companies(form.subRfqs().stream().map(SubRfqForm::supplierId).collect(Collectors.toSet()));
 		for (SubRfqForm sub : form.subRfqs()) {
@@ -233,9 +283,13 @@ public class QuoteService {
 				if (!partIds.contains(itemId)) {
 					throw ApiException.unprocessable("A part does not belong to this RFQ");
 				}
-				if (taken.contains(itemId) || !chosen.add(itemId)) {
-					throw ApiException.unprocessable("A part is already with a supplier");
+				if (locked.contains(itemId)) {
+					throw ApiException.unprocessable("A part is already with the customer or decided and takes no more suppliers");
 				}
+				if (holders.getOrDefault(itemId, Set.of()).contains(sub.supplierId())) {
+					throw ApiException.unprocessable(company.name() + " already has a part you selected");
+				}
+				sentItems.add(itemId);
 			}
 		}
 		rfqs.distributing(rfqId); // 409 / 422 (an incomplete RFQ is listed) before anything is saved
@@ -265,37 +319,47 @@ public class QuoteService {
 				first = first == null ? invitation : first;
 			}
 			notifier.send(NotificationKind.QUOTE_REQUESTED, "quotation", first.id, rfq.supplierRef(), // the supplier never sees the number
-					
 					"Respond by " + form.responseDueDate(), supplierSide(first));
+		}
+		if (form.sharedDocumentIds() != null && !form.sharedDocumentIds().isEmpty()) {
+			rfqs.shareFilesWithSuppliers(rfqId, form.sharedDocumentIds(), sentItems); // the files ERGO ticked, per part
 		}
 		progress(rfqId);
 		return forRfq(rfqId);
 	}
 
-	/** A part's status per audience: ERGO the full status, the RFQ's customer where its quotation stands. */
+	/**
+	 * A part's status per audience: ERGO the full status, the RFQ's customer where its quotation stands. With several
+	 * suppliers on a part it is the selected quote's status, else the furthest-along one ({@link QuoteStatus#ofPart}).
+	 */
 	@Transactional(readOnly = true)
 	public List<PartStatusRow> partStatuses(long rfqId) {
 		CurrentUser me = CurrentUser.get();
 		ModuleSwitch.requireReadable(Module.QUOTATION);
 		if (me.companyType() == CompanyType.CUSTOMER) {
 			var rfq = rfqs.forCustomer(rfqId); // 404 unless it is this customer's RFQ
-			Map<Long, Invitation> byItem = activeByItem(rfqId);
+			Map<Long, List<QuoteStatus>> byItem = statusesByItem(rfqId);
 			return rfq.items().stream().map(i -> {
-				Invitation inv = byItem.get(i.id());
+				QuoteStatus status = QuoteStatus.ofPart(byItem.getOrDefault(i.id(), List.of()));
 				return new PartStatusRow(i.id(), i.lineNo(), i.partNumber(), i.revision(),
-						(inv == null ? QuoteStatus.NOT_STARTED : inv.status).forCustomer().name());
+						(status == null ? QuoteStatus.NOT_STARTED : status).forCustomer().name());
 			}).toList();
 		}
 		if (me.companyType() != CompanyType.ERGO) {
 			throw ApiException.forbidden("Part status is for ERGO and the RFQ's customer");
 		}
 		RfqRef rfq = rfqs.forErgo(rfqId);
-		Map<Long, Invitation> byItem = activeByItem(rfqId);
+		Map<Long, List<QuoteStatus>> byItem = statusesByItem(rfqId);
 		return rfq.items().stream().map(i -> {
-			Invitation inv = byItem.get(i.id());
+			QuoteStatus status = QuoteStatus.ofPart(byItem.getOrDefault(i.id(), List.of()));
 			return new PartStatusRow(i.id(), i.lineNo(), i.partNumber(), i.revision(),
-					inv == null ? "UNASSIGNED" : inv.status.name());
+					status == null ? "UNASSIGNED" : status.name());
 		}).toList();
+	}
+
+	private Map<Long, List<QuoteStatus>> statusesByItem(long rfqId) {
+		return activeOf(rfqId).stream().collect(Collectors.groupingBy(i -> i.rfqItemId,
+				Collectors.mapping(i -> i.status, Collectors.toList())));
 	}
 
 	// ---------------------------------------------------------------- supplier: the parts sent to me
@@ -371,7 +435,7 @@ public class QuoteService {
 			SupplierItemRef p = parts.get(i.rfqItemId);
 			return new SupplierQuoteItem(i.id, p.rfqNumber(), p.partNumber(), i.status.forSupplier().name(), i.responseDueDate,
 					p.quotingOpen() && i.responseDueDate != null && i.responseDueDate.isBefore(today)
-							&& QuoteStatus.EDITABLE.contains(i.status.forSupplier()));
+							&& QuoteStatus.EDITABLE.contains(i.status)); // the raw status: a closed quote is not overdue
 		}).toList();
 	}
 
@@ -474,11 +538,24 @@ public class QuoteService {
 		return view(me, invitation);
 	}
 
-	/** Flow doc §4 "Accepted for customer submission": the part's quote is ready for the customer quotation. */
+	/**
+	 * Flow doc §4 "Accepted for customer submission", with several suppliers per part (2026-11-22): ERGO selects this
+	 * supplier's quote for the customer quotation. A part has one selected quote, so selecting another supplier's quote
+	 * while an earlier selection is not yet with the customer moves the selection: the earlier one goes back to
+	 * "submitted". The database also refuses a second selected quote, so two ERGO users cannot both win a race.
+	 */
 	public QuoteView accept(long id) {
 		CurrentUser me = CurrentUser.get();
 		Invitation invitation = visible(me, id);
 		require(QuoteAction.ACCEPT, me, invitation);
+		for (Invitation other : invitations.findByRfqIdOrderById(invitation.rfqId)) {
+			if (!other.id.equals(invitation.id) && other.rfqItemId.equals(invitation.rfqItemId)
+					&& (other.status == QuoteStatus.ACCEPTED || other.status == QuoteStatus.CUSTOMER_CORRECTION)) {
+				SupplierQuote earlier = quotes.findByAssignmentId(other.id).orElse(null);
+				other.status = earlier != null && earlier.currentVersion > 1 ? QuoteStatus.RESUBMITTED : QuoteStatus.SUBMITTED;
+			}
+		}
+		entityManager.flush(); // the old selection is released before the new one is written (unique index per part)
 		invitation.status = QuoteStatus.ACCEPTED;
 		progress(invitation.rfqId);
 		return view(me, invitation);
@@ -654,15 +731,9 @@ public class QuoteService {
 			.count();
 	}
 
-	/** The parts currently with a supplier (a recalled part is free again), by RFQ item id. */
-	private Map<Long, Invitation> activeByItem(long rfqId) {
-		Map<Long, Invitation> result = new LinkedHashMap<>();
-		for (Invitation i : invitations.findByRfqIdOrderById(rfqId)) {
-			if (i.status != RECALLED) {
-				result.put(i.rfqItemId, i);
-			}
-		}
-		return result;
+	/** The parts currently with a supplier, one entry per (part, supplier); a recalled part is free again. */
+	private List<Invitation> activeOf(long rfqId) {
+		return invitations.findByRfqIdOrderById(rfqId).stream().filter(i -> i.status != RECALLED).toList();
 	}
 
 	private static PartRef partRef(ItemRef item) {
@@ -724,9 +795,10 @@ public class QuoteService {
 		QuoteStatus status = i.status;
 		return switch (action) {
 			case EDIT, SUBMIT -> supplier && rfq.quotingOpen() && i.quoteEditOpen && QuoteStatus.EDITABLE.contains(status);
-			case REQUEST_REVISION -> buyer && rfq.quotingOpen() && QuoteStatus.RETURNABLE.contains(status)
+			case REQUEST_REVISION -> buyer && rfq.quotingOpen() && QuoteStatus.RETURNABLE.contains(status) && !rfq.partLocked()
 					&& (!QuoteStatus.READY_FOR_CUSTOMER.contains(status) || EVALUATORS.contains(me.role()));
-			case ACCEPT -> evaluator && QuoteStatus.UNDER_REVIEW.contains(status);
+			// "Select for the customer": one per part; selecting another supplier's quote moves the selection (accept())
+			case ACCEPT -> evaluator && QuoteStatus.UNDER_REVIEW.contains(status) && !rfq.partLocked();
 			case RECALL -> buyer && rfq.quotingOpen() && status != RECALLED
 					&& !QuoteStatus.WITH_CUSTOMER_OPEN.contains(status) && !QuoteStatus.DECIDED.contains(status)
 					&& (!QuoteStatus.READY_FOR_CUSTOMER.contains(status) || EVALUATORS.contains(me.role()));
@@ -749,7 +821,14 @@ public class QuoteService {
 	private RfqState rfqState(CurrentUser me, Invitation invitation) {
 		return me.companyType() == CompanyType.SUPPLIER
 				? new RfqState(rfqs.forSupplierItem(invitation.rfqItemId).quotingOpen())
-				: RfqState.of(rfqs.forErgo(invitation.rfqId));
+				: RfqState.of(rfqs.forErgo(invitation.rfqId))
+					.locked(lockedFor(invitation, invitations.findByRfqIdOrderById(invitation.rfqId)));
+	}
+
+	/** Another supplier's quote on the same part is with the customer or decided. */
+	private static boolean lockedFor(Invitation i, Collection<Invitation> all) {
+		return all.stream().anyMatch(j -> !j.id.equals(i.id) && j.rfqItemId.equals(i.rfqItemId)
+				&& QuoteStatus.LOCKS_PART.contains(j.status));
 	}
 
 	/** SRS §17.2: currency, prices, MOQ, lead time and the full cost breakdown before submission. */
@@ -854,13 +933,11 @@ public class QuoteService {
 		int approved = 0;
 		int rejected = 0;
 		int sentBack = 0;
-		for (Invitation i : invitations.findByRfqIdOrderById(rfqId)) {
-			switch (i.status) {
-				case NOT_STARTED, DRAFT_SAVED -> withSupplier++;
-				case REVISION_REQUIRED -> {
-					withSupplier++;
-					sentBack++; // the supplier has answered once: the RFQ can be closed, no longer cancelled
-				}
+		// per PART, not per supplier: with several suppliers on a part, the part stands where its selected quote stands,
+		// else it waits for ERGO's review if any quote is in, else it is still with the suppliers
+		for (List<QuoteStatus> held : statusesByItem(rfqId).values()) {
+			QuoteStatus part = QuoteStatus.ofPart(held);
+			switch (part) {
 				case SUBMITTED, RESUBMITTED -> underReview++;
 				case ACCEPTED -> accepted++;
 				case WITH_CUSTOMER -> withCustomer++;
@@ -868,7 +945,11 @@ public class QuoteService {
 				case CUSTOMER_CORRECTION -> correction++;
 				case CUSTOMER_APPROVED -> approved++;
 				case CUSTOMER_REJECTED -> rejected++;
-				case RECALLED -> {
+				default -> {
+					withSupplier++; // not started, drafting, sent back, or (never expected) closed without a selection
+					if (held.contains(QuoteStatus.REVISION_REQUIRED)) {
+						sentBack++; // the supplier has answered once: the RFQ can be closed, no longer cancelled
+					}
 				}
 			}
 		}
@@ -906,7 +987,7 @@ public class QuoteService {
 		return new ErgoQuoteView("ERGO", i.id, i.status, i.responseDueDate, rfq.id(), rfq.number(), subNo,
 				new Named(supplier.id(), supplier.code(), supplier.name()), part, userName(users, i.assignedByUserId),
 				i.createdAt, ergoData, version, submittedAt, revisionReason, i.recallReason,
-				actions(me, i, RfqState.of(rfq)));
+				actions(me, i, RfqState.of(rfq).locked(lockedFor(i, invitations.findByRfqIdOrderById(i.rfqId)))));
 	}
 
 	private QuoteData data(SupplierQuote q) {

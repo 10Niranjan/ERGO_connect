@@ -6,6 +6,7 @@ import {
   CardContent,
   Chip,
   LinearProgress,
+  MenuItem,
   Paper,
   Stack,
   Tab,
@@ -27,10 +28,12 @@ import { AuditTrail } from '../../../shared/components/AuditTrail'
 import { CommentsPanel } from '../../communication/components/CommentsPanel'
 import { CommentDialog } from '../../../shared/components/CommentDialog'
 import { Facts } from '../../../shared/components/Facts'
+import { useMasterOptionsQuery } from '../../../shared/masterData'
 import { problemMessage } from '../../../shared/problem'
 import { CustomerQuotesPanel, ErgoQuotationsPanel } from '../../quotation/components/CustomerQuotesPanel'
 import { PartsPanel } from '../../quotation/components/PartsPanel'
 import { partStatusLabel } from '../../quotation/utils/labels'
+import { useCustomerQuotesQuery } from '../../quotation/services/customerQuoteApi'
 import { useRfqPartsQuery } from '../../quotation/services/quoteApi'
 import { DocumentsPanel } from '../components/DocumentsPanel'
 import { FILE_KIND_LABELS, PRIORITIES, STATUS, formatDate, formatMoney, formatNumber } from '../labels'
@@ -41,7 +44,7 @@ import {
   useRfqHistoryQuery,
   useRfqQuery,
   useUpdateRfqNotesMutation,
-  type CustomerItemView,
+  type Priority,
   type FileKind,
   type ItemFile,
   type ItemView,
@@ -79,6 +82,9 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
   // The role sheet: a customer role with RFQ access but none on Quotation (e.g. Customer NPD) never sees the quotations ERGO sends.
   const canSeeQuotes = useCan(QUOTATION_CUSTOMER_VIEW)
   const canSeeParts = useCan(QUOTATION_VIEW) && (isErgo || canSeeQuotes)
+  // ERGO's "Customer quotation" tab exists only once a quotation has been generated for the customer
+  const sent = useCustomerQuotesQuery(rfq.id, { skip: !isErgo || !canSeeParts })
+  const quotationSent = (sent.data?.quotations.length ?? 0) > 0
   const can = (action: RfqView['actions'][number]) => rfq.actions.includes(action)
   // a customer sees clarification as Under Review: submitting from anywhere but a draft is the answer
   const answering = rfq.status !== 'DRAFT' && can('SUBMIT')
@@ -154,7 +160,7 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
       {actionError != null && <Alert severity="error">{problemMessage(actionError)}</Alert>}
       {rfq.status === 'UNDER_REVIEW' && isErgo && (
         <Alert severity="info" action={<Button color="inherit" size="small" onClick={() => setTab('parts')}>Parts &amp; suppliers</Button>}>
-          Review the RFQ and change it where needed, then send the whole RFQ to one supplier, or split its parts into sub-RFQs for different suppliers.
+          Review the RFQ. If something must change, use Ask customer; the customer edits and answers. Then send the parts you choose to suppliers.
         </Alert>
       )}
       {(rfq.status === 'QUOTE_RECEIVED' || rfq.status === 'ON_HOLD') && !isErgo && canSeeQuotes && (
@@ -176,11 +182,10 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
 
       <Tabs value={tab} onChange={(_e, value: string) => setTab(value)}>
         <Tab value="overview" label="Overview" />
-        {isErgo && <Tab value="process" label="Process flow" />}
         <Tab value="documents" label="Documents" />
         {!isErgo && canSeeQuotes && <Tab value="quotes" label="Quotation" />}
         {isErgo && <Tab value="parts" label="Parts & suppliers" />}
-        {isErgo && <Tab value="quotation" label="Customer quotation" />}
+        {isErgo && quotationSent && <Tab value="quotation" label="Customer quotation" />}
         {isErgo && <Tab value="history" label="Audit trail" />}
         <Tab value="comments" label="Comments" />
       </Tabs>
@@ -212,52 +217,7 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
           </Box>
           {canSeeParts && (isErgo || !NOT_YET_QUOTED.has(rfq.status)) && <PartStatus rfqId={rfq.id} />}
           {rfq.items.map((item) => (
-            <ItemOverview key={item.id} rfqId={rfq.id} item={item} currency={rfq.currency.code} isErgo={isErgo} />
-          ))}
-        </Stack>
-      )}
-
-      {tab === 'process' && rfq.audience === 'ERGO' && (
-        <Stack spacing={2}>
-          {rfq.items.map((item) => (
-            <TableContainer component={Paper} variant="outlined" key={item.id}>
-              <Typography variant="subtitle1" component="h2" sx={{ p: 1.5, pb: 0 }}>
-                {item.partNumber}
-              </Typography>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>#</TableCell>
-                    <TableCell>Process</TableCell>
-                    <TableCell>Step</TableCell>
-                    <TableCell>Cycle time (s)</TableCell>
-                    <TableCell>Sourcing</TableCell>
-                    <TableCell>Sub-supplier</TableCell>
-                    <TableCell>Remarks</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {item.processSteps.map((step, index) => (
-                    <TableRow key={index}>
-                      <TableCell>{index + 1}</TableCell>
-                      <TableCell>{step.process?.name ?? '—'}</TableCell>
-                      <TableCell>{step.stepName}</TableCell>
-                      <TableCell>{formatNumber(step.cycleTimeSeconds)}</TableCell>
-                      <TableCell>{step.sourcingType === 'INHOUSE' ? 'In-house' : step.sourcingType === 'OUTSOURCED' ? 'Outsourced' : '—'}</TableCell>
-                      <TableCell>{step.outsourcedSupplierName ?? '—'}</TableCell>
-                      <TableCell>{step.remarks ?? '—'}</TableCell>
-                    </TableRow>
-                  ))}
-                  {item.processSteps.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={7} sx={{ color: 'text.secondary' }}>
-                        No process steps yet. ERGO adds the process flow during the review.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </TableContainer>
+            <ItemOverview key={item.id} rfqId={rfq.id} item={item} currency={rfq.currency.code} />
           ))}
         </Stack>
       )}
@@ -265,7 +225,7 @@ function RfqDetail({ rfq }: { rfq: RfqView }) {
       {tab === 'documents' && <DocumentsPanel rfqId={rfq.id} canUpload={can('UPLOAD')} isErgo={isErgo} />}
       {tab === 'quotes' && !isErgo && canSeeQuotes && <CustomerQuotesPanel rfqId={rfq.id} />}
       {tab === 'parts' && isErgo && <PartsPanel rfqId={rfq.id} />}
-      {tab === 'quotation' && isErgo && <ErgoQuotationsPanel rfqId={rfq.id} />}
+      {tab === 'quotation' && isErgo && quotationSent && <ErgoQuotationsPanel rfqId={rfq.id} />}
       {tab === 'history' && isErgo && <History rfqId={rfq.id} />}
       {tab === 'comments' && <CommentsPanel linkedModule="rfq" recordId={rfq.id} />}
 
@@ -330,45 +290,38 @@ function PartStatus({ rfqId }: { rfqId: number }) {
   )
 }
 
-function ItemOverview({ rfqId, item, currency, isErgo }: { rfqId: number; item: ItemView | CustomerItemView; currency: string; isErgo: boolean }) {
-  // The customer's own part view carries only what it entered; ERGO's carries what ERGO adds during the review too.
-  const ergo = 'targets' in item ? item : null
-  const t = ergo?.targets
+function ItemOverview({ rfqId, item, currency }: { rfqId: number; item: ItemView; currency: string }) {
+  // ERGO and the RFQ's own customer see the same part: every field is the customer's own entry.
+  const t = item.targets
   return (
     <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' } }}>
       <Facts
         title={`Part ${item.lineNo}: ${item.partNumber}`}
         facts={[
           ['Part number', item.partNumber],
+          ['Revision', item.revision ?? '—'],
           ['Description', item.description ?? '—'],
           ['Annual volume (EAU)', formatNumber(item.eau, ' pcs/year')],
-          ['Target price', formatMoney(ergo ? (t?.targetProductionPiecePrice ?? null) : (item as CustomerItemView).targetPrice, currency)],
+          ['Target price', formatMoney(t.targetProductionPiecePrice, currency)],
           ['Remarks', item.remarks ?? '—'],
-          ...(ergo
-            ? ([
-                ['Revision', ergo.revision ?? '—'],
-                ['Net / gross weight', `${formatNumber(ergo.netWeightKg)} / ${formatNumber(ergo.grossWeightKg)} kg`],
-                ['Material', [ergo.material?.name, ergo.materialSpec].filter(Boolean).join(' · ') || '—'],
-                ['Coating / surface', [ergo.coating?.name, ergo.coatingSpec].filter(Boolean).join(' · ') || '—'],
-              ] as [string, string][])
-            : []),
+          ['Net / gross weight', `${formatNumber(item.netWeightKg)} / ${formatNumber(item.grossWeightKg)} kg`],
+          ['Material', [item.material?.name, item.materialSpec].filter(Boolean).join(' · ') || '—'],
+          ['Coating / surface', [item.coating?.name, item.coatingSpec].filter(Boolean).join(' · ') || '—'],
         ]}
       />
       <Stack spacing={2}>
         <ItemFiles rfqId={rfqId} partNumber={item.partNumber} files={item.files} />
-        {isErgo && t && (
-          <Facts
-            title={`Commercial targets: ${item.partNumber}`}
-            note="Never shown to suppliers"
-            facts={[
-              ['Tooling cost', formatMoney(t.targetToolingCost, currency)],
-              ['PPAP piece price', formatMoney(t.targetPpapPiecePrice, currency)],
-              ['Production piece price', formatMoney(t.targetProductionPiecePrice, currency)],
-              ['MOQ', formatNumber(t.moq, ' pcs')],
-              ['Lead times', `material ${formatNumber(t.materialLeadTimeWeeks, ' wk')} · tooling ${formatNumber(t.toolingLeadTimeDays, ' d')} · sample ${formatNumber(t.sampleLeadTimeDays, ' d')} · production ${formatNumber(t.productionLeadTimeDays, ' d')}`],
-            ]}
-          />
-        )}
+        <Facts
+          title={`Commercial targets: ${item.partNumber}`}
+          note="Never shown to suppliers"
+          facts={[
+            ['Tooling cost', formatMoney(t.targetToolingCost, currency)],
+            ['PPAP piece price', formatMoney(t.targetPpapPiecePrice, currency)],
+            ['Production piece price', formatMoney(t.targetProductionPiecePrice, currency)],
+            ['MOQ', formatNumber(t.moq, ' pcs')],
+            ['Lead times', `material ${formatNumber(t.materialLeadTimeWeeks, ' wk')} · tooling ${formatNumber(t.toolingLeadTimeDays, ' d')} · sample ${formatNumber(t.sampleLeadTimeDays, ' d')} · production ${formatNumber(t.productionLeadTimeDays, ' d')}`],
+          ]}
+        />
       </Stack>
     </Box>
   )
@@ -415,24 +368,49 @@ function ItemFiles({ rfqId, partNumber, files: all }: { rfqId: number; partNumbe
   )
 }
 
+/** ERGO's own settings on the RFQ: priority, payment terms and internal notes. The customer's data is never edited here. */
 function InternalNotes({ rfq }: { rfq: RfqView & { audience: 'ERGO' } }) {
   const [notes, setNotes] = useState(rfq.internalNotes ?? '')
+  const [priority, setPriority] = useState<Priority>(rfq.priority)
+  const [paymentTermId, setPaymentTermId] = useState(rfq.paymentTerm ? String(rfq.paymentTerm.id) : '')
   const [save, saving] = useUpdateRfqNotesMutation()
+  const { data: paymentTerms = [] } = useMasterOptionsQuery('payment-terms')
   const editable = rfq.actions.includes('EDIT_NOTES')
+  const unchanged = notes === (rfq.internalNotes ?? '') && priority === rfq.priority && paymentTermId === (rfq.paymentTerm ? String(rfq.paymentTerm.id) : '')
   return (
     <Card variant="outlined">
-      <CardContent sx={{ display: 'grid', gap: 1 }}>
+      <CardContent sx={{ display: 'grid', gap: 1.5 }}>
         <Typography variant="h6" component="h2">
-          Internal notes
+          ERGO settings and internal notes
         </Typography>
         <Typography variant="body2" color="text.secondary">
           ERGO only. Never visible to customers or suppliers.
         </Typography>
-        <TextField multiline minRows={3} value={notes} disabled={!editable} onChange={(e) => setNotes(e.target.value)} slotProps={{ htmlInput: { maxLength: 4000, 'aria-label': 'Internal notes' } }} />
+        <TextField select label="Priority" value={priority} disabled={!editable} onChange={(e) => setPriority(e.target.value as Priority)}>
+          {Object.entries(PRIORITIES).map(([value, label]) => (
+            <MenuItem key={value} value={value}>
+              {label}
+            </MenuItem>
+          ))}
+        </TextField>
+        <TextField select label="Payment terms" value={paymentTermId} disabled={!editable} onChange={(e) => setPaymentTermId(e.target.value)}>
+          {rfq.paymentTerm == null && <MenuItem value="">—</MenuItem>}
+          {paymentTerms.map((t) => (
+            <MenuItem key={t.id} value={String(t.id)}>
+              {t.name}
+            </MenuItem>
+          ))}
+        </TextField>
+        <TextField label="Internal notes" multiline minRows={3} value={notes} disabled={!editable} onChange={(e) => setNotes(e.target.value)} slotProps={{ htmlInput: { maxLength: 4000, 'aria-label': 'Internal notes' } }} />
         {saving.error != null && <Alert severity="error">{problemMessage(saving.error)}</Alert>}
         {editable && (
-          <Button sx={{ justifySelf: 'start' }} disabled={notes === (rfq.internalNotes ?? '')} loading={saving.isLoading} onClick={() => void save({ id: rfq.id, internalNotes: notes || null })}>
-            Save notes
+          <Button
+            sx={{ justifySelf: 'start' }}
+            disabled={unchanged}
+            loading={saving.isLoading}
+            onClick={() => void save({ id: rfq.id, internalNotes: notes, priority, paymentTermId: paymentTermId ? Number(paymentTermId) : null })}
+          >
+            Save
           </Button>
         )}
       </CardContent>

@@ -204,7 +204,9 @@ public class DocumentService {
 		CurrentUser me = CurrentUser.get();
 		Document d = visibleOrThrow(me, id);
 		requireOwnerWritable(d);
-		requireEditable(me, d);
+		if (!editable(me, d, false)) { // category and visibility are metadata; only replacing the file's content is ERGO-blocked on a customer's file
+			throw ApiException.conflict("This document cannot be edited right now");
+		}
 		requireModuleReplaceOpen(me, d);
 		requireLatest(d);
 		if (form.documentCategoryId() != null) {
@@ -445,12 +447,21 @@ public class DocumentService {
 	 * and (optional dual-control) approve only, no Edit - unlike every other ERGO role on that row, which all get
 	 * {@code E}. */
 	private static boolean editable(CurrentUser me, Document d) {
+		return editable(me, d, true);
+	}
+
+	/** {@code content}: the change touches the file or its category; ERGO may still widen or narrow who sees any RFQ file. */
+	private static boolean editable(CurrentUser me, Document d, boolean content) {
 		// M7/L4 (client decision, ARCHITECTURE.md §8): a locked or approved document is final for everyone, ERGO Admin
 		// included - Admin must unlock it (with a reason) first.
 		if (d.lockStatus == LockStatus.LOCKED || d.approvalStatus == ApprovalStatus.APPROVED) {
 			return false;
 		}
 		if (me.companyType() == CompanyType.ERGO) {
+			// ERGO is the middle man on RFQs (2026-11-22): it never replaces or edits a file the customer uploaded
+			if (content && "rfq".equals(d.linkedModule) && !d.uploadedByCompanyId.equals(me.companyId())) {
+				return false;
+			}
 			return me.role() != Role.ERGO_MANAGEMENT;
 		}
 		return d.uploadedByCompanyId.equals(me.companyId());
@@ -497,9 +508,11 @@ public class DocumentService {
 		if (!ownerOf(d).map(ModuleSwitch::writable).orElse(true)) {
 			return result; // the record's module is read-only: no button on this file does anything
 		}
-		if (editable(me, d) && !hasLaterVersion && moduleWindowOpen(d)) {
+		if (editable(me, d, false) && !hasLaterVersion && moduleWindowOpen(d)) {
 			result.add(DocumentAction.EDIT);
-			result.add(DocumentAction.REPLACE);
+			if (editable(me, d)) {
+				result.add(DocumentAction.REPLACE);
+			}
 		}
 		if (me.role() == Role.ERGO_ADMIN) {
 			result.add(d.lockStatus == LockStatus.UNLOCKED ? DocumentAction.LOCK : DocumentAction.UNLOCK);

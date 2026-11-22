@@ -46,9 +46,12 @@ public final class QuoteDtos {
 	public record SubRfqForm(@NotNull Long supplierId, @NotEmpty Set<@NotNull Long> itemIds) {
 	}
 
-	/** Distribution (flow doc §2): one sub-RFQ per supplier, no part in two of them. */
+	/**
+	 * Distribution (flow doc §2): one sub-RFQ per supplier; the same part may be in several of them (the suppliers then
+	 * compete, 2026-11-22). {@code sharedDocumentIds}: the parts' own files ERGO ticked to share with suppliers.
+	 */
 	public record DistributeForm(@NotEmpty @Size(max = 50) List<@Valid @NotNull SubRfqForm> subRfqs,
-			@NotNull @FutureOrPresent LocalDate responseDueDate) {
+			@NotNull @FutureOrPresent LocalDate responseDueDate, @Size(max = 400) Set<@NotNull Long> sharedDocumentIds) {
 	}
 
 	public record CommentForm(@Size(max = 2000) String comment) {
@@ -121,16 +124,19 @@ public final class QuoteDtos {
 	}
 
 	/**
-	 * One part of an RFQ on ERGO's quotes tab: the part, and - once it is with a supplier - that supplier's quote and
-	 * status. The part's status is what the dashboard shows per part. {@code quoteId} is null while unassigned.
+	 * One supplier's quote on one part of an RFQ, on ERGO's quotes tab. A part with several suppliers has one row each
+	 * (that is the comparison); a part with none has a single row with {@code quoteId} null. {@code selected}: this is
+	 * the quote ERGO chose for the customer. {@code priceInRfqCurrency}: the production piece price converted to the
+	 * RFQ's currency with today's rate (null when no rate exists), to compare quotes in different currencies.
 	 */
 	public record PartRow(PartRef part, Long quoteId, Integer subRfqNo, Named supplier, QuoteStatus status,
 			LocalDate responseDueDate, Integer version, Instant submittedAt, String currency,
 			BigDecimal productionPiecePrice, BigDecimal toolingCostTotal, Integer moq, Integer productionLeadTimeDays,
-			Set<QuoteAction> actions) {
+			LocalDate validityDate, BigDecimal priceInRfqCurrency, boolean selected, Set<QuoteAction> actions) {
 	}
 
-	public record RfqQuotes(boolean canDistribute, List<PartRow> parts) {
+	/** {@code sendableItemIds}: the parts that may still be sent to (more) suppliers. */
+	public record RfqQuotes(boolean canDistribute, List<Long> sendableItemIds, List<PartRow> parts) {
 	}
 
 	/** A part's status, per audience (ERGO: the full status; customers: where their quotation stands). */

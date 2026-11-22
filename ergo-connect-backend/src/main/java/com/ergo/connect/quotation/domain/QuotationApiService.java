@@ -132,17 +132,19 @@ class QuotationApiService implements QuotationApi {
 			// Built from the customer's own parts, like the RFQ's /parts list, so the two always agree and neither
 			// shows how far ERGO has got with distributing the parts.
 			List<RfqApi.CustomerPart> own = rfqs.customerParts();
-			Map<Long, Invitation> active = own.isEmpty() ? Map.of()
+			// several suppliers may hold a part: the customer sees the part's one status, never how many quote it
+			Map<Long, List<QuoteStatus>> active = own.isEmpty() ? Map.of()
 					: invitations.findByRfqIdIn(own.stream().map(RfqApi.CustomerPart::rfqId).collect(Collectors.toSet()))
 						.stream()
 						.filter(i -> i.status != QuoteStatus.RECALLED)
-						.collect(Collectors.toMap(i -> i.rfqItemId, Function.identity()));
+						.collect(Collectors.groupingBy(i -> i.rfqItemId,
+								Collectors.mapping(i -> i.status, Collectors.toList())));
 			return own.stream()
-				.map(p -> new PartStatusItem(p.rfqId(), p.rfqNumber(), p.itemId(), p.partNumber(),
-						(active.containsKey(p.itemId()) ? active.get(p.itemId()).status : QuoteStatus.NOT_STARTED)
-							.forCustomer()
-							.name(),
-						null))
+				.map(p -> {
+					QuoteStatus status = QuoteStatus.ofPart(active.getOrDefault(p.itemId(), List.of()));
+					return new PartStatusItem(p.rfqId(), p.rfqNumber(), p.itemId(), p.partNumber(),
+							(status == null ? QuoteStatus.NOT_STARTED : status).forCustomer().name(), null);
+				})
 				.toList();
 		}
 		List<Invitation> mine = switch (me.companyType()) {

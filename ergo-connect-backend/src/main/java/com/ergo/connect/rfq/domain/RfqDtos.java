@@ -7,7 +7,6 @@ import java.util.List;
 import java.util.Set;
 
 import com.ergo.connect.documents.api.DocumentStore.Visibility;
-import com.ergo.connect.rfq.domain.ProcessStep.SourcingType;
 import com.ergo.connect.rfq.domain.RfqStatus.CustomerStatus;
 
 import jakarta.validation.Valid;
@@ -29,8 +28,9 @@ public final class RfqDtos {
 	}
 
 	/**
-	 * One part of the RFQ. {@code id} is set for a part that already exists (its quotes and history stay with it) and
-	 * left out for a new one; a part missing from an edit is removed.
+	 * One part of the RFQ, as the customer enters it (ERGO only for an RFQ it creates itself). {@code id} is set for a
+	 * part that already exists (its quotes and history stay with it) and left out for a new one; a part missing from an
+	 * edit is removed. There is no process flow: each supplier gives its own route in its quote (2026-11-22).
 	 */
 	public record ItemForm(Long id, @NotBlank @Size(max = 100) String partNumber, @Size(max = 30) String revision,
 			@Size(max = 1000) String description, @Positive Integer eau,
@@ -42,8 +42,7 @@ public final class RfqDtos {
 			@PositiveOrZero @Digits(integer = 14, fraction = 4) BigDecimal targetProductionPiecePrice,
 			@PositiveOrZero Integer materialLeadTimeWeeks, @PositiveOrZero Integer toolingLeadTimeDays,
 			@PositiveOrZero Integer sampleLeadTimeDays, @PositiveOrZero Integer productionLeadTimeDays,
-			@Positive Integer moq, @Size(max = 50) List<@Valid @NotNull ProcessStep> processSteps,
-			@Size(max = 1000) String remarks) {
+			@Positive Integer moq, @Size(max = 1000) String remarks) {
 	}
 
 	/** Create / edit. {@code customerCompanyId} and {@code internalNotes} are used for ERGO callers only. */
@@ -57,7 +56,8 @@ public final class RfqDtos {
 	public record CommentForm(@Size(max = 2000) String comment) {
 	}
 
-	public record NotesForm(@Size(max = 4000) String internalNotes) {
+	/** ERGO's own settings on any RFQ in its scope. {@code null} = unchanged for each; an empty notes text clears the notes. */
+	public record NotesForm(@Size(max = 4000) String internalNotes, Priority priority, Long paymentTermId) {
 	}
 
 	/** {@code itemIds}: the parts a file is shared with suppliers for (required for SUPPLIER and ALL). */
@@ -72,21 +72,20 @@ public final class RfqDtos {
 	public record Named(long id, String code, String name) {
 	}
 
-	public record StepView(Named process, String stepName, BigDecimal cycleTimeSeconds, SourcingType sourcingType,
-			String outsourcedSupplierName, String remarks) {
-	}
-
 	/** The customer's commercial targets for a part: ERGO and that customer only, never suppliers. */
 	public record TargetsView(BigDecimal targetToolingCost, BigDecimal targetPpapPiecePrice,
 			BigDecimal targetProductionPiecePrice, Integer materialLeadTimeWeeks, Integer toolingLeadTimeDays,
 			Integer sampleLeadTimeDays, Integer productionLeadTimeDays, Integer moq) {
 	}
 
-	/** A part and its technical and commercial data: what ERGO and the RFQ's own customer may see. */
+	/**
+	 * A part and its technical and commercial data, for ERGO and the RFQ's own customer. Every field is the customer's
+	 * own entry (2026-11-22: ERGO no longer adds data to a customer's part), so both audiences get this one type.
+	 * Anything ERGO-only must go into a separate type, never into this one. Suppliers never get it.
+	 */
 	public record ItemView(long id, int lineNo, String partNumber, String revision, String description, Integer eau,
 			BigDecimal netWeightKg, BigDecimal grossWeightKg, Named material, String materialSpec, Named coating,
-			String coatingSpec, TargetsView targets, List<StepView> processSteps, String remarks,
-			List<ItemFile> files) {
+			String coatingSpec, TargetsView targets, String remarks, List<ItemFile> files) {
 	}
 
 	/** What one slot accepts: extensions (lower case, no dot) and the largest file in bytes. */
@@ -96,15 +95,6 @@ public final class RfqDtos {
 	/** A file in one of a part's four attachment slots (the customer's own drawings, models, specs and extras). */
 	public record ItemFile(long id, FileKind kind, String fileName, long size, boolean ownCompany, boolean canDelete,
 			Instant createdAt) {
-	}
-
-	/**
-	 * A part as its own customer sees it: what the customer entered (part number, description, volume, its target
-	 * price, remarks) and its files. Nothing ERGO adds during the review (tooling and PPAP targets, MOQ, lead times,
-	 * weights, material, process route) is in this type, so it cannot reach the customer, whatever the UI shows.
-	 */
-	public record CustomerItemView(long id, int lineNo, String partNumber, String description, Integer eau,
-			BigDecimal targetPrice, String remarks, List<ItemFile> files) {
 	}
 
 	public sealed interface RfqView permits ErgoRfqView, CustomerRfqView {
@@ -120,7 +110,7 @@ public final class RfqDtos {
 
 	public record CustomerRfqView(String audience, long id, String number, CustomerStatus status, String title,
 			String description, String specialInstructions, LocalDate targetQuoteDate, Named currency,
-			List<CustomerItemView> items, String customerRemarks, String clarificationQuestion, String clarificationAnswer, Set<RfqAction> actions,
+			List<ItemView> items, String customerRemarks, String clarificationQuestion, String clarificationAnswer, Set<RfqAction> actions,
 			Instant createdAt, Instant updatedAt) implements RfqView {
 	}
 

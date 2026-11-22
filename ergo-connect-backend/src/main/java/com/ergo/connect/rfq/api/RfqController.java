@@ -106,7 +106,7 @@ class RfqController {
 	@PutMapping("/{id}/internal-notes")
 	@PreAuthorize(ERGO_EDITORS)
 	RfqView updateNotes(@PathVariable long id, @Valid @RequestBody NotesForm body) {
-		return rfqs.updateNotes(id, body.internalNotes());
+		return rfqs.updateNotes(id, body);
 	}
 
 	@PostMapping("/{id}/clone")

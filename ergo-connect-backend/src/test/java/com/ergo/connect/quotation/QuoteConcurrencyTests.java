@@ -133,19 +133,33 @@ class QuoteConcurrencyTests extends AdversarialSupport {
 	// ---------------------------------------------------------------- distribution
 
 	@Test
-	void twoErgoUsersSendingTheSamePartToTwoSuppliersAtOnceLeaveItWithExactlyOne() throws Exception {
+	void twoErgoUsersSendingTheSamePartToTheSameSupplierAtOnceLeaveItWithExactlyOne() throws Exception {
 		for (int round = 0; round < 3; round++) {
 			long rfq = reviewedRfq("PN-1");
 			List<Long> p = parts(rfq);
 			List<Integer> statuses = gated(rfq, 2, null,
 					() -> send(post("/api/rfqs/{id}/quotes", rfq), ergoRfq, TestRfq.distribution(supplierX, p)),
-					() -> send(post("/api/rfqs/{id}/quotes", rfq), ergoMgmt, TestRfq.distribution(supplierY, p)));
-			assertOneWinner(statuses, "distribute one part to two suppliers");
+					() -> send(post("/api/rfqs/{id}/quotes", rfq), ergoMgmt, TestRfq.distribution(supplierX, p)));
+			assertOneWinner(statuses, "distribute one part to the same supplier");
 			assertThat(count("SELECT count(*) FROM rfq_supplier_assignments WHERE rfq_item_id = ? AND status <> 'RECALLED'", p.get(0)))
 				.isEqualTo(1);
 			assertThat(count("SELECT count(*) FROM sub_rfqs WHERE rfq_id = ?", rfq)).isEqualTo(1);
 			assertThat(rfqStatus(rfq)).isEqualTo("SENT_TO_SUPPLIERS");
 		}
+	}
+
+	/** Several suppliers per part (2026-11-22): two ERGO users sending one part to two different suppliers both succeed. */
+	@Test
+	void twoErgoUsersSendingTheSamePartToDifferentSuppliersAtOnceBothSucceed() throws Exception {
+		long rfq = reviewedRfq("PN-1");
+		List<Long> p = parts(rfq);
+		List<Integer> statuses = gated(rfq, 2, null,
+				() -> send(post("/api/rfqs/{id}/quotes", rfq), ergoRfq, TestRfq.distribution(supplierX, p)),
+				() -> send(post("/api/rfqs/{id}/quotes", rfq), ergoMgmt, TestRfq.distribution(supplierY, p)));
+		assertThat(statuses).as(statuses.toString()).containsExactly(200, 200);
+		assertThat(count("SELECT count(*) FROM rfq_supplier_assignments WHERE rfq_item_id = ? AND status <> 'RECALLED'", p.get(0)))
+			.isEqualTo(2);
+		assertThat(rfqStatus(rfq)).isEqualTo("SENT_TO_SUPPLIERS");
 	}
 
 	@Test

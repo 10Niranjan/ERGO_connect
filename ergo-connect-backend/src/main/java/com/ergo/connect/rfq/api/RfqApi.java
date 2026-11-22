@@ -53,19 +53,12 @@ public interface RfqApi {
 
 	/**
 	 * What a supplier may see of one RFQ part sent to it. Client decision: no customer name, no targets, no notes, no
-	 * remarks, and nothing of the RFQ's other parts (they may be with other suppliers).
+	 * remarks, and nothing of the RFQ's other parts (they may be with other suppliers). No planned route either: each
+	 * supplier gives its own in its quote (2026-11-22).
 	 */
 	record SupplierRfqItem(long rfqId, String rfqNumber, long itemId, String partNumber, String revision,
 			String description, Integer eau, BigDecimal netWeightKg, BigDecimal grossWeightKg, String material,
-			String materialSpec, String coating, String coatingSpec, List<PlannedStep> processSteps,
-			boolean quotingOpen) {
-	}
-
-	/**
-	 * One step of the part's planned route as suppliers see it: process and step name only. Cycle times, sourcing,
-	 * sub-suppliers and remarks are the customer's or ERGO's and may name third parties; each supplier fills in its own.
-	 */
-	record PlannedStep(Long processId, String processName, String stepName) {
+			String materialSpec, String coating, String coatingSpec, boolean quotingOpen) {
 	}
 
 	/** For the current ERGO user; 404 when the RFQ is outside their scope. */
@@ -122,6 +115,13 @@ public interface RfqApi {
 	 * caller passes the parts its supplier holds, so a file shared for another supplier's part is never returned.
 	 */
 	List<DocumentInfo> supplierDocuments(long rfqId, Collection<Long> itemIds);
+
+	/**
+	 * Shares the given part files (the customer's attachments of the parts, by document id) with suppliers for those
+	 * parts: ERGO's choice when it sends parts out. Each file must be a file of one of {@code itemIds} on this RFQ.
+	 * Refused unless the caller is an ERGO RFQ editor; needs the RFQ module writable.
+	 */
+	void shareFilesWithSuppliers(long rfqId, Collection<Long> documentIds, Collection<Long> itemIds);
 
 	/** The RFQ part ids of the caller's own company's RFQs that are still live, with their RFQ (a customer's dashboard). */
 	record CustomerPart(long rfqId, String rfqNumber, long itemId, String partNumber) {

@@ -261,12 +261,13 @@ class QuoteWorkflowAdversarialTests extends AdversarialSupport {
 		// the recalled part cannot be put in a customer quotation
 		call(post("/api/rfqs/{id}/customer-quotes", rfq), ergoRfq, generateBody(line(q2, "100")))
 			.andExpect(status().isConflict());
-		// the same part cannot be sent to the same supplier twice either, but can to another one
+		// the part can go to another supplier and to the recalled one again, but never twice to a supplier that holds it
 		distribute(rfq, supplierY, List.of(p.get(1)));
-		call(post("/api/rfqs/{id}/quotes", rfq), ergoRfq, TestRfq.distribution(supplierX, List.of(p.get(1))))
+		call(post("/api/rfqs/{id}/quotes", rfq), ergoRfq, TestRfq.distribution(supplierY, List.of(p.get(1))))
 			.andExpect(status().isUnprocessableContent());
+		distribute(rfq, supplierX, List.of(p.get(1)));
 		assertThat(count("SELECT count(*) FROM rfq_supplier_assignments WHERE rfq_item_id = ? AND status <> 'RECALLED'",
-				p.get(1))).isEqualTo(1);
+				p.get(1))).isEqualTo(2);
 		// the old quote and its versions are kept on record
 		assertThat(count("SELECT count(*) FROM supplier_quote_versions v JOIN supplier_quotes s "
 				+ "ON s.supplier_quote_id = v.supplier_quote_id WHERE s.assignment_id = ?", q2)).isEqualTo(1);
@@ -555,7 +556,6 @@ class QuoteWorkflowAdversarialTests extends AdversarialSupport {
 		unprocessable.put("unknown part", TestRfq.distribution(supplierX, List.of(987654321L)));
 		unprocessable.put("negative part", TestRfq.distribution(supplierX, List.of(-1L)));
 		unprocessable.put("same supplier twice", TestRfq.distribution(supplierX, List.of(p.get(0)), supplierX, List.of(p.get(1))));
-		unprocessable.put("same part to two suppliers", TestRfq.distribution(supplierX, List.of(p.get(0)), supplierY, List.of(p.get(0))));
 		for (var entry : unprocessable.entrySet()) {
 			assertThat(send(post("/api/rfqs/{id}/quotes", rfq), ergoRfq, entry.getValue())).as(entry.getKey()).isEqualTo(422);
 		}

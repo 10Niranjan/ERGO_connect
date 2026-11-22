@@ -11,7 +11,9 @@ import java.util.Set;
 public enum QuoteStatus {
 
 	NOT_STARTED, DRAFT_SAVED, SUBMITTED, REVISION_REQUIRED, RESUBMITTED, ACCEPTED, WITH_CUSTOMER, CUSTOMER_ON_HOLD,
-	CUSTOMER_CORRECTION, CUSTOMER_APPROVED, CUSTOMER_REJECTED, RECALLED;
+	CUSTOMER_CORRECTION, CUSTOMER_APPROVED, CUSTOMER_REJECTED, RECALLED,
+	/** The supplier's quote was unfinished when the customer decided the part; nothing more to do (supplier not told why). */
+	CLOSED;
 
 	/** The supplier may still work on the part's quote. */
 	static final Set<QuoteStatus> EDITABLE = EnumSet.of(NOT_STARTED, DRAFT_SAVED, REVISION_REQUIRED);
@@ -31,6 +33,32 @@ public enum QuoteStatus {
 	/** The part's quote is final for the customer's decision. */
 	static final Set<QuoteStatus> DECIDED = EnumSet.of(CUSTOMER_APPROVED, CUSTOMER_REJECTED);
 
+	/** The quote ERGO selected for the part, from selection to the customer's answer: at most one per part (V45 index). */
+	static final Set<QuoteStatus> SELECTED = EnumSet.of(ACCEPTED, WITH_CUSTOMER, CUSTOMER_ON_HOLD, CUSTOMER_CORRECTION,
+			CUSTOMER_APPROVED, CUSTOMER_REJECTED);
+
+	/** The selected quote is with the customer or decided: no other supplier's quote on the part can change the outcome. */
+	static final Set<QuoteStatus> LOCKS_PART = EnumSet.of(WITH_CUSTOMER, CUSTOMER_ON_HOLD, CUSTOMER_APPROVED,
+			CUSTOMER_REJECTED);
+
+	/**
+	 * Where a part stands when several suppliers quote it: the selected quote's status; else submitted (waiting for
+	 * ERGO's review) if any quote is; else sent back, started or not started. {@code null} when no supplier holds it.
+	 */
+	public static QuoteStatus ofPart(java.util.Collection<QuoteStatus> active) {
+		for (QuoteStatus s : active) {
+			if (SELECTED.contains(s)) {
+				return s;
+			}
+		}
+		for (QuoteStatus wanted : new QuoteStatus[] { SUBMITTED, RESUBMITTED, REVISION_REQUIRED, DRAFT_SAVED, NOT_STARTED }) {
+			if (active.contains(wanted)) {
+				return wanted;
+			}
+		}
+		return active.isEmpty() ? null : CLOSED;
+	}
+
 	/**
 	 * The status a supplier sees: what the customer does with ERGO's quotation is none of the supplier's business
 	 * (flow doc: no customer data reaches a supplier without ERGO), so everything from "accepted" on reads as accepted.
@@ -39,6 +67,9 @@ public enum QuoteStatus {
 		return switch (this) {
 			case ACCEPTED, WITH_CUSTOMER, CUSTOMER_ON_HOLD, CUSTOMER_CORRECTION, CUSTOMER_APPROVED, CUSTOMER_REJECTED ->
 				ACCEPTED;
+			// CLOSED only happens when the customer decided the part for ANOTHER supplier; showing it would tell this
+			// supplier that a competitor exists. It reads as an unfinished draft that can no longer be edited.
+			case CLOSED -> DRAFT_SAVED;
 			default -> this;
 		};
 	}

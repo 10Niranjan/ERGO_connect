@@ -59,7 +59,7 @@ class RfqAdversarialTests extends AdversarialSupport {
 		String hijack = form(item("PN-1").replace("{\"partNumber\"", "{\"id\": %d, \"partNumber\"".formatted(myPart)),
 				item("PN-HIJACK").replace("{\"partNumber\"", "{\"id\": %d, \"partNumber\"".formatted(theirPart)));
 		call(put("/api/rfqs/{id}", mine), buyer, hijack).andExpect(status().isUnprocessableContent());
-		call(put("/api/rfqs/{id}", mine), ergoRfq, hijack).andExpect(status().isUnprocessableContent());
+		call(put("/api/rfqs/{id}", mine), ergoRfq, hijack).andExpect(status().isConflict()); // ERGO never edits a customer's RFQ
 		assertThat(jdbc.queryForObject("SELECT part_number FROM rfq_items WHERE rfq_item_id = ?", String.class, theirPart))
 			.isEqualTo("PN-SECRET");
 		assertThat(jdbc.queryForObject("SELECT rfq_id FROM rfq_items WHERE rfq_item_id = ?", Long.class, theirPart)).isEqualTo(theirs);
@@ -139,10 +139,7 @@ class RfqAdversarialTests extends AdversarialSupport {
 				ok.replace("\"description\"", "\"targetToolingCost\": 123456789012345, \"description\""),
 				ok.replace("\"description\"", "\"netWeightKg\": 123456789.1, \"description\""),
 				ok.replace("\"description\"", "\"materialLeadTimeWeeks\": -1, \"description\""),
-				ok.replace("\"EN8\"", "\"" + "m".repeat(501) + "\""),
-				ok.replace("\"Casting\"", "\"\""), ok.replace("\"Casting\"", "\"%s\"".formatted("s".repeat(201))),
-				ok.replace("{\"stepName\": \"Casting\"}", "{\"stepName\": \"A\", \"sourcingType\": \"MAGIC\"}"),
-				ok.replace("{\"stepName\": \"Casting\"}", "{\"stepName\": \"A\", \"cycleTimeSeconds\": -3}")));
+				ok.replace("\"EN8\"", "\"" + "m".repeat(501) + "\"")));
 		for (String bad : badItems) {
 			assertThat(send(post("/api/rfqs"), buyer, form(bad))).as(bad).isEqualTo(400);
 		}
@@ -163,8 +160,6 @@ class RfqAdversarialTests extends AdversarialSupport {
 			.as("unknown material").isEqualTo(422);
 		assertThat(send(post("/api/rfqs"), buyer, form(ok.replace("\"description\"", "\"coatingId\": 987654321, \"description\""))))
 			.as("unknown coating").isEqualTo(422);
-		assertThat(send(post("/api/rfqs"), buyer, form(ok.replace("{\"stepName\": \"Casting\"}", "{\"stepName\": \"A\", \"processId\": 987654321}"))))
-			.as("unknown process").isEqualTo(422);
 		assertThat(count("SELECT count(*) FROM rfqs WHERE created_by_user_id = ?", buyer.userId())).isEqualTo(before);
 		// the largest values that are legal are kept exactly
 		String max = ok.replace("PN-1", "P".repeat(100)).replace("\"eau\": 1000", "\"eau\": 2147483647").replace("\"description\"",
@@ -230,15 +225,14 @@ class RfqAdversarialTests extends AdversarialSupport {
 		call(post("/api/rfqs/{id}/submit", id), buyer, "{}").andExpect(status().isUnprocessableContent())
 			.andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("expected quote receipt date")));
 		assertThat(rfqStatus(id)).isEqualTo("DRAFT");
-		// ERGO strips the process flow of a part while reviewing: distribution is refused and the RFQ stays under review
-		long ok = reviewedRfq("PN-1", "PN-2");
-		List<Long> p = parts(ok);
-		String stripped = form(item("PN-1").replace("{\"partNumber\"", "{\"id\": %d, \"partNumber\"".formatted(p.get(0))),
-				"{\"id\": %d, \"partNumber\": \"PN-2\", \"description\": \"Bracket\", \"materialSpec\": \"EN8\"}".formatted(p.get(1)));
-		call(put("/api/rfqs/{id}", ok), ergoRfq, stripped).andExpect(status().isOk());
-		call(post("/api/rfqs/{id}/quotes", ok), ergoRfq, TestRfq.distribution(supplierX, p)).andExpect(status().isUnprocessableContent());
-		assertThat(rfqStatus(ok)).isEqualTo("UNDER_REVIEW");
-		assertThat(count("SELECT count(*) FROM rfq_supplier_assignments WHERE rfq_id = ?", ok)).isZero();
+		// ERGO forwards what the customer entered (2026-11-22): a part with no description, material or process flow is sent
+		long bare = TestRfq.create(mvc, buyer, "{\"title\": \"Bare\", \"targetQuoteDate\": \"%s\", \"currencyId\": %d, \"items\": [{\"partNumber\": \"PN-BARE\", \"eau\": 10}]}"
+			.formatted(LocalDate.now().plusDays(10), inr));
+		call(post("/api/rfqs/{id}/submit", bare), buyer, "{}").andExpect(status().isOk());
+		call(post("/api/rfqs/{id}/start-review", bare), ergoRfq, null).andExpect(status().isOk());
+		distribute(bare, supplierX, parts(bare));
+		assertThat(rfqStatus(bare)).isEqualTo("SENT_TO_SUPPLIERS");
+		assertThat(count("SELECT count(*) FROM rfq_supplier_assignments WHERE rfq_id = ?", bare)).isEqualTo(1);
 	}
 
 	// ---------------------------------------------------------------- roles and scope

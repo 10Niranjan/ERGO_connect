@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -172,69 +173,82 @@ class RfqNewFormatTests {
 	}
 
 	@Test
-	void aCustomersEditNeverWipesWhatErgoAddedDuringTheReview() throws Exception {
+	void ergoNeverEditsACustomersRfqButKeepsItsOwnSettingsAndTheCustomerOwnsEveryPartField() throws Exception {
 		long id = TestRfq.create(mvc, buyer, TestRfq.form(inr, "PN-1"));
 		send(post("/api/rfqs/{id}/submit", id), buyer, "{}").andExpect(status().isOk());
 		send(post("/api/rfqs/{id}/start-review", id), ergoRfq, null).andExpect(status().isOk());
 		long part = TestRfq.itemIds(mvc, ergoRfq, id).getFirst();
-		// ERGO adds a revision, a weight, tooling target, a HIGH priority and keeps the material and process flow
-		send(put("/api/rfqs/{id}", id), ergoRfq, """
-				{"title": "Test RFQ", "targetQuoteDate": "%s", "currencyId": %d, "priority": "HIGH", "internalNotes": "margin",
-				 "items": [{"id": %d, "partNumber": "PN-1", "revision": "B", "description": "Bracket", "eau": 1000,
-				 "netWeightKg": 1.5, "materialSpec": "EN8", "targetToolingCost": 5000, "targetProductionPiecePrice": 99.5,
-				 "processSteps": [{"stepName": "Casting"}, {"stepName": "Machining"}]}]}"""
-			.formatted(LocalDate.now().plusDays(10), inr, part)).andExpect(status().isOk());
-		send(post("/api/rfqs/{id}/request-clarification", id), ergoRfq, "{\"comment\": \"Which finish?\"}")
+		// the middle man cannot change the customer's RFQ in any status, and the customer is locked after submitting
+		String edit = """
+				{"title": "ERGO TITLE", "targetQuoteDate": "%s", "currencyId": %d,
+				 "items": [{"id": %d, "partNumber": "PN-1", "revision": "B", "eau": 1000, "netWeightKg": 1.5}]}"""
+			.formatted(LocalDate.now().plusDays(10), inr, part);
+		send(put("/api/rfqs/{id}", id), ergoRfq, edit).andExpect(status().isConflict());
+		send(put("/api/rfqs/{id}", id), buyer, edit).andExpect(status().isConflict());
+		send(get("/api/rfqs/{id}", id), ergoRfq, null).andExpect(jsonPath("$.actions", not(hasItem("EDIT"))))
+			.andExpect(jsonPath("$.actions", not(hasItem("SUBMIT")))).andExpect(jsonPath("$.actions", hasItem("EDIT_NOTES")));
+		// ERGO's own settings are saved from the notes endpoint; a null priority or payment term leaves the old value
+		long term = users.masterEntry("payment_terms", "payment_term");
+		send(put("/api/rfqs/{id}/internal-notes", id), ergoRfq, "{\"internalNotes\": \"margin\", \"priority\": \"HIGH\", \"paymentTermId\": %d}".formatted(term))
 			.andExpect(status().isOk());
+		send(put("/api/rfqs/{id}/internal-notes", id), ergoRfq, "{\"internalNotes\": \"margin 2\"}").andExpect(status().isOk());
+		send(put("/api/rfqs/{id}/internal-notes", id), ergoRfq, "{\"priority\": \"HIGH\"}").andExpect(status().isOk()); // notes untouched
+		send(post("/api/rfqs/{id}/clone", id), ergoRfq, null).andExpect(status().isConflict()); // ERGO never copies a customer's RFQ
+		send(put("/api/rfqs/{id}/internal-notes", id), ergoRfq, "{\"priority\": \"URGENT!!\"}").andExpect(status().isBadRequest());
+		send(put("/api/rfqs/{id}/internal-notes", id), ergoRfq, "{\"paymentTermId\": 987654321}").andExpect(status().isUnprocessableContent());
+		send(post("/api/rfqs/{id}/request-clarification", id), ergoRfq, "{\"comment\": \"Which finish?\"}").andExpect(status().isOk());
 
-		// the customer's form carries only its own fields: description, volume, target price, remarks
+		// the customer answers with every part field: revision, weights, material, targets, lead times
 		send(put("/api/rfqs/{id}", id), buyer, """
 				{"title": "New title", "targetQuoteDate": "%s", "currencyId": %d,
-				 "items": [{"id": %d, "partNumber": "PN-1", "description": "Bracket v2", "eau": 2500,
-				 "targetProductionPiecePrice": 80, "remarks": "Zinc plate"}]}"""
+				 "items": [{"id": %d, "partNumber": "PN-1", "revision": "B", "description": "Bracket v2", "eau": 2500,
+				 "netWeightKg": 1.5, "grossWeightKg": 1.8, "materialSpec": "EN8", "coatingSpec": "Zinc", "moq": 500,
+				 "targetToolingCost": 5000, "targetPpapPiecePrice": 120, "targetProductionPiecePrice": 80,
+				 "materialLeadTimeWeeks": 3, "productionLeadTimeDays": 40, "remarks": "Zinc plate"}]}"""
 			.formatted(LocalDate.now().plusDays(12), inr, part)).andExpect(status().isOk());
 
 		send(get("/api/rfqs/{id}", id), ergoRfq, null).andExpect(status().isOk())
 			.andExpect(jsonPath("$.title").value("New title"))
 			.andExpect(jsonPath("$.priority").value("HIGH"))
-			.andExpect(jsonPath("$.internalNotes").value("margin"))
+			.andExpect(jsonPath("$.paymentTerm.id").value(term))
+			.andExpect(jsonPath("$.internalNotes").value("margin 2"))
+			.andExpect(jsonPath("$.items[0].revision").value("B"))
 			.andExpect(jsonPath("$.items[0].description").value("Bracket v2"))
 			.andExpect(jsonPath("$.items[0].eau").value(2500))
-			.andExpect(jsonPath("$.items[0].remarks").value("Zinc plate"))
-			.andExpect(jsonPath("$.items[0].targets.targetProductionPiecePrice").value(80))
-			.andExpect(jsonPath("$.items[0].revision").value("B"))
 			.andExpect(jsonPath("$.items[0].netWeightKg").value(1.5))
 			.andExpect(jsonPath("$.items[0].materialSpec").value("EN8"))
+			.andExpect(jsonPath("$.items[0].coatingSpec").value("Zinc"))
+			.andExpect(jsonPath("$.items[0].moq").doesNotExist()) // moq lives under targets
+			.andExpect(jsonPath("$.items[0].targets.moq").value(500))
 			.andExpect(jsonPath("$.items[0].targets.targetToolingCost").value(5000))
-			.andExpect(jsonPath("$.items[0].processSteps", hasSize(2)));
+			.andExpect(jsonPath("$.items[0].targets.targetProductionPiecePrice").value(80))
+			.andExpect(jsonPath("$.items[0].targets.productionLeadTimeDays").value(40))
+			.andExpect(jsonPath("$.items[0].remarks").value("Zinc plate"));
 	}
 
 	@Test
-	void theCustomerViewCarriesOnlyTheCustomersOwnFieldsWhateverErgoAdds() throws Exception {
+	void theCustomerSeesItsOwnPartDataButNeverErgosSettingsOrAnyProcessFlow() throws Exception {
 		long id = TestRfq.create(mvc, buyer, TestRfq.form(inr, "PN-1"));
 		send(post("/api/rfqs/{id}/submit", id), buyer, "{}").andExpect(status().isOk());
 		send(post("/api/rfqs/{id}/start-review", id), ergoRfq, null).andExpect(status().isOk());
-		long part = TestRfq.itemIds(mvc, ergoRfq, id).getFirst();
-		send(put("/api/rfqs/{id}", id), ergoRfq, """
-				{"title": "Test RFQ", "targetQuoteDate": "%s", "currencyId": %d, "priority": "URGENT", "internalNotes": "margin",
-				 "items": [{"id": %d, "partNumber": "PN-1", "revision": "B", "description": "Bracket", "eau": 1000,
-				 "netWeightKg": 1.5, "materialSpec": "SECRET-MATERIAL", "targetToolingCost": 4321, "targetPpapPiecePrice": 8765,
-				 "targetProductionPiecePrice": 99.5, "moq": 777, "productionLeadTimeDays": 66,
-				 "processSteps": [{"stepName": "SECRET-STEP", "sourcingType": "OUTSOURCED", "outsourcedSupplierName": "SECRET-SUBSUPPLIER"}]}]}"""
-			.formatted(LocalDate.now().plusDays(10), inr, part)).andExpect(status().isOk());
+		long term = users.masterEntry("payment_terms", "payment_term");
+		send(put("/api/rfqs/{id}/internal-notes", id), ergoRfq, "{\"internalNotes\": \"SECRET-MARGIN\", \"priority\": \"URGENT\", \"paymentTermId\": %d}".formatted(term))
+			.andExpect(status().isOk());
 
 		String json = send(get("/api/rfqs/{id}", id), buyer, null).andExpect(status().isOk())
-			.andExpect(jsonPath("$.items[0].targetPrice").value(99.5))
+			.andExpect(jsonPath("$.items[0].targets.targetProductionPiecePrice").value(99.5))
 			.andExpect(jsonPath("$.items[0].description").value("Bracket"))
+			.andExpect(jsonPath("$.items[0].materialSpec").value("EN8"))
 			.andReturn().getResponse().getContentAsString();
-		assertThat(json).doesNotContain("SECRET-MATERIAL", "SECRET-STEP", "SECRET-SUBSUPPLIER", "4321", "8765", "777", "\"targets\"",
-				"processSteps", "revision", "netWeightKg", "priority", "paymentTerm", "internalNotes", "URGENT");
+		assertThat(json).doesNotContain("processSteps", "priority", "paymentTerm", "internalNotes", "URGENT", "SECRET-MARGIN");
+		String ergoJson = send(get("/api/rfqs/{id}", id), ergoRfq, null).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+		assertThat(ergoJson).doesNotContain("processSteps"); // old routes stay stored but nothing shows them
 		String list = send(get("/api/rfqs"), buyer, null).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
 		assertThat(list).doesNotContain("priority", "URGENT");
 	}
 
 	@Test
-	void aCustomerCannotSetPriorityOrPaymentTermAndAReAddedPartIsBare() throws Exception {
+	void aCustomerCannotSetPriorityOrPaymentTerm() throws Exception {
 		long term = users.masterEntry("payment_terms", "payment_term");
 		String create = """
 				{"title": "T", "currencyId": %d, "priority": "URGENT", "paymentTermId": %d,
@@ -243,32 +257,38 @@ class RfqNewFormatTests {
 			.andReturn().getResponse().getContentAsString(), "$.id").longValue();
 		send(get("/api/rfqs/{id}", id), ergoRfq, null).andExpect(jsonPath("$.priority").value("NORMAL"))
 			.andExpect(jsonPath("$.paymentTerm").doesNotExist());
-
-		// ERGO sets them; a later customer edit leaves them
 		send(post("/api/rfqs/{id}/submit", id), buyer, "{}").andExpect(status().isUnprocessableContent()); // no date yet
 		long part = TestRfq.itemIds(mvc, ergoRfq, id).getFirst();
-		String ergoEdit = """
-				{"title": "T", "targetQuoteDate": "%s", "currencyId": %d, "priority": "HIGH", "paymentTermId": %d,
-				 "items": [{"id": %d, "partNumber": "PN-1", "eau": 5, "materialSpec": "EN8", "processSteps": [{"stepName": "Casting"}]}]}"""
-			.formatted(LocalDate.now().plusDays(5), inr, term, part);
-		send(put("/api/rfqs/{id}", id), ergoRfq, ergoEdit).andExpect(status().isOk());
+		String withDate = """
+				{"title": "T", "targetQuoteDate": "%s", "currencyId": %d, "priority": "URGENT", "paymentTermId": %d,
+				 "items": [{"id": %d, "partNumber": "PN-1", "eau": 5}]}""".formatted(LocalDate.now().plusDays(5), inr, term, part);
+		send(put("/api/rfqs/{id}", id), buyer, withDate).andExpect(status().isOk());
 		send(post("/api/rfqs/{id}/submit", id), buyer, "{}").andExpect(status().isOk());
 		send(post("/api/rfqs/{id}/start-review", id), ergoRfq, null).andExpect(status().isOk());
+		send(put("/api/rfqs/{id}/internal-notes", id), ergoRfq, "{\"priority\": \"HIGH\", \"paymentTermId\": %d}".formatted(term)).andExpect(status().isOk());
+		// neither the customer's notes call nor a later edit can touch them
+		send(put("/api/rfqs/{id}/internal-notes", id), buyer, "{\"priority\": \"LOW\"}").andExpect(status().isForbidden());
 		send(post("/api/rfqs/{id}/request-clarification", id), ergoRfq, "{\"comment\": \"Check\"}").andExpect(status().isOk());
-
-		// the customer tries to push its own priority and, by dropping the part's id, to replace ERGO's data
-		String customerEdit = """
-				{"title": "T", "targetQuoteDate": "%s", "currencyId": %d, "priority": "URGENT", "paymentTermId": null,
-				 "items": [{"partNumber": "PN-1", "eau": 9, "materialSpec": "PLANTED", "targetToolingCost": 1,
-				 "processSteps": [{"stepName": "PLANTED-STEP"}]}]}""".formatted(LocalDate.now().plusDays(5), inr);
-		send(put("/api/rfqs/{id}", id), buyer, customerEdit).andExpect(status().isOk());
-		String json = send(get("/api/rfqs/{id}", id), ergoRfq, null).andExpect(jsonPath("$.priority").value("HIGH"))
+		send(put("/api/rfqs/{id}", id), buyer, withDate.replace("\"eau\": 5", "\"eau\": 9")).andExpect(status().isOk());
+		send(get("/api/rfqs/{id}", id), ergoRfq, null).andExpect(jsonPath("$.priority").value("HIGH"))
 			.andExpect(jsonPath("$.paymentTerm.id").value(term))
-			.andExpect(jsonPath("$.items[0].eau").value(9))
-			.andExpect(jsonPath("$.items[0].materialSpec").doesNotExist()) // bare until ERGO fills it in
-			.andExpect(jsonPath("$.items[0].processSteps", hasSize(0)))
-			.andReturn().getResponse().getContentAsString();
-		assertThat(json).doesNotContain("PLANTED");
+			.andExpect(jsonPath("$.items[0].eau").value(9));
+	}
+
+	@Test
+	void ergoMayCreateAndEditItsOwnDraftOnlyAndNobodyElsesFieldsChange() throws Exception {
+		long customerId = jdbc.queryForObject("SELECT customer_company_id FROM rfqs WHERE rfq_id = ?", Long.class,
+				TestRfq.create(mvc, buyer, TestRfq.form(inr, "PN-0")));
+		long id = TestRfq.create(mvc, ergoRfq, TestRfq.form(inr, "PN-E").replace("{\"title\"", "{\"customerCompanyId\": %d, \"title\"".formatted(customerId)));
+		send(get("/api/rfqs/{id}", id), ergoRfq, null).andExpect(jsonPath("$.actions", hasItem("EDIT")))
+			.andExpect(jsonPath("$.actions", hasItem("SUBMIT")));
+		long part = TestRfq.itemIds(mvc, ergoRfq, id).getFirst();
+		send(put("/api/rfqs/{id}", id), ergoRfq, TestRfq.form(inr, "PN-E").replace("\"PN-E\"", "\"PN-E\", \"id\": %d".formatted(part)).replace("Test RFQ", "Edited by ERGO"))
+			.andExpect(status().isOk()).andExpect(jsonPath("$.title").value("Edited by ERGO"));
+		send(post("/api/rfqs/{id}/submit", id), ergoRfq, "{}").andExpect(status().isOk());
+		// once submitted it is read-only for ERGO too
+		send(put("/api/rfqs/{id}", id), ergoRfq, TestRfq.form(inr, "PN-E")).andExpect(status().isConflict());
+		send(get("/api/rfqs/{id}", id), ergoRfq, null).andExpect(jsonPath("$.actions", not(hasItem("EDIT"))));
 	}
 
 	@Test

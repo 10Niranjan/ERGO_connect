@@ -149,7 +149,7 @@ class RfqTests {
 	}
 
 	@Test
-	void ergoMayChangeEverythingWhileReviewingAndPartsKeepTheirIdentity() throws Exception {
+	void ergoNeverEditsACustomersRfqAndPartsKeepTheirIdentityWhenTheCustomerEditsThem() throws Exception {
 		long id = create(buyerA, completeForm(null, "PN-100")).andReturn().getResponse().getContentAsString()
 			.transform(RfqTests::idOf);
 		act(buyerA, id, "submit", null);
@@ -158,24 +158,27 @@ class RfqTests {
 			.header(HttpHeaders.AUTHORIZATION, ergoRfq.bearer())).andReturn().getResponse().getContentAsString(),
 				"$.items[0].id").longValue();
 
-		// ERGO changes the part number, the quantity and adds a second part; the first keeps its id
+		// ERGO is the middle man (2026-11-22): it never edits a customer's RFQ, and the customer waits while ERGO reviews
 		String edit = completeForm(null, "PN-CHANGED").replace("\"eau\": 5000", "\"eau\": 7000")
 			.replace("\"partNumber\": \"PN-CHANGED\"", "\"id\": %d, \"partNumber\": \"PN-CHANGED\"".formatted(partId))
 			.replace("\"items\": [", "\"items\": [{\"partNumber\": \"PN-NEW\"}, ");
-		mvc.perform(json(put("/api/rfqs/{id}", id), edit, ergoRfq))
+		mvc.perform(json(put("/api/rfqs/{id}", id), edit, ergoRfq)).andExpect(status().isConflict());
+		mvc.perform(json(put("/api/rfqs/{id}", id), edit, buyerA)).andExpect(status().isConflict());
+
+		// asking the customer for a change is how ERGO gets one; the customer changes the part and adds a second
+		act(ergoRfq, id, "request-clarification", "Please add the cap").andExpect(status().isOk());
+		mvc.perform(json(put("/api/rfqs/{id}", id), edit, buyerA))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.items", hasSize(2)))
 			.andExpect(jsonPath("$.items[1].id").value(partId))
 			.andExpect(jsonPath("$.items[1].partNumber").value("PN-CHANGED"))
 			.andExpect(jsonPath("$.items[1].eau").value(7000));
-		mvc.perform(json(put("/api/rfqs/{id}", id), edit.replace("\"id\": " + partId, "\"id\": 999999999"), ergoRfq))
+		mvc.perform(json(put("/api/rfqs/{id}", id), edit.replace("\"id\": " + partId, "\"id\": 999999999"), buyerA))
 			.andExpect(status().isUnprocessableContent()); // not a part of this RFQ
-		mvc.perform(json(put("/api/rfqs/{id}", id), completeForm(null, "PN-CHANGED"), buyerA))
-			.andExpect(status().isConflict()); // customers wait while ERGO reviews
 
 		// removing a part is possible before distribution; the changes are in the RFQ's history, labelled by part
 		mvc.perform(json(put("/api/rfqs/{id}", id), completeForm(null, "PN-ONLY").replace("\"partNumber\": \"PN-ONLY\"",
-				"\"id\": %d, \"partNumber\": \"PN-ONLY\"".formatted(partId)), ergoRfq))
+				"\"id\": %d, \"partNumber\": \"PN-ONLY\"".formatted(partId)), buyerA))
 			.andExpect(jsonPath("$.items", hasSize(1)));
 		mvc.perform(get("/api/rfqs/{id}/history", id).header(HttpHeaders.AUTHORIZATION, ergoRfq.bearer()))
 			.andExpect(jsonPath("$[*].field", hasItem(containsString("Part PN-ONLY"))))
@@ -322,12 +325,12 @@ class RfqTests {
 			.andExpect(jsonPath("$.number", not(JsonPath.<String>read(original, "$.number"))))
 			.andExpect(jsonPath("$.items", hasSize(2)))
 			.andExpect(jsonPath("$.items[*].partNumber", contains("PN-101", "PN-100")));
-		// the copy keeps ERGO-visible data the customer's own view does not carry (the process route)
+		// the copy keeps the part data (revision, description)
 		long copy = JsonPath.<Number>read(mvc.perform(get("/api/rfqs").header(HttpHeaders.AUTHORIZATION, ergoRfq.bearer()))
 			.andReturn().getResponse().getContentAsString(), "$.items[0].id").longValue();
 		mvc.perform(get("/api/rfqs/{id}", copy).header(HttpHeaders.AUTHORIZATION, ergoRfq.bearer()))
-			.andExpect(jsonPath("$.items[1].processSteps[*].stepName", everyItem(containsString("Step"))))
-			.andExpect(jsonPath("$.items[1].processSteps", hasSize(2)));
+			.andExpect(jsonPath("$.items[1].revision").value("A"))
+			.andExpect(jsonPath("$.items[1].processSteps").doesNotExist()); // the old route is not copied
 	}
 
 	// ---------------------------------------------------------------- helpers

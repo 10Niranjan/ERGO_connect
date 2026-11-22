@@ -143,7 +143,7 @@ class QuoteTests {
 			.andExpect(jsonPath("$.parts[0].subRfqNo").value(1))
 			.andExpect(jsonPath("$.parts[2].subRfqNo").value(2))
 			.andExpect(jsonPath("$.parts[*].status", contains("NOT_STARTED", "NOT_STARTED", "NOT_STARTED")))
-			.andExpect(jsonPath("$.canDistribute").value(false)); // every part is with a supplier
+			.andExpect(jsonPath("$.canDistribute").value(true)); // any part may still go to more suppliers (2026-11-22)
 		call(get("/api/rfqs/{id}", rfqId), ergoRfq, null).andExpect(jsonPath("$.status").value("SENT_TO_SUPPLIERS"));
 		call(get("/api/rfqs/{id}", rfqId), buyer, null).andExpect(jsonPath("$.status").value("UNDER_REVIEW"));
 
@@ -156,7 +156,7 @@ class QuoteTests {
 		call(get("/api/quotes/{id}", x1), sellerX, null)
 			.andExpect(jsonPath("$.audience").value("SUPPLIER"))
 			.andExpect(jsonPath("$.part.partNumber").value("PN-Q1"))
-			.andExpect(jsonPath("$.part.processSteps[0].stepName").value("Forging"))
+			.andExpect(jsonPath("$.part.processSteps").doesNotExist()) // no planned route any more (2026-11-22)
 			.andExpect(jsonPath("$.part.customer").doesNotExist())
 			.andExpect(jsonPath("$.part.targetProductionPiecePrice").doesNotExist())
 			.andExpect(content().string(not(containsString("Test CUSTOMER")))) // the customer's name
@@ -164,15 +164,14 @@ class QuoteTests {
 			.andExpect(content().string(not(containsString("99.5")))) // the customer's target price
 			.andExpect(content().string(not(containsString("Rival Forge Ltd")))) // RFQ step sub-supplier
 			.andExpect(content().string(not(containsString("AS-12")))) // RFQ step remark
-			.andExpect(content().string(not(containsString("PN-Q3")))) // a part that is with another supplier
-			.andExpect(jsonPath("$.part.processSteps[0].cycleTimeSeconds").doesNotExist());
+			.andExpect(content().string(not(containsString("PN-Q3")))); // a part that is with another supplier
 
 		call(get("/api/quotes/{id}", quoteOf(sellerY, "PN-Q3")), sellerX, null).andExpect(status().isNotFound());
 		call(get("/api/rfqs"), sellerX, null).andExpect(status().isForbidden()); // never the RFQ module itself
 		call(get("/api/quotes"), users.login(supplierX, "SUPPLIER_NPD"), null).andExpect(status().isForbidden());
 
-		// the same part cannot go to a second supplier, nor a supplier twice, nor a customer or a stranger's part
-		call(post("/api/rfqs/{id}/quotes", rfqId), ergoRfq, TestRfq.distribution(supplierY, List.of(p1)))
+		// a supplier cannot get the same part twice (another supplier can, 2026-11-22), nor can a customer or a stranger's part
+		call(post("/api/rfqs/{id}/quotes", rfqId), ergoRfq, TestRfq.distribution(supplierX, List.of(p1)))
 			.andExpect(status().isUnprocessableContent());
 		call(post("/api/rfqs/{id}/quotes", rfqId), ergoRfq, TestRfq.distribution(customer, List.of(p1)))
 			.andExpect(status().isUnprocessableContent());

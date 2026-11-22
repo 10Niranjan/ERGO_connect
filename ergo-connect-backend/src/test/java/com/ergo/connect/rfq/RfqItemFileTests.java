@@ -7,6 +7,7 @@ import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -90,8 +91,8 @@ class RfqItemFileTests {
 				.andExpect(jsonPath("$.items[1].files", hasSize(0)));
 		}
 		// stored as the customer's files, shared with nobody else
-		assertThat(jdbc.queryForList("SELECT DISTINCT visibility FROM documents d JOIN rfq_item_files f USING (document_id)",
-				String.class)).containsOnly("CUSTOMER");
+		assertThat(jdbc.queryForList("SELECT DISTINCT visibility FROM documents d JOIN rfq_item_files f USING (document_id) WHERE d.linked_record_id = ?",
+				String.class, rfq)).containsOnly("CUSTOMER");
 
 		// another customer does not see the RFQ, its files or their content
 		call(get("/api/rfqs/{id}", rfq), otherBuyer, null).andExpect(status().isNotFound());
@@ -153,25 +154,37 @@ class RfqItemFileTests {
 		upload(buyer, rfq, part, "DRAWING_2D", "b.pdf").andExpect(status().isConflict());
 		call(delete("/api/rfqs/{id}/documents/{d}", rfq, doc), buyer, null).andExpect(status().isConflict());
 		call(get("/api/rfqs/{id}", rfq), buyer, null).andExpect(jsonPath("$.items[0].files[0].canDelete").value(false));
-		// ERGO may still add a file while reviewing
+		// ERGO is the middle man (2026-11-22): it never adds to a customer's part, whatever the status, and never removes its files
+		upload(ergoRfq, rfq, part, "SPECIFICATION", "ergo-attempt.pdf").andExpect(status().isConflict());
 		call(post("/api/rfqs/{id}/start-review", rfq), ergoRfq, null).andExpect(status().isOk());
-		upload(ergoRfq, rfq, part, "SPECIFICATION", "ergo-spec.pdf").andExpect(status().isCreated());
+		upload(ergoRfq, rfq, part, "SPECIFICATION", "ergo-attempt.pdf").andExpect(status().isConflict());
 		upload(buyer, rfq, part, "DRAWING_2D", "b.pdf").andExpect(status().isConflict());
+		call(delete("/api/rfqs/{id}/documents/{d}", rfq, doc), ergoRfq, null).andExpect(status().isConflict());
 
 		call(post("/api/rfqs/{id}/request-clarification", rfq), ergoRfq, "{\"comment\": \"Newer drawing?\"}").andExpect(status().isOk());
+		upload(ergoRfq, rfq, part, "SPECIFICATION", "ergo-attempt.pdf").andExpect(status().isConflict());
 		upload(buyer, rfq, part, "DRAWING_2D", "b.pdf").andExpect(status().isCreated());
+		call(delete("/api/rfqs/{id}/documents/{d}", rfq, doc), ergoRfq, null).andExpect(status().isConflict());
 		call(delete("/api/rfqs/{id}/documents/{d}", rfq, doc), buyer, null).andExpect(status().isNoContent());
 		// the slot link goes with the file
 		assertThat(count("SELECT count(*) FROM rfq_item_files WHERE document_id = ?", doc)).isZero();
-		// a file ERGO puts in a slot is ERGO's until it shares it: the customer neither sees nor can remove it
+		assertThat(count("SELECT count(*) FROM documents WHERE file_name = 'ergo-attempt.pdf'", null)).isZero();
+	}
+
+	@Test
+	void aFileErgoPutsInASlotOfItsOwnDraftIsErgosUntilItSharesIt() throws Exception {
+		long customerId = jdbc.queryForObject("SELECT customer_company_id FROM rfqs WHERE rfq_id = ?", Long.class, rfq);
+		long own = TestRfq.create(mvc, ergoRfq, TestRfq.form(inr, "PN-E").replace("{\"title\"", "{\"customerCompanyId\": %d, \"title\"".formatted(customerId)));
+		long ergoPart = TestRfq.itemIds(mvc, ergoRfq, own).getFirst();
+		upload(ergoRfq, own, ergoPart, "SPECIFICATION", "ergo-own.pdf").andExpect(status().isCreated());
 		long ergoDoc = jdbc.queryForObject("SELECT d.document_id FROM documents d JOIN rfq_item_files f USING (document_id) "
-				+ "WHERE d.file_name = 'ergo-spec.pdf'", Long.class);
+				+ "WHERE d.file_name = 'ergo-own.pdf'", Long.class);
 		assertThat(jdbc.queryForObject("SELECT visibility FROM documents WHERE document_id = ?", String.class, ergoDoc))
 			.isEqualTo("INTERNAL");
-		call(get("/api/rfqs/{id}", rfq), buyer, null).andExpect(jsonPath("$.items[0].files[*].fileName", org.hamcrest.Matchers.not(hasItem("ergo-spec.pdf"))));
-		call(get("/api/rfqs/{id}", rfq), ergoRfq, null).andExpect(jsonPath("$.items[0].files[*].fileName", hasItem("ergo-spec.pdf")));
-		call(delete("/api/rfqs/{id}/documents/{d}", rfq, ergoDoc), buyer, null).andExpect(status().isNotFound());
-		call(get("/api/rfqs/{id}/documents/{d}/content", rfq, ergoDoc), buyer, null).andExpect(status().isNotFound());
+		call(get("/api/rfqs/{id}", own), buyer, null).andExpect(jsonPath("$.items[0].files[*].fileName", org.hamcrest.Matchers.not(hasItem("ergo-own.pdf"))));
+		call(get("/api/rfqs/{id}", own), ergoRfq, null).andExpect(jsonPath("$.items[0].files[*].fileName", hasItem("ergo-own.pdf")));
+		call(delete("/api/rfqs/{id}/documents/{d}", own, ergoDoc), buyer, null).andExpect(status().isNotFound());
+		call(get("/api/rfqs/{id}/documents/{d}/content", own, ergoDoc), buyer, null).andExpect(status().isNotFound());
 	}
 
 	@Test
@@ -195,6 +208,22 @@ class RfqItemFileTests {
 				"{\"visibility\": \"ALL\", \"itemIds\": [%d]}".formatted(second)).andExpect(status().isOk());
 		call(put("/api/rfqs/{id}/documents/{d}/visibility", rfq, doc), buyer,
 				"{\"visibility\": \"ALL\", \"itemIds\": [%d]}".formatted(second)).andExpect(status().isForbidden());
+	}
+
+	@Test
+	void ergoCannotReplaceOrEditACustomersFileThroughTheDocumentLibrary() throws Exception {
+		long doc = JsonPath.<Number>read(upload(buyer, rfq, part, "DRAWING_2D", "cust.pdf").andExpect(status().isCreated())
+			.andReturn().getResponse().getContentAsString(), "$[0].id").longValue();
+		call(post("/api/rfqs/{id}/submit", rfq), buyer, "{}").andExpect(status().isOk());
+		call(post("/api/rfqs/{id}/start-review", rfq), ergoRfq, null).andExpect(status().isOk());
+		for (Login who : List.of(ergoRfq, users.login(users.company("ERGO"), "ERGO_ADMIN"))) {
+			mvc.perform(multipart("/api/documents/{id}/replace", doc)
+				.file(new MockMultipartFile("file", "ergo-v2.pdf", "application/pdf", "v2".getBytes(StandardCharsets.UTF_8)))
+				.header(HttpHeaders.AUTHORIZATION, who.bearer())).andExpect(status().isConflict());
+		}
+		call(get("/api/rfqs/{id}", rfq), buyer, null).andExpect(jsonPath("$.items[0].files", hasSize(1)))
+			.andExpect(jsonPath("$.items[0].files[0].fileName").value("cust.pdf"));
+		assertThat(count("SELECT count(*) FROM documents WHERE file_name = 'ergo-v2.pdf'", null)).isZero();
 	}
 
 	@Test

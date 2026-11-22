@@ -90,7 +90,7 @@ export interface TargetsView {
   moq: number | null
 }
 
-/** One part (item) of an RFQ with its technical data, targets and process flow. */
+/** One part (item) of an RFQ, as the customer entered it. ERGO and the RFQ's own customer both get this view. */
 export interface ItemView {
   id: number
   lineNo: number
@@ -105,19 +105,6 @@ export interface ItemView {
   coating: Named | null
   coatingSpec: string | null
   targets: TargetsView
-  processSteps: StepView[]
-  remarks: string | null
-  files: ItemFile[]
-}
-
-/** A part as its own customer sees it: only what the customer entered, plus its files. */
-export interface CustomerItemView {
-  id: number
-  lineNo: number
-  partNumber: string
-  description: string | null
-  eau: number | null
-  targetPrice: number | null
   remarks: string | null
   files: ItemFile[]
 }
@@ -156,7 +143,7 @@ export interface ErgoRfqView extends RfqViewBase {
 export interface CustomerRfqView extends RfqViewBase {
   audience: 'CUSTOMER'
   status: CustomerRfqStatus
-  items: CustomerItemView[]
+  items: ItemView[]
 }
 
 export type RfqView = ErgoRfqView | CustomerRfqView
@@ -199,7 +186,6 @@ export interface ItemForm {
   sampleLeadTimeDays: number | null
   productionLeadTimeDays: number | null
   moq: number | null
-  processSteps: ProcessStep[]
   remarks: string | null
 }
 
@@ -280,8 +266,13 @@ export const rfqApi = api.enhanceEndpoints({ addTagTypes: ['Rfq', 'RfqDocuments'
       query: ({ id, form }) => ({ url: `/rfqs/${id}`, method: 'PUT', body: form }),
       invalidatesTags: ['Rfq'],
     }),
-    updateRfqNotes: build.mutation<RfqView, { id: number; internalNotes: string | null }>({
-      query: ({ id, internalNotes }) => ({ url: `/rfqs/${id}/internal-notes`, method: 'PUT', body: { internalNotes } }),
+    /** ERGO's own settings on the RFQ. `priority` and `paymentTermId` null = unchanged. */
+    updateRfqNotes: build.mutation<RfqView, { id: number; internalNotes?: string | null; priority?: Priority | null; paymentTermId?: number | null }>({
+      query: ({ id, internalNotes, priority, paymentTermId }) => ({
+        url: `/rfqs/${id}/internal-notes`,
+        method: 'PUT',
+        body: { internalNotes: internalNotes ?? null, priority: priority ?? null, paymentTermId: paymentTermId ?? null },
+      }),
       invalidatesTags: ['Rfq'],
     }),
     rfqCommand: build.mutation<RfqView, { id: number; command: RfqCommand; comment?: string }>({
