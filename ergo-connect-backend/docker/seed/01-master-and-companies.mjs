@@ -108,14 +108,22 @@ export async function run() {
     const profile = PROFILES[c.id]
     if (profile) await attempt(`profile ${c.code}`, 'admin', 'PUT', `/companies/${c.id}`, profile)
   }
+  // New companies get automatic numbers (CUS-00001 / SUP-00001), so they are found again by name. Each starts as a
+  // draft, is sent for approval and (when nc.approve) approved by ERGO Management, the only approver.
   for (const nc of NEW_COMPANIES) {
-    if (companies.some((c) => c.code === nc.code)) continue
+    if (companies.some((c) => c.profile.name === nc.profile.name)) continue
     const actor = nc.approve ? 'admin' : 'rfq'
-    const created = await attempt(`company ${nc.code}`, actor, 'POST', '/companies', { code: nc.code, type: nc.type, profile: nc.profile })
-    if (created && nc.approve && created.status === 'PENDING_APPROVAL') await attempt(`approve ${nc.code}`, 'mgmt', 'POST', `/companies/${created.id}/approve`, { comment: 'Vendor audit completed, approved.' })
+    const created = await attempt(`company ${nc.code}`, actor, 'POST', '/companies', { type: nc.type, profile: nc.profile })
+    if (!created) continue
+    const sent = await attempt(`send ${nc.code} for approval`, actor, 'POST', `/companies/${created.id}/send-for-approval`)
+    if (sent && nc.approve) await attempt(`approve ${nc.code}`, 'mgmt', 'POST', `/companies/${created.id}/approve`, { comment: 'Vendor audit completed, approved.' })
   }
   companies = await get('admin', '/companies')
   const cid = Object.fromEntries(companies.map((c) => [c.code, c.id]))
+  for (const nc of NEW_COMPANIES) {
+    const found = companies.find((c) => c.profile.name === nc.profile.name)
+    if (found) cid[nc.code] = found.id
+  }
   log(`  companies: ${companies.length} (${companies.filter((c) => c.status === 'PENDING_APPROVAL').length} pending approval)`)
 
   // users: phone numbers for everyone, plus one buyer / one supplier for the two new companies
@@ -129,7 +137,7 @@ export async function run() {
       const created = await attempt(`user ${nu.email}`, 'admin', 'POST', '/users', { firstName: nu.firstName, lastName: nu.lastName, email: nu.email, mobile: nu.mobile, companyId: cid[nu.company], roles: nu.roles, defaultRole: nu.roles[0] })
       user = created?.user
     }
-    if (user) PERSONA[nu.persona] = { id: user.id, cid: cid[nu.company], ctype: companies.find((c) => c.code === nu.company).type, role: nu.roles[0] }
+    if (user) PERSONA[nu.persona] = { id: user.id, cid: cid[nu.company], ctype: companies.find((c) => c.id === cid[nu.company]).type, role: nu.roles[0] }
   }
   // the key account manager looks after three customers
   await attempt('kam accounts', 'admin', 'PUT', '/users/5/accounts', { customerIds: [cid['ACME-AUTO'], cid['BHARAT-MOTORS'], cid['SAHYADRI-MOTORS']].filter(Boolean) })

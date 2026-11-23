@@ -1,9 +1,11 @@
 package com.ergo.connect.masterdata.access;
 
 /**
- * PENDING_APPROVAL → ACTIVE or REJECTED (ERGO Admin / ERGO Management); REJECTED → PENDING_APPROVAL (resubmitted);
- * ACTIVE ↔ INACTIVE (ERGO Admin). Only ACTIVE companies can have users signing in or new users added.
+ * DRAFT → PENDING_APPROVAL (sent for approval by an ERGO editor once the minimum information is in);
+ * PENDING_APPROVAL → ACTIVE, REJECTED or INFO_REQUESTED (ERGO Management only); INFO_REQUESTED and REJECTED →
+ * PENDING_APPROVAL (sent again); ACTIVE ↔ INACTIVE (ERGO Admin). Only ACTIVE companies can have users signing in or
+ * new users added.
  */
 public enum CompanyStatus {
-	PENDING_APPROVAL, ACTIVE, INACTIVE, REJECTED
+	DRAFT, PENDING_APPROVAL, INFO_REQUESTED, ACTIVE, INACTIVE, REJECTED
 }

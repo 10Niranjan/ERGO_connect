@@ -28,7 +28,7 @@ public class ShadowSessionFilter extends OncePerRequestFilter {
 	 * segment, so a new decision endpoint must use one of these verbs or be added here.
 	 */
 	private static final Set<String> DECISION_VERBS = Set.of("approve", "reject", "decide", "respond", "accept", "agree",
-			"send-back", "return", "pass", "release-with-deviation", "response");
+			"send-back", "return", "pass", "release-with-deviation", "response", "request-info");
 
 	private static String normalise(String uri) {
 		int semi = uri.indexOf(';');

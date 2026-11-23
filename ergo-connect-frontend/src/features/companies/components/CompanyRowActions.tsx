@@ -2,7 +2,7 @@ import { Button } from '@mui/material'
 import { useState } from 'react'
 import { TemporaryPasswordDialog } from '../../admin/components/TemporaryPasswordDialog'
 import { UserDialog } from '../../admin/components/UserDialog'
-import { useResubmitCompanyMutation, useSetCompanyActiveMutation, type Company } from '../companiesApi'
+import { useSendCompanyForApprovalMutation, useSetCompanyActiveMutation, type Company, type ReviewDecision } from '../companiesApi'
 import { CompanyDialog } from './CompanyDialog'
 import { ReviewDialog } from './ReviewDialog'
 import { useConfirm } from '@/components/ui/useConfirm'
@@ -18,11 +18,11 @@ interface Props {
  * Suppliers page, so both offer exactly the same actions.
  */
 export function CompanyRowActions({ company, onError }: Props) {
-  const [resubmit] = useResubmitCompanyMutation()
+  const [sendForApproval] = useSendCompanyForApprovalMutation()
   const [setActive] = useSetCompanyActiveMutation()
   const [editing, setEditing] = useState(false)
   const [addingUser, setAddingUser] = useState(false)
-  const [reviewing, setReviewing] = useState<'approve' | 'reject' | null>(null)
+  const [reviewing, setReviewing] = useState<ReviewDecision | null>(null)
   const [issued, setIssued] = useState<{ email: string; password: string } | null>(null)
   const [confirm, confirmDialog] = useConfirm()
   const can = (action: Company['actions'][number]) => company.actions.includes(action)
@@ -40,6 +40,11 @@ export function CompanyRowActions({ company, onError }: Props) {
           Approve
         </Button>
       )}
+      {can('REQUEST_INFO') && (
+        <Button size="small" onClick={() => setReviewing('request-info')}>
+          Ask for info
+        </Button>
+      )}
       {can('REJECT') && (
         <Button size="small" color="error" onClick={() => setReviewing('reject')}>
           Reject
@@ -55,9 +60,13 @@ export function CompanyRowActions({ company, onError }: Props) {
           Add user
         </Button>
       )}
-      {can('RESUBMIT') && (
-        <Button size="small" onClick={() => void run(() => resubmit(company.id).unwrap(), `Send ${company.profile.name} for approval again?`)}>
-          Resubmit
+      {can('SEND_FOR_APPROVAL') && (
+        <Button
+          size="small"
+          variant="outlined"
+          onClick={() => void run(() => sendForApproval(company.id).unwrap(), `Send ${company.profile.name} to ERGO Management for approval?`)}
+        >
+          Send for approval
         </Button>
       )}
       {can('DEACTIVATE') && (

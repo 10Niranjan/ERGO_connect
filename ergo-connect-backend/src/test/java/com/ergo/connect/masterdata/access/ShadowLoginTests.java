@@ -335,7 +335,7 @@ class ShadowLoginTests {
 		String shadow = Accounts.bearer(start(target.id));
 		for (String path : List.of("/api/deviations/1/approve", "/api/deviations/1/approve/", "/api/deviations/1/APPROVE",
 				"/api/customer-quotes/1/respond", "/api/npd/approvals/1/decide",
-				"/api/inspections/1/pass", "/api/documents/1/reject", "/api/quotes/1/accept")) {
+				"/api/inspections/1/pass", "/api/documents/1/reject", "/api/quotes/1/accept", "/api/companies/1/request-info")) {
 			mvc.perform(json(post(java.net.URI.create(path)), "{}", shadow)).andExpect(status().isForbidden())
 				.andExpect(content().string(org.hamcrest.Matchers.containsString("approval")));
 		}

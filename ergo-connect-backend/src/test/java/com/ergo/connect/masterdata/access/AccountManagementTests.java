@@ -139,11 +139,15 @@ class AccountManagementTests {
 	@Test
 	void noAccountsInACompanyThatIsNotApproved() throws Exception {
 		long pending = JsonPath.<Number>read(mvc.perform(json(post("/api/companies"),
-				"{\"code\": \"PEND-%d\", \"type\": \"SUPPLIER\", \"profile\": {\"name\": \"Pending Co\"}}"
-					.formatted(SEQ.incrementAndGet()), asRfq))
+				"""
+						{"type": "SUPPLIER", "profile": {"name": "Pending Co %d", "addressLine1": "Plot 1", "city": "Pune",
+						 "country": "India", "taxId": "29ABCDE1234F1Z5", "primaryContactName": "A Rao",
+						 "primaryContactEmail": "a@example.dev"}}""".formatted(SEQ.incrementAndGet()), asRfq))
 			.andReturn()
 			.getResponse()
 			.getContentAsString(), "$.id").longValue();
+		mvc.perform(post("/api/companies/{id}/send-for-approval", pending).header(HttpHeaders.AUTHORIZATION, asRfq))
+			.andExpect(status().isOk());
 
 		for (String token : new String[] { asAdmin, asRfq }) {
 			mvc.perform(json(post("/api/users"), body(pending, "SUPPLIER_RFQ"), token))

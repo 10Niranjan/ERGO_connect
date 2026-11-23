@@ -19,15 +19,18 @@ import { useState } from 'react'
 import { useAppSelector } from '../../../app/store'
 import { COMPANY_CREATORS } from '@/features/auth/utils/access'
 import { problemMessage } from '../../../shared/problem'
-import { STATUS_COLORS, STATUS_LABELS, useCompaniesQuery, type CompanyStatus } from '../companiesApi'
+import { useCompaniesQuery, type CompanyStatus } from '../companiesApi'
 import { CompanyDialog } from '../components/CompanyDialog'
 import { CompanyRowActions } from '../components/CompanyRowActions'
+import { CompanyStatusCell } from '../components/CompanyStatusCell'
 
 // The approved supplier list is the ACTIVE tab: a supplier appears there only after it has been approved. Every other
 // tab is the approval queue and its history. Rows and buttons come from the backend, already limited to the caller.
 const TABS: { status: CompanyStatus; label: string; empty: string }[] = [
   { status: 'ACTIVE', label: 'Approved suppliers', empty: 'No approved suppliers yet.' },
+  { status: 'DRAFT', label: 'Drafts', empty: 'No supplier drafts.' },
   { status: 'PENDING_APPROVAL', label: 'Pending approval', empty: 'No suppliers are waiting for approval.' },
+  { status: 'INFO_REQUESTED', label: 'Sent back', empty: 'No suppliers were sent back for more information.' },
   { status: 'REJECTED', label: 'Rejected', empty: 'No rejected suppliers.' },
   { status: 'INACTIVE', label: 'Inactive', empty: 'No inactive suppliers.' },
 ]
@@ -91,7 +94,7 @@ export function SuppliersPage() {
                 <TableCell>{supplier.profile.city ?? '—'}</TableCell>
                 <TableCell>{supplier.profile.primaryContactName ?? '—'}</TableCell>
                 <TableCell>
-                  <Chip size="small" color={STATUS_COLORS[supplier.status]} label={STATUS_LABELS[supplier.status]} />
+                  <CompanyStatusCell company={supplier} />
                 </TableCell>
                 <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                   <CompanyRowActions company={supplier} onError={setActionError} />

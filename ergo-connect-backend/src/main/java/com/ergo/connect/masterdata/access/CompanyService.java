@@ -1,10 +1,13 @@
 package com.ergo.connect.masterdata.access;
 
 import static com.ergo.connect.masterdata.access.CompanyStatus.ACTIVE;
+import static com.ergo.connect.masterdata.access.CompanyStatus.DRAFT;
 import static com.ergo.connect.masterdata.access.CompanyStatus.INACTIVE;
+import static com.ergo.connect.masterdata.access.CompanyStatus.INFO_REQUESTED;
 import static com.ergo.connect.masterdata.access.CompanyStatus.PENDING_APPROVAL;
 import static com.ergo.connect.masterdata.access.CompanyStatus.REJECTED;
 
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Objects;
@@ -26,17 +29,26 @@ import com.ergo.connect.masterdata.access.CompanyDtos.CompanyAction;
 import com.ergo.connect.masterdata.access.CompanyDtos.CompanyProfile;
 import com.ergo.connect.masterdata.access.CompanyDtos.CompanyRequest;
 import com.ergo.connect.masterdata.access.CompanyDtos.CompanyResponse;
+import com.ergo.connect.masterdata.access.CompanyDtos.CompanyView;
+import com.ergo.connect.masterdata.access.CompanyDtos.ErgoCompanyResponse;
 
 /**
- * Customer and supplier management (SRS §10.2, §10.3) with the client's decisions (ARCHITECTURE.md §8): customers
- * added by ERGO RFQ or ERGO KAM and every supplier wait for ERGO Management / ERGO Admin approval (a supplier an
- * Admin added: Management only), a supplier is "approved" (ACTIVE) only after that, ERGO KAMs see only their assigned
- * customers, and customers and suppliers maintain their own profile. Every rule below is used both to enforce an
- * action and to list it in {@link CompanyResponse#actions()}, so the UI can never offer what the server refuses.
+ * Customer and supplier management (SRS §10.2, §10.3) with the client's registration decisions (ARCHITECTURE.md §8,
+ * 2026-11-23): every new company starts as a DRAFT that an ERGO editor sends for approval once the minimum
+ * information is in; ERGO Management alone approves, rejects or asks for more information; ERGO KAMs see only their
+ * assigned customers, and customers and suppliers maintain their own basic profile. Every rule below is used both to
+ * enforce an action and to list it in the response's {@code actions}, so the UI can never offer what the server
+ * refuses.
  */
 @Service
 @Transactional
 public class CompanyService {
+
+	/** Statuses ERGO Quality works with: a company still being registered or reviewed is not one (client 2026-10-21). */
+	private static final Set<CompanyStatus> QUALITY_VISIBLE = EnumSet.of(ACTIVE, INACTIVE);
+
+	/** A registration can be sent for approval from these. */
+	private static final Set<CompanyStatus> SENDABLE = EnumSet.of(DRAFT, INFO_REQUESTED, REJECTED);
 
 	private final CompanyRepository companies;
 
@@ -58,7 +70,7 @@ public class CompanyService {
 	 * scope already allows; the approved supplier list is {@code type=SUPPLIER&status=ACTIVE}.
 	 */
 	@Transactional(readOnly = true)
-	public List<CompanyResponse> list(CompanyType type, CompanyStatus status) {
+	public List<CompanyView> list(CompanyType type, CompanyStatus status) {
 		CurrentUser me = CurrentUser.get();
 		List<Company> visible = switch (me.role()) {
 			// ERGO_QUALITY also creates/tags inspections directly against customers/suppliers with no backing
@@ -68,10 +80,10 @@ public class CompanyService {
 			// role here. ERGO_NPD/ERGO_OFP are left as they were (List.of()): unlike Quality, neither module lets
 			// its own ERGO role freely tag an arbitrary company onto a record - flagged, not silently widened too.
 			case ERGO_ADMIN, ERGO_MANAGEMENT, ERGO_RFQ -> companies.findAllByOrderByNameAsc();
-			// Quality only picks companies it can work with: a pending or rejected company is not one (client 2026-10-21)
+			// Quality only picks companies it can work with (client 2026-10-21)
 			case ERGO_QUALITY -> companies.findAllByOrderByNameAsc()
 				.stream()
-				.filter(c -> c.status != PENDING_APPROVAL && c.status != REJECTED)
+				.filter(c -> QUALITY_VISIBLE.contains(c.status))
 				.toList();
 			case ERGO_KAM -> companies.findByIdInOrderByNameAsc(accounts(me));
 			// SRS "RV": the companies on their own NPD / OFP records
@@ -81,14 +93,14 @@ public class CompanyService {
 		return visible.stream()
 			.filter(company -> type == null || company.type == type)
 			.filter(company -> status == null || company.status == status)
-			.map(company -> toResponse(company, me))
+			.map(company -> toView(company, me))
 			.toList();
 	}
 
 	@Transactional(readOnly = true)
-	public CompanyResponse get(long id) {
+	public CompanyView get(long id) {
 		CurrentUser me = CurrentUser.get();
-		return toResponse(visible(me, id), me);
+		return toView(visible(me, id), me);
 	}
 
 	/** Non-throwing record-scope probe for other modules (notification delivery runs it as the recipient). */
@@ -104,11 +116,10 @@ public class CompanyService {
 	}
 
 	/**
-	 * Every supplier waits for approval, whoever adds it (client decision 2026-10-21); one added by an ERGO Admin can
-	 * be approved by ERGO Management only. A customer is active at once when ERGO Admin adds it, and pending when ERGO
-	 * RFQ or ERGO KAM does.
+	 * Every new company starts as a DRAFT, whoever adds it (client question 10: also a customer the ERGO Admin adds),
+	 * and gets the next automatic number (question 27). Nobody is notified until it is sent for approval.
 	 */
-	public CompanyResponse create(CompanyRequest request) {
+	public CompanyView create(CompanyRequest request) {
 		CurrentUser me = CurrentUser.get();
 		if (request.type() == CompanyType.ERGO) {
 			throw ApiException.unprocessable("The ERGO company is created at system setup and cannot be added here");
@@ -116,63 +127,79 @@ public class CompanyService {
 		if (me.role() == Role.ERGO_KAM && request.type() != CompanyType.CUSTOMER) {
 			throw ApiException.forbidden("Key Account Managers can add customers only");
 		}
-		if (companies.existsByCodeIgnoreCase(request.code())) {
-			throw ApiException.conflict("A company with this code already exists");
-		}
 		Company company = new Company();
-		company.code = request.code();
+		company.code = nextCode(request.type());
 		company.type = request.type();
-		boolean adminAddedCustomer = me.role() == Role.ERGO_ADMIN && request.type() == CompanyType.CUSTOMER;
-		company.status = adminAddedCustomer ? ACTIVE : PENDING_APPROVAL;
+		company.status = DRAFT;
 		company.createdByUserId = me.userId();
 		apply(company, request.profile(), me);
 		companies.save(company);
-		if (company.status == PENDING_APPROVAL) {
-			notifyReviewers(company);
-		}
 		if (me.role() == Role.ERGO_KAM) { // otherwise the KAM could not see what they just added
 			User kam = users.findById(me.userId()).orElseThrow();
 			kam.accountIds.add(company.id);
 			audit.record(User.class, kam.id, "ACCOUNT_ASSIGNED", "accounts", null, String.valueOf(company.id));
 		}
-		return toResponse(company, me);
+		return toView(company, me);
 	}
 
-	public CompanyResponse update(long id, CompanyProfile profile) {
+	public CompanyView update(long id, CompanyProfile profile) {
 		CurrentUser me = CurrentUser.get();
 		Company company = visible(me, id);
 		if (!canEdit(me, company)) {
 			throw ApiException.forbidden("You cannot edit this company");
 		}
+		// Management decides on exactly what was sent: no changes while it waits (security review L1)
+		if (company.status == PENDING_APPROVAL) {
+			throw ApiException.conflict("The company is waiting for ERGO Management's decision and cannot be changed now");
+		}
 		apply(company, profile, me);
-		return toResponse(company, me);
+		return toView(company, me);
 	}
 
-	public CompanyResponse approve(long id, String comment) {
+	/**
+	 * A draft, a company sent back for more information or a rejected one goes (again) to ERGO Management, once the
+	 * minimum information is filled in (client questions 15 and 16).
+	 */
+	public CompanyView sendForApproval(long id) {
+		CurrentUser me = CurrentUser.get();
+		Company company = visible(me, id);
+		if (!SENDABLE.contains(company.status) || !canSend(me, company)) {
+			throw ApiException.conflict(
+					"Only a draft, a company sent back for more information or a rejected one can be sent for approval, "
+							+ "by someone in ERGO who can edit it");
+		}
+		List<String> missing = missing(company);
+		if (!missing.isEmpty()) {
+			throw ApiException.unprocessable("Fill in before sending for approval: " + String.join(", ", missing));
+		}
+		company.status = PENDING_APPROVAL;
+		company.submittedByUserId = me.userId();
+		notifier.send(NotificationKind.COMPANY_APPROVAL_REQUESTED, "company", company.id, company.name,
+				company.type.name().toLowerCase(), Recipients.ergo(Role.ERGO_MANAGEMENT));
+		return toView(company, me);
+	}
+
+	public CompanyView approve(long id, String comment) {
 		return review(id, comment, ACTIVE);
 	}
 
-	public CompanyResponse reject(long id, String comment) {
+	public CompanyView reject(long id, String comment) {
 		if (comment == null || comment.isBlank()) {
 			throw ApiException.unprocessable("A comment is required to reject a company");
 		}
 		return review(id, comment, REJECTED);
 	}
 
-	/** After fixing what the reviewer rejected, an ERGO editor sends the company back for approval. */
-	public CompanyResponse resubmit(long id) {
-		CurrentUser me = CurrentUser.get();
-		Company company = visible(me, id);
-		if (!canResubmit(me, company)) {
-			throw ApiException.conflict("Only rejected companies can be resubmitted, by someone who can edit them");
+	/** Management sends the company back to the person who registered it with a question (client question 13). */
+	public CompanyView requestInfo(long id, String comment) {
+		if (comment == null || comment.isBlank()) {
+			throw ApiException.unprocessable("Write what information is needed");
 		}
-		company.status = PENDING_APPROVAL;
-		notifyReviewers(company);
-		return toResponse(company, me);
+		return review(id, comment, INFO_REQUESTED);
 	}
 
 	/** ERGO Admin only (enforced on the controller). Users of an inactive company can no longer sign in. */
-	public CompanyResponse setActive(long id, boolean active) {
+	public CompanyView setActive(long id, boolean active) {
 		CurrentUser me = CurrentUser.get();
 		Company company = visible(me, id);
 		if (company.type == CompanyType.ERGO) {
@@ -183,37 +210,70 @@ public class CompanyService {
 					: "Only active companies can be deactivated");
 		}
 		company.status = active ? ACTIVE : INACTIVE;
-		return toResponse(company, me);
+		return toView(company, me);
 	}
 
-	private CompanyResponse review(long id, String comment, CompanyStatus outcome) {
+	private CompanyView review(long id, String comment, CompanyStatus outcome) {
 		CurrentUser me = CurrentUser.get();
 		Company company = visible(me, id);
 		if (company.status != PENDING_APPROVAL) {
-			throw ApiException.conflict("Only companies pending approval can be approved or rejected");
+			throw ApiException.conflict("Only companies pending approval can be reviewed");
 		}
 		if (!canReview(me, company)) {
-			throw ApiException.unprocessable(company.type == CompanyType.SUPPLIER
-					? "Suppliers are approved or rejected by ERGO Management only"
-					: "You cannot approve or reject a company you added yourself");
+			throw ApiException.unprocessable("You cannot review a company you registered or sent for approval yourself");
 		}
-		if (comment != null && !comment.isBlank()) {
-			audit.reason(comment.trim()); // stored with the status change: approver, time, old + new status, comment
+		String trimmed = comment == null || comment.isBlank() ? null : comment.trim();
+		if (trimmed != null) {
+			audit.reason(trimmed); // stored with the status change: approver, time, old + new status, comment
 		}
 		company.status = outcome;
+		company.reviewComment = trimmed;
 		if (company.createdByUserId != null) {
-			notifier.send(NotificationKind.COMPANY_APPROVAL_DECIDED, "company", company.id, company.name,
-					outcome == ACTIVE ? "approved" : "rejected", Recipients.users(Set.of(company.createdByUserId)));
+			String decision = switch (outcome) {
+				case ACTIVE -> "approved";
+				case REJECTED -> "rejected";
+				default -> "sent back for more information";
+			};
+			notifier.send(NotificationKind.COMPANY_APPROVAL_DECIDED, "company", company.id, company.name, decision,
+					Recipients.users(Set.of(company.createdByUserId)));
 		}
-		return toResponse(company, me);
+		return toView(company, me);
 	}
 
-	/** The people who can review hear that a company awaits it: Management for a supplier, Admin too for a customer. */
-	private void notifyReviewers(Company company) {
-		Recipients to = company.type == CompanyType.SUPPLIER ? Recipients.ergo(Role.ERGO_MANAGEMENT)
-				: Recipients.ergo(Role.ERGO_MANAGEMENT, Role.ERGO_ADMIN);
-		notifier.send(NotificationKind.COMPANY_APPROVAL_REQUESTED, "company", company.id, company.name,
-				company.type.name().toLowerCase(), to);
+	/**
+	 * The minimum information agreed with the client (question 15) that a company still lacks. Business type, a
+	 * supplier's processes and its audit report join this list with the registration tabs (steps 2 and 3).
+	 */
+	static List<String> missing(Company c) {
+		List<String> missing = new ArrayList<>();
+		if (blank(c.country)) {
+			missing.add("country");
+		}
+		if (blank(c.addressLine1) || blank(c.city)) {
+			missing.add("address");
+		}
+		if (blank(c.taxId)) {
+			missing.add("registration or tax number");
+		}
+		if (blank(c.primaryContactName) || blank(c.primaryContactEmail)) {
+			missing.add("main contact name and email");
+		}
+		return missing;
+	}
+
+	private static boolean blank(String value) {
+		return value == null || value.isBlank();
+	}
+
+	/** CUS-00001 / SUP-00001; skips a number some older company already uses as its typed-in code. */
+	private String nextCode(CompanyType type) {
+		String code;
+		do {
+			code = type == CompanyType.CUSTOMER ? "CUS-%05d".formatted(companies.nextCustomerNumber())
+					: "SUP-%05d".formatted(companies.nextSupplierNumber());
+		}
+		while (companies.existsByCodeIgnoreCase(code));
+		return code;
 	}
 
 	/** Record scope (SRS §10.2/§10.3 view column): out-of-scope companies do not exist for the caller. */
@@ -225,7 +285,7 @@ public class CompanyService {
 			default -> id == me.companyId();
 		};
 		return (inScope ? companies.findById(id) : Optional.<Company>empty())
-			.filter(c -> me.role() != Role.ERGO_QUALITY || (c.status != PENDING_APPROVAL && c.status != REJECTED))
+			.filter(c -> me.role() != Role.ERGO_QUALITY || QUALITY_VISIBLE.contains(c.status))
 			.orElseThrow(() -> ApiException.notFound("Company"));
 	}
 
@@ -240,24 +300,24 @@ public class CompanyService {
 		};
 	}
 
+	/** Sending for approval: anyone in ERGO who may edit the company (who registers it, client questions 4-6). */
+	private static boolean canSend(CurrentUser me, Company company) {
+		return me.companyType() == CompanyType.ERGO && canEdit(me, company);
+	}
+
 	/**
-	 * Approve / reject: ERGO Management, and ERGO Admin too - except for a supplier an Admin added, which only
-	 * Management may review. Nobody reviews a company they added themselves.
+	 * Approve / reject / ask for more information: ERGO Management alone (client question 11), never by the person who
+	 * registered the company or sent it for approval (one user may hold both ERGO RFQ and ERGO Management).
 	 */
 	private static boolean canReview(CurrentUser me, Company company) {
-		boolean reviewer = me.role() == Role.ERGO_MANAGEMENT
-				|| (me.role() == Role.ERGO_ADMIN && company.type != CompanyType.SUPPLIER);
-		return reviewer && !Objects.equals(company.createdByUserId, me.userId());
+		return me.role() == Role.ERGO_MANAGEMENT && !Objects.equals(company.createdByUserId, me.userId())
+				&& !Objects.equals(company.submittedByUserId, me.userId());
 	}
 
 	/** ERGO Admin adds accounts to any approved company; ERGO RFQ only to an approved supplier. */
 	private static boolean canAddUser(CurrentUser me, Company company) {
 		return company.status == ACTIVE && (me.role() == Role.ERGO_ADMIN
 				|| (me.role() == Role.ERGO_RFQ && company.type == CompanyType.SUPPLIER));
-	}
-
-	private static boolean canResubmit(CurrentUser me, Company company) {
-		return company.status == REJECTED && me.companyType() == CompanyType.ERGO && canEdit(me, company);
 	}
 
 	private Set<Long> accounts(CurrentUser me) {
@@ -287,17 +347,19 @@ public class CompanyService {
 		company.primaryContactPhone = profile.primaryContactPhone();
 	}
 
-	private static CompanyResponse toResponse(Company c, CurrentUser me) {
+	/** The audience decides the shape (CLAUDE.md: separate DTOs per audience, chosen by company type, not by role). */
+	private static CompanyView toView(Company c, CurrentUser me) {
 		Set<CompanyAction> actions = EnumSet.noneOf(CompanyAction.class);
-		if (canEdit(me, c)) {
+		if (canEdit(me, c) && c.status != PENDING_APPROVAL) {
 			actions.add(CompanyAction.EDIT);
+		}
+		if (SENDABLE.contains(c.status) && canSend(me, c)) {
+			actions.add(CompanyAction.SEND_FOR_APPROVAL);
 		}
 		if (c.status == PENDING_APPROVAL && canReview(me, c)) {
 			actions.add(CompanyAction.APPROVE);
 			actions.add(CompanyAction.REJECT);
-		}
-		if (canResubmit(me, c)) {
-			actions.add(CompanyAction.RESUBMIT);
+			actions.add(CompanyAction.REQUEST_INFO);
 		}
 		if (canAddUser(me, c)) {
 			actions.add(CompanyAction.ADD_USER);
@@ -313,7 +375,15 @@ public class CompanyService {
 		CompanyProfile profile = new CompanyProfile(c.name, c.addressLine1, c.addressLine2, c.city, c.state, c.country,
 				c.postalCode, c.taxId, c.website, c.primaryContactName, c.primaryContactEmail, c.primaryContactPhone,
 				c.rfqPrefix);
-		return new CompanyResponse(c.id, c.code, c.type, c.status, profile, actions);
+		if (me.companyType() != CompanyType.ERGO) {
+			return new CompanyResponse(c.id, c.code, c.type, c.status, profile, actions);
+		}
+		// Management's comment: always to Management; to the ERGO people who must act on it only while the company is
+		// sent back or rejected (an approval comment can be an internal judgement, security review L2)
+		boolean commentShown = me.role() == Role.ERGO_MANAGEMENT
+				|| ((c.status == INFO_REQUESTED || c.status == REJECTED) && canSend(me, c));
+		return new ErgoCompanyResponse(c.id, c.code, c.type, c.status, profile, actions,
+				commentShown ? c.reviewComment : null, c.type == CompanyType.ERGO ? List.of() : missing(c));
 	}
 
 }

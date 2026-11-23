@@ -11,6 +11,7 @@ import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.matchesPattern;
 import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -93,26 +94,137 @@ class CompanyManagementTests {
 	}
 
 	@Test
-	void additionsByErgoRfqWaitForApprovalWhileAdminAdditionsAreActive() throws Exception {
-		long pending = create(asRfq, "SUPPLIER").andExpect(status().isCreated())
-			.andExpect(jsonPath("$.status").value("PENDING_APPROVAL"))
-			.andExpect(jsonPath("$.actions", contains("EDIT")))
+	void everyNewCompanyStartsAsADraftWithAnAutomaticNumber() throws Exception {
+		long draft = create(asRfq, "SUPPLIER").andExpect(status().isCreated())
+			.andExpect(jsonPath("$.status").value("DRAFT"))
+			.andExpect(jsonPath("$.code").value(matchesPattern("SUP-\\d{5}")))
+			.andExpect(jsonPath("$.actions", containsInAnyOrder("EDIT", "SEND_FOR_APPROVAL")))
 			.andReturn()
 			.getResponse()
 			.getContentAsString()
 			.transform(body -> JsonPath.<Number>read(body, "$.id").longValue());
-		create(asAdmin, "CUSTOMER").andExpect(status().isCreated()).andExpect(jsonPath("$.status").value("ACTIVE"));
+		// also a customer the ERGO Admin adds (client question 10); a typed-in code is ignored
+		long byAdmin = idOf(mvc.perform(json(post("/api/companies"), """
+				{"code": "MY-OWN", "type": "CUSTOMER", "profile": {"name": "Admin customer"}}""", asAdmin))
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.status").value("DRAFT"))
+			.andExpect(jsonPath("$.code").value(matchesPattern("CUS-\\d{5}"))));
+		assertThat(recipients("COMPANY_APPROVAL_REQUESTED", draft)).isEmpty(); // nobody is told about a draft
+		assertThat(recipients("COMPANY_APPROVAL_REQUESTED", byAdmin)).isEmpty();
 
 		// no users for a company nobody has approved yet
 		mvc.perform(json(post("/api/users"), """
 				{"companyId": %d, "firstName": "Too", "lastName": "Early", "email": "too.early%d@test.dev",
-				 "roles": ["SUPPLIER_RFQ"]}""".formatted(pending, SEQ.incrementAndGet()), asAdmin))
+				 "roles": ["SUPPLIER_RFQ"]}""".formatted(draft, SEQ.incrementAndGet()), asAdmin))
 			.andExpect(status().isUnprocessableContent());
 	}
 
 	@Test
+	void automaticNumbersCountUpAndSkipACodeAlreadyInUse() throws Exception {
+		String first = codeOf(create(asRfq, "SUPPLIER"));
+		int n = Integer.parseInt(first.substring(4));
+		jdbc.update("INSERT INTO companies (company_code, company_name, company_type, status) VALUES (?, ?, 'SUPPLIER', 'ACTIVE')",
+				"SUP-%05d".formatted(n + 1), "Typed-in code " + n);
+		assertThat(codeOf(create(asRfq, "SUPPLIER"))).isEqualTo("SUP-%05d".formatted(n + 2));
+	}
+
+	@Test
+	void sendingForApprovalNeedsTheMinimumInformation() throws Exception {
+		long id = idOf(mvc.perform(json(post("/api/companies"), """
+				{"type": "SUPPLIER", "profile": {"name": "Bare supplier"}}""", asRfq)));
+		mvc.perform(get("/api/companies/{id}", id).header(HttpHeaders.AUTHORIZATION, asRfq))
+			.andExpect(jsonPath("$.missing", contains("country", "address", "registration or tax number",
+					"main contact name and email")));
+		mvc.perform(post("/api/companies/{id}/send-for-approval", id).header(HttpHeaders.AUTHORIZATION, asRfq))
+			.andExpect(status().isUnprocessableContent())
+			.andExpect(jsonPath("$.detail").value(containsString("registration or tax number")));
+
+		mvc.perform(json(put("/api/companies/{id}", id), FULL_PROFILE.formatted("Bare supplier"), asRfq))
+			.andExpect(jsonPath("$.missing", empty()));
+		mvc.perform(post("/api/companies/{id}/send-for-approval", id).header(HttpHeaders.AUTHORIZATION, asRfq))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.status").value("PENDING_APPROVAL"))
+			.andExpect(jsonPath("$.actions", not(hasItem("SEND_FOR_APPROVAL"))));
+		// already pending: not again
+		mvc.perform(post("/api/companies/{id}/send-for-approval", id).header(HttpHeaders.AUTHORIZATION, asRfq))
+			.andExpect(status().isConflict());
+	}
+
+	@Test
+	void onlyErgoPeopleWhoMayEditTheCompanySendItForApproval() throws Exception {
+		long supplier = idOf(create(asRfq, "SUPPLIER"));
+		User kam = accounts.user(ergo, Role.ERGO_KAM);
+		String asKam = accounts.bearer(kam);
+		long kamCustomer = idOf(create(asKam, "CUSTOMER"));
+		long otherCustomer = idOf(create(asRfq, "CUSTOMER"));
+
+		for (String token : new String[] { asManagement, accounts.bearer(accounts.user(ergo, Role.ERGO_QUALITY)),
+				accounts.bearer(accounts.user(supplierX, Role.SUPPLIER_RFQ)) }) {
+			mvc.perform(post("/api/companies/{id}/send-for-approval", supplier).header(HttpHeaders.AUTHORIZATION, token))
+				.andExpect(status().isForbidden());
+		}
+		mvc.perform(post("/api/companies/{id}/send-for-approval", otherCustomer).header(HttpHeaders.AUTHORIZATION, asKam))
+			.andExpect(status().isNotFound()); // not one of the KAM's accounts
+		mvc.perform(post("/api/companies/{id}/send-for-approval", kamCustomer).header(HttpHeaders.AUTHORIZATION, asKam))
+			.andExpect(status().isOk());
+		mvc.perform(post("/api/companies/{id}/send-for-approval", supplier).header(HttpHeaders.AUTHORIZATION, asAdmin))
+			.andExpect(status().isOk());
+	}
+
+	@Test
+	void managementCanAskForMoreInformationAndTheCompanyIsSentAgain() throws Exception {
+		User rfq = accounts.user(ergo, Role.ERGO_RFQ);
+		String rfqToken = accounts.bearer(rfq);
+		long id = pending(rfqToken, "SUPPLIER");
+
+		mvc.perform(json(post("/api/companies/{id}/request-info", id), "{\"comment\": \" \"}", asManagement))
+			.andExpect(status().isUnprocessableContent());
+		mvc.perform(json(post("/api/companies/{id}/request-info", id), "{\"comment\": \"Which plant?\"}", asAdmin))
+			.andExpect(status().isForbidden());
+		mvc.perform(get("/api/companies/{id}", id).header(HttpHeaders.AUTHORIZATION, asManagement))
+			.andExpect(jsonPath("$.actions", containsInAnyOrder("APPROVE", "REJECT", "REQUEST_INFO")));
+		mvc.perform(json(post("/api/companies/{id}/request-info", id),
+				"{\"comment\": \"Which plant makes the castings?\"}", asManagement))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.status").value("INFO_REQUESTED"))
+			.andExpect(jsonPath("$.reviewComment").value("Which plant makes the castings?"));
+		mvc.perform(json(post("/api/companies/{id}/approve", id), "{}", asManagement)).andExpect(status().isConflict());
+		mvc.perform(json(post("/api/companies/{id}/request-info", id), "{\"comment\": \"Again\"}", asManagement))
+			.andExpect(status().isConflict());
+		assertThat(jdbc.queryForObject("""
+				SELECT message FROM notifications WHERE event_kind = 'COMPANY_APPROVAL_DECIDED' AND linked_record_id = ?
+				AND recipient_user_id = ?""", String.class, id, rfq.id)).contains("sent back for more information");
+
+		mvc.perform(get("/api/companies/{id}", id).header(HttpHeaders.AUTHORIZATION, rfqToken))
+			.andExpect(jsonPath("$.reviewComment").value("Which plant makes the castings?"))
+			.andExpect(jsonPath("$.actions", hasItem("SEND_FOR_APPROVAL")));
+		mvc.perform(post("/api/companies/{id}/send-for-approval", id).header(HttpHeaders.AUTHORIZATION, rfqToken))
+			.andExpect(jsonPath("$.status").value("PENDING_APPROVAL"));
+		mvc.perform(json(post("/api/companies/{id}/approve", id), "{}", asManagement))
+			.andExpect(jsonPath("$.status").value("ACTIVE"));
+	}
+
+	@Test
+	void aCompanyNeverSeesErgosReviewCommentOrMissingList() throws Exception {
+		long id = pending(asRfq, "CUSTOMER");
+		mvc.perform(json(post("/api/companies/{id}/approve", id),
+				"{\"comment\": \"Credit risk high, watch payments\"}", asManagement))
+			.andExpect(jsonPath("$.reviewComment").value("Credit risk high, watch payments"));
+		String asItsBuyer = accounts.bearer(accounts.user(companies.findById(id).orElseThrow(), Role.CUSTOMER_RFQ));
+
+		for (String url : new String[] { "/api/companies/" + id, "/api/companies" }) {
+			String body = mvc.perform(get(url).header(HttpHeaders.AUTHORIZATION, asItsBuyer))
+				.andExpect(status().isOk())
+				.andReturn()
+				.getResponse()
+				.getContentAsString();
+			assertThat(body).contains("\"id\":" + id).doesNotContain("reviewComment", "Credit risk", "missing");
+		}
+	}
+
+	@Test
 	void approvalStoresApproverRoleOldAndNewStatusAndComment() throws Exception {
-		long id = idOf(create(asRfq, "SUPPLIER"));
+		long id = pending(asRfq, "SUPPLIER");
 
 		mvc.perform(json(post("/api/companies/{id}/approve", id), "{\"comment\": \"Audit passed\"}", asManagement))
 			.andExpect(status().isOk())
@@ -122,7 +234,7 @@ class CompanyManagementTests {
 
 		Map<String, Object> row = jdbc.queryForMap("""
 				SELECT old_value, new_value, action_reason, changed_by_role_code FROM audit_logs
-				WHERE entity_name = 'Company' AND record_id = ? AND field_name = 'status'""", id);
+				WHERE entity_name = 'Company' AND record_id = ? AND field_name = 'status' AND new_value = 'ACTIVE'""", id);
 		assertThat(row).containsEntry("old_value", "PENDING_APPROVAL")
 			.containsEntry("new_value", "ACTIVE")
 			.containsEntry("action_reason", "Audit passed")
@@ -131,16 +243,17 @@ class CompanyManagementTests {
 
 	@Test
 	void rejectionNeedsACommentAndTheCompanyCanBeResubmitted() throws Exception {
-		long id = idOf(create(asRfq, "CUSTOMER"));
+		long id = pending(asRfq, "CUSTOMER");
 
-		mvc.perform(json(post("/api/companies/{id}/reject", id), "{\"comment\": \" \"}", asAdmin))
+		mvc.perform(json(post("/api/companies/{id}/reject", id), "{\"comment\": \" \"}", asManagement))
 			.andExpect(status().isUnprocessableContent());
-		mvc.perform(json(post("/api/companies/{id}/reject", id), "{\"comment\": \"GST number missing\"}", asAdmin))
+		mvc.perform(json(post("/api/companies/{id}/reject", id), "{\"comment\": \"GST number missing\"}", asManagement))
 			.andExpect(jsonPath("$.status").value("REJECTED"))
-			.andExpect(jsonPath("$.actions", hasItem("RESUBMIT"))) // anyone who may edit it can send it back
 			.andExpect(jsonPath("$.actions", not(hasItem("APPROVE"))));
+		mvc.perform(get("/api/companies/{id}", id).header(HttpHeaders.AUTHORIZATION, asAdmin))
+			.andExpect(jsonPath("$.actions", hasItem("SEND_FOR_APPROVAL"))); // anyone in ERGO who may edit it
 
-		mvc.perform(post("/api/companies/{id}/resubmit", id).header(HttpHeaders.AUTHORIZATION, asRfq))
+		mvc.perform(post("/api/companies/{id}/send-for-approval", id).header(HttpHeaders.AUTHORIZATION, asRfq))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.status").value("PENDING_APPROVAL"));
 	}
@@ -149,7 +262,7 @@ class CompanyManagementTests {
 	void nobodyApprovesACompanyTheyAddedThemselves() throws Exception {
 		User both = accounts.user(ergo, Role.ERGO_RFQ, Role.ERGO_MANAGEMENT);
 		MvcResult login = accounts.login(both);
-		long id = idOf(create(bearer(login), "SUPPLIER"));
+		long id = pending(bearer(login), "SUPPLIER");
 		String asManagementToo = "Bearer " + JsonPath.read(mvc
 			.perform(json(post("/api/auth/switch-role"), "{\"role\": \"ERGO_MANAGEMENT\"}", bearer(login)))
 			.andReturn()
@@ -163,11 +276,90 @@ class CompanyManagementTests {
 	}
 
 	@Test
+	void whoeverSentTheCompanyForApprovalCannotReviewItEither() throws Exception {
+		long id = idOf(create(asRfq, "SUPPLIER")); // registered by someone else
+		User both = accounts.user(ergo, Role.ERGO_RFQ, Role.ERGO_MANAGEMENT);
+		MvcResult login = accounts.login(both);
+		mvc.perform(post("/api/companies/{id}/send-for-approval", id).header(HttpHeaders.AUTHORIZATION, bearer(login)))
+			.andExpect(status().isOk());
+		String asManagementToo = "Bearer " + JsonPath.read(mvc
+			.perform(json(post("/api/auth/switch-role"), "{\"role\": \"ERGO_MANAGEMENT\"}", bearer(login)))
+			.andReturn()
+			.getResponse()
+			.getContentAsString(), "$.accessToken");
+
+		mvc.perform(get("/api/companies/{id}", id).header(HttpHeaders.AUTHORIZATION, asManagementToo))
+			.andExpect(jsonPath("$.actions", empty()));
+		for (String decision : new String[] { "approve", "reject", "request-info" }) {
+			mvc.perform(json(post("/api/companies/{id}/" + decision, id), "{\"comment\": \"mine\"}", asManagementToo))
+				.andExpect(status().isUnprocessableContent());
+		}
+		mvc.perform(json(post("/api/companies/{id}/approve", id), "{}", asManagement)).andExpect(status().isOk());
+	}
+
+	@Test
+	void aCompanyCannotBeChangedWhileManagementDecides() throws Exception {
+		long id = pending(asRfq, "CUSTOMER");
+		mvc.perform(get("/api/companies/{id}", id).header(HttpHeaders.AUTHORIZATION, asRfq))
+			.andExpect(jsonPath("$.actions", not(hasItem("EDIT"))));
+		for (String token : new String[] { asRfq, asAdmin }) {
+			mvc.perform(json(put("/api/companies/{id}", id), FULL_PROFILE.formatted("Changed meanwhile"), token))
+				.andExpect(status().isConflict());
+		}
+		mvc.perform(json(post("/api/companies/{id}/request-info", id), "{\"comment\": \"GST?\"}", asManagement))
+			.andExpect(status().isOk());
+		mvc.perform(json(put("/api/companies/{id}", id), FULL_PROFILE.formatted("Corrected"), asRfq))
+			.andExpect(status().isOk()); // sent back: editable again
+	}
+
+	@Test
+	void managementsCommentIsShownOnlyToManagementAndToWhoMustActOnIt() throws Exception {
+		User kam = accounts.user(ergo, Role.ERGO_KAM);
+		String asKam = accounts.bearer(kam);
+		long customer = pending(asKam, "CUSTOMER");
+		String asQuality = accounts.bearer(accounts.user(ergo, Role.ERGO_QUALITY));
+
+		mvc.perform(json(post("/api/companies/{id}/request-info", customer), "{\"comment\": \"Which plant?\"}", asManagement));
+		mvc.perform(get("/api/companies/{id}", customer).header(HttpHeaders.AUTHORIZATION, asKam))
+			.andExpect(jsonPath("$.reviewComment").value("Which plant?"));
+		mvc.perform(post("/api/companies/{id}/send-for-approval", customer).header(HttpHeaders.AUTHORIZATION, asKam));
+		mvc.perform(json(post("/api/companies/{id}/approve", customer), "{\"comment\": \"Credit risk high\"}", asManagement))
+			.andExpect(jsonPath("$.reviewComment").value("Credit risk high"));
+
+		// once approved, the comment is Management's judgement: not for the KAM, Quality or ERGO RFQ
+		for (String token : new String[] { asKam, asQuality, asRfq, asAdmin }) {
+			mvc.perform(get("/api/companies/{id}", customer).header(HttpHeaders.AUTHORIZATION, token))
+				.andExpect(jsonPath("$.reviewComment").doesNotExist());
+		}
+		mvc.perform(get("/api/companies/{id}", customer).header(HttpHeaders.AUTHORIZATION, asManagement))
+			.andExpect(jsonPath("$.reviewComment").value("Credit risk high"));
+	}
+
+	@Test
+	void customersAndSuppliersCannotSendOrReview() throws Exception {
+		long id = pending(asRfq, "SUPPLIER");
+		for (Role role : new Role[] { Role.CUSTOMER_RFQ, Role.CUSTOMER_MANAGEMENT, Role.SUPPLIER_RFQ, Role.SUPPLIER_KAM }) {
+			Company own = role.companyType() == CUSTOMER ? customerA : supplierX;
+			if (role == Role.CUSTOMER_MANAGEMENT) {
+				continue; // inactive in MVP: cannot sign in
+			}
+			String token = accounts.bearer(accounts.user(own, role));
+			for (String decision : new String[] { "approve", "reject", "request-info" }) {
+				mvc.perform(json(post("/api/companies/{id}/" + decision, id), "{\"comment\": \"x\"}", token))
+					.andExpect(status().isForbidden());
+			}
+			mvc.perform(post("/api/companies/{id}/send-for-approval", own.id).header(HttpHeaders.AUTHORIZATION, token))
+				.andExpect(status().isForbidden());
+		}
+	}
+
+	@Test
 	void onlyReviewersApproveAndOnlyErgoAdminDeactivates() throws Exception {
-		long id = idOf(create(asRfq, "SUPPLIER"));
+		long id = pending(asRfq, "SUPPLIER");
 		String asCustomerKam = accounts.bearer(accounts.user(customerA, Role.CUSTOMER_KAM));
 
 		mvc.perform(json(post("/api/companies/{id}/approve", id), "{}", asRfq)).andExpect(status().isForbidden());
+		mvc.perform(json(post("/api/companies/{id}/approve", id), "{}", asAdmin)).andExpect(status().isForbidden());
 		mvc.perform(json(post("/api/companies/{id}/approve", id), "{}", asCustomerKam))
 			.andExpect(status().isForbidden());
 
@@ -210,7 +402,8 @@ class CompanyManagementTests {
 
 		mvc.perform(get("/api/companies").header(HttpHeaders.AUTHORIZATION, asCustomerRfq))
 			.andExpect(jsonPath("$[*].id", contains(customerA.id.intValue())))
-			.andExpect(jsonPath("$[0].actions", contains("EDIT")));
+			.andExpect(jsonPath("$[0].actions", contains("EDIT")))
+			.andExpect(jsonPath("$[0].missing").doesNotExist());
 		mvc.perform(json(put("/api/companies/{id}", customerA.id), profile("Acme by its buyer"), asCustomerRfq))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.profile.name").value("Acme by its buyer"))
@@ -261,25 +454,24 @@ class CompanyManagementTests {
 	}
 
 	@Test
-	void everySupplierIsApprovedByErgoManagementAlone() throws Exception {
-		long byAdmin = idOf(create(asAdmin, "SUPPLIER"));
-		long byRfq = idOf(create(asRfq, "SUPPLIER"));
+	void everyCompanyIsApprovedByErgoManagementAlone() throws Exception {
 		String otherAdmin = accounts.bearer(accounts.user(ergo, Role.ERGO_ADMIN));
+		long[] ids = { pending(asAdmin, "SUPPLIER"), pending(asRfq, "SUPPLIER"), pending(asAdmin, "CUSTOMER"),
+				pending(asRfq, "CUSTOMER") };
 
-		for (long id : new long[] { byAdmin, byRfq }) {
+		for (long id : ids) {
 			mvc.perform(get("/api/companies/{id}", id).header(HttpHeaders.AUTHORIZATION, asAdmin))
 				.andExpect(jsonPath("$.status").value("PENDING_APPROVAL"));
-			// no Admin (not the author, not another one) and not ERGO RFQ may decide on a supplier
-			for (String token : new String[] { asAdmin, otherAdmin }) {
+			// no Admin (not the author, not another one) and not ERGO RFQ may decide (client question 11)
+			for (String token : new String[] { asAdmin, otherAdmin, asRfq }) {
 				mvc.perform(get("/api/companies/{id}", id).header(HttpHeaders.AUTHORIZATION, token))
 					.andExpect(jsonPath("$.actions", not(hasItem("APPROVE"))))
-					.andExpect(jsonPath("$.actions", not(hasItem("REJECT"))));
-				mvc.perform(json(post("/api/companies/{id}/approve", id), "{}", token))
-					.andExpect(status().isUnprocessableContent());
+					.andExpect(jsonPath("$.actions", not(hasItem("REJECT"))))
+					.andExpect(jsonPath("$.actions", not(hasItem("REQUEST_INFO"))));
+				mvc.perform(json(post("/api/companies/{id}/approve", id), "{}", token)).andExpect(status().isForbidden());
 				mvc.perform(json(post("/api/companies/{id}/reject", id), "{\"comment\": \"no\"}", token))
-					.andExpect(status().isUnprocessableContent());
+					.andExpect(status().isForbidden());
 			}
-			mvc.perform(json(post("/api/companies/{id}/approve", id), "{}", asRfq)).andExpect(status().isForbidden());
 			mvc.perform(get("/api/companies/{id}", id).header(HttpHeaders.AUTHORIZATION, asManagement))
 				.andExpect(jsonPath("$.actions", hasItem("APPROVE")));
 			mvc.perform(json(post("/api/companies/{id}/approve", id), "{}", asManagement))
@@ -289,21 +481,24 @@ class CompanyManagementTests {
 	}
 
 	@Test
-	void aCustomerAddedByRfqCanStillBeApprovedByAdminOrManagement() throws Exception {
-		long byRfq = idOf(create(asRfq, "CUSTOMER"));
-		String otherAdmin = accounts.bearer(accounts.user(ergo, Role.ERGO_ADMIN));
-		mvc.perform(json(post("/api/companies/{id}/approve", byRfq), "{}", otherAdmin))
-			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.status").value("ACTIVE"));
+	void aDraftCannotBeReviewed() throws Exception {
+		long id = idOf(create(asRfq, "CUSTOMER"));
+		mvc.perform(json(post("/api/companies/{id}/approve", id), "{}", asManagement)).andExpect(status().isConflict());
+		mvc.perform(json(post("/api/companies/{id}/reject", id), "{\"comment\": \"no\"}", asManagement))
+			.andExpect(status().isConflict());
+		mvc.perform(json(post("/api/companies/{id}/request-info", id), "{\"comment\": \"no\"}", asManagement))
+			.andExpect(status().isConflict());
+		mvc.perform(get("/api/companies/{id}", id).header(HttpHeaders.AUTHORIZATION, asManagement))
+			.andExpect(jsonPath("$.actions", empty()));
 	}
 
 	@Test
 	void aRejectedSupplierIsResubmittedAndStaysOffTheApprovedListUntilManagementApproves() throws Exception {
-		long id = idOf(create(asAdmin, "SUPPLIER"));
+		long id = pending(asAdmin, "SUPPLIER");
 		mvc.perform(json(post("/api/companies/{id}/reject", id), "{\"comment\": \"Certificates missing\"}",
 				asManagement))
 			.andExpect(jsonPath("$.status").value("REJECTED"));
-		mvc.perform(post("/api/companies/{id}/resubmit", id).header(HttpHeaders.AUTHORIZATION, asAdmin))
+		mvc.perform(post("/api/companies/{id}/send-for-approval", id).header(HttpHeaders.AUTHORIZATION, asAdmin))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.status").value("PENDING_APPROVAL"));
 
@@ -314,8 +509,8 @@ class CompanyManagementTests {
 
 	@Test
 	void theCompanyListCanBeNarrowedToApprovedSuppliers() throws Exception {
-		long pending = idOf(create(asRfq, "SUPPLIER"));
-		long rejected = idOf(create(asRfq, "SUPPLIER"));
+		long pending = pending(asRfq, "SUPPLIER");
+		long rejected = pending(asRfq, "SUPPLIER");
 		mvc.perform(json(post("/api/companies/{id}/reject", rejected), "{\"comment\": \"No\"}", asManagement));
 
 		approvedSuppliers(asRfq).andExpect(jsonPath("$[*].id", hasItem(supplierX.id.intValue())))
@@ -355,12 +550,12 @@ class CompanyManagementTests {
 		User management = accounts.user(ergo, Role.ERGO_MANAGEMENT);
 		String rfqToken = accounts.bearer(rfq);
 
-		long viaRfq = idOf(create(rfqToken, "SUPPLIER"));
-		// a supplier is reviewed by Management alone: Admin is not told
+		// Management alone reviews, so only Management is told, for suppliers and customers (client question 31)
+		long viaRfq = pending(rfqToken, "SUPPLIER");
 		assertThat(recipients("COMPANY_APPROVAL_REQUESTED", viaRfq)).contains(management.id).doesNotContain(admin.id, rfq.id);
-
-		long customerViaRfq = idOf(create(rfqToken, "CUSTOMER")); // a customer can be reviewed by Admin too
-		assertThat(recipients("COMPANY_APPROVAL_REQUESTED", customerViaRfq)).contains(management.id, admin.id);
+		long customerViaRfq = pending(rfqToken, "CUSTOMER");
+		assertThat(recipients("COMPANY_APPROVAL_REQUESTED", customerViaRfq)).contains(management.id)
+			.doesNotContain(admin.id, rfq.id);
 
 		mvc.perform(json(post("/api/companies/{id}/reject", viaRfq), "{\"comment\": \"No\"}", accounts.bearer(management)))
 			.andExpect(status().isOk());
@@ -371,20 +566,25 @@ class CompanyManagementTests {
 	}
 
 	@Test
-	void ergoQualityDoesNotSeePendingOrRejectedCompanies() throws Exception {
-		long pending = idOf(create(asRfq, "SUPPLIER"));
-		long rejected = idOf(create(asRfq, "SUPPLIER"));
+	void ergoQualityDoesNotSeeCompaniesStillBeingRegisteredOrReviewed() throws Exception {
+		long draft = idOf(create(asRfq, "SUPPLIER"));
+		long pending = pending(asRfq, "SUPPLIER");
+		long rejected = pending(asRfq, "SUPPLIER");
 		mvc.perform(json(post("/api/companies/{id}/reject", rejected), "{\"comment\": \"No\"}", asManagement));
+		long sentBack = pending(asRfq, "SUPPLIER");
+		mvc.perform(json(post("/api/companies/{id}/request-info", sentBack), "{\"comment\": \"Plant?\"}", asManagement));
 		String asQuality = accounts.bearer(accounts.user(ergo, Role.ERGO_QUALITY));
 
 		mvc.perform(get("/api/companies").header(HttpHeaders.AUTHORIZATION, asQuality))
 			.andExpect(jsonPath("$[*].id", hasItem(supplierX.id.intValue())))
-			.andExpect(jsonPath("$[*].id", not(hasItem((int) pending))))
-			.andExpect(jsonPath("$[*].id", not(hasItem((int) rejected))));
-		mvc.perform(get("/api/companies/{id}", pending).header(HttpHeaders.AUTHORIZATION, asQuality))
-			.andExpect(status().isNotFound());
-		mvc.perform(get("/api/companies/{id}", rejected).header(HttpHeaders.AUTHORIZATION, asQuality))
-			.andExpect(status().isNotFound());
+			.andExpect(jsonPath("$[*].status", not(hasItem("DRAFT"))))
+			.andExpect(jsonPath("$[*].status", not(hasItem("PENDING_APPROVAL"))))
+			.andExpect(jsonPath("$[*].status", not(hasItem("REJECTED"))))
+			.andExpect(jsonPath("$[*].status", not(hasItem("INFO_REQUESTED"))));
+		for (long id : new long[] { draft, pending, rejected, sentBack }) {
+			mvc.perform(get("/api/companies/{id}", id).header(HttpHeaders.AUTHORIZATION, asQuality))
+				.andExpect(status().isNotFound());
+		}
 	}
 
 	@Test
@@ -415,7 +615,7 @@ class CompanyManagementTests {
 	void companyNotificationsReachErgoStaffOnly() throws Exception {
 		User supplierUser = accounts.user(supplierX, Role.SUPPLIER_RFQ);
 		User customerUser = accounts.user(customerA, Role.CUSTOMER_RFQ);
-		long id = idOf(create(asRfq, "SUPPLIER"));
+		long id = pending(asRfq, "SUPPLIER");
 		mvc.perform(json(post("/api/companies/{id}/approve", id), "{}", asManagement)).andExpect(status().isOk());
 
 		assertThat(jdbc.queryForObject("""
@@ -452,15 +652,31 @@ class CompanyManagementTests {
 			.header(HttpHeaders.AUTHORIZATION, token));
 	}
 
+	/** Everything the client's minimum list (question 15) asks for, so the company can be sent for approval. */
+	private static final String FULL_PROFILE = """
+			{"name": "%s", "addressLine1": "Plot 4, MIDC", "city": "Pune", "country": "India", "taxId": "29ABCDE1234F1Z5",
+			 "primaryContactName": "Asha Rao", "primaryContactEmail": "asha@example.dev"}""";
+
 	private ResultActions create(String token, String type) throws Exception {
 		int n = SEQ.incrementAndGet();
-		return mvc.perform(json(post("/api/companies"), """
-				{"code": "NEW-%d", "type": "%s", "profile": {"name": "New company %d", "taxId": "29ABCDE1234F1Z5"}}"""
-			.formatted(n, type, n), token));
+		return mvc.perform(json(post("/api/companies"),
+				"{\"type\": \"%s\", \"profile\": %s}".formatted(type, FULL_PROFILE.formatted("New company " + n)), token));
+	}
+
+	/** Created and sent for approval by the same caller. */
+	private long pending(String token, String type) throws Exception {
+		long id = idOf(create(token, type));
+		mvc.perform(post("/api/companies/{id}/send-for-approval", id).header(HttpHeaders.AUTHORIZATION, token))
+			.andExpect(status().isOk());
+		return id;
 	}
 
 	private static long idOf(ResultActions created) throws Exception {
 		return JsonPath.<Number>read(created.andReturn().getResponse().getContentAsString(), "$.id").longValue();
+	}
+
+	private static String codeOf(ResultActions created) throws Exception {
+		return JsonPath.read(created.andReturn().getResponse().getContentAsString(), "$.code");
 	}
 
 	private static String profile(String name) {

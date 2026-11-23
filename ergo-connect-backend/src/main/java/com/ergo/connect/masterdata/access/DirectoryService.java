@@ -124,11 +124,11 @@ class DirectoryService implements Directory {
 
 	@Override
 	public int pendingCompanyApprovalsCount() {
-		Role role = CurrentUser.get().role();
-		if (role != Role.ERGO_ADMIN && role != Role.ERGO_MANAGEMENT) {
+		// ERGO Management alone approves companies (client question 11)
+		if (CurrentUser.get().role() != Role.ERGO_MANAGEMENT) {
 			return 0;
 		}
-		return (int) companies.countReviewable(CurrentUser.get().userId(), role == Role.ERGO_ADMIN);
+		return (int) companies.countReviewable(CurrentUser.get().userId());
 	}
 
 	private static CompanyRef ref(Company c) {

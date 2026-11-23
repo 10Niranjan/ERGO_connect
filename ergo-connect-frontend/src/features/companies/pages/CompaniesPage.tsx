@@ -19,15 +19,17 @@ import { useState } from 'react'
 import { useAppSelector } from '../../../app/store'
 import { COMPANY_CREATORS } from '@/features/auth/utils/access'
 import { problemMessage } from '../../../shared/problem'
-import { STATUS_COLORS, STATUS_LABELS, TYPE_LABELS, useCompaniesQuery, type Company } from '../companiesApi'
+import { TYPE_LABELS, useCompaniesQuery, type Company } from '../companiesApi'
 import { CompanyDialog } from '../components/CompanyDialog'
 import { CompanyRowActions } from '../components/CompanyRowActions'
+import { CompanyStatusCell } from '../components/CompanyStatusCell'
 
-// A supplier is on the approved list only once ERGO Management / Admin has approved it (status ACTIVE).
+// A supplier is on the approved list only once ERGO Management has approved it (status ACTIVE).
 const TABS = {
   all: { label: 'All', matches: () => true },
   customers: { label: 'Customers', matches: (c: Company) => c.type === 'CUSTOMER' },
   approvedSuppliers: { label: 'Approved suppliers', matches: (c: Company) => c.type === 'SUPPLIER' && c.status === 'ACTIVE' },
+  inPreparation: { label: 'In preparation', matches: (c: Company) => c.status === 'DRAFT' || c.status === 'INFO_REQUESTED' },
   pending: { label: 'Pending approval', matches: (c: Company) => c.status === 'PENDING_APPROVAL' },
   rejected: { label: 'Rejected', matches: (c: Company) => c.status === 'REJECTED' },
 }
@@ -97,7 +99,7 @@ export function CompaniesPage() {
                 <TableCell>{company.profile.city ?? '—'}</TableCell>
                 <TableCell>{company.profile.primaryContactName ?? '—'}</TableCell>
                 <TableCell>
-                  <Chip size="small" color={STATUS_COLORS[company.status]} label={STATUS_LABELS[company.status]} />
+                  <CompanyStatusCell company={company} />
                 </TableCell>
                 <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                   <CompanyRowActions company={company} onError={setActionError} />

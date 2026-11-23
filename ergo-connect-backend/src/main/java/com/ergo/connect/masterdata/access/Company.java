@@ -16,6 +16,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 /** ERGO, customer and supplier organisations (SRS §13.2.1). Fields are package-private: only this package edits them. */
 @Entity
@@ -68,6 +69,16 @@ class Company {
 	/** Changed only through CompanyService's approval and activation actions (audited with their comment). */
 	@Enumerated(EnumType.STRING)
 	CompanyStatus status;
+
+	/** ERGO Management's latest review comment (its question when it asks for more information). ERGO only. */
+	String reviewComment;
+
+	/** Who last sent the company for approval; like the registrant, they may not review it. */
+	Long submittedByUserId;
+
+	@Version
+	@AuditExclude
+	Long rowVersion;
 
 	@Column(updatable = false)
 	Long createdByUserId;

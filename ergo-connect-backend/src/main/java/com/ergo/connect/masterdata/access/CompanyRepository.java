@@ -38,12 +38,19 @@ interface CompanyRepository extends Repository<Company, Long> {
 	/** Dashboard "Pending approvals" widget (ERGO Admin/Management only). */
 	long countByStatus(CompanyStatus status);
 
-	/** The pending companies this reviewer could actually act on: not their own, and no suppliers for ERGO Admin. */
+	/** The pending companies this ERGO Management reviewer could actually act on: not registered or sent by them. */
 	@Query("""
 			select count(c) from Company c
 			where c.status = com.ergo.connect.masterdata.access.CompanyStatus.PENDING_APPROVAL
 			  and (c.createdByUserId is null or c.createdByUserId <> :userId)
-			  and (:admin = false or c.type <> com.ergo.connect.common.security.CompanyType.SUPPLIER)""")
-	long countReviewable(long userId, boolean admin);
+			  and (c.submittedByUserId is null or c.submittedByUserId <> :userId)""")
+	long countReviewable(long userId);
+
+	/** Automatic company numbers (client question 27). */
+	@Query(value = "select nextval('company_customer_number_seq')", nativeQuery = true)
+	long nextCustomerNumber();
+
+	@Query(value = "select nextval('company_supplier_number_seq')", nativeQuery = true)
+	long nextSupplierNumber();
 
 }

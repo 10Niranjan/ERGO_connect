@@ -1,5 +1,6 @@
 package com.ergo.connect.masterdata.access;
 
+import java.util.List;
 import java.util.Set;
 
 import com.ergo.connect.common.security.CompanyType;
@@ -25,21 +26,41 @@ public final class CompanyDtos {
 			@Pattern(regexp = "[A-Z0-9]{2,6}") String rfqPrefix) {
 	}
 
-	public record CompanyRequest(@NotBlank @Pattern(regexp = "[A-Z0-9][A-Z0-9_-]{1,29}") String code,
-			@NotNull CompanyType type, @NotNull @Valid CompanyProfile profile) {
+	/** The company number is given automatically (CUS-00001 / SUP-00001, client question 27). */
+	public record CompanyRequest(@NotNull CompanyType type, @NotNull @Valid CompanyProfile profile) {
 	}
 
-	/** Comment is required to reject and optional to approve; it is stored with the audit trail. */
+	/**
+	 * Comment is optional to approve and required to reject or ask for more information; it is stored with the audit
+	 * trail and as the company's latest review comment.
+	 */
 	public record ReviewRequest(@Size(max = 1000) String comment) {
 	}
 
 	/** What the caller may do with this company now (by role and status), so the UI shows only valid buttons. */
 	public enum CompanyAction {
-		EDIT, APPROVE, REJECT, RESUBMIT, ACTIVATE, DEACTIVATE, ADD_USER
+		EDIT, SEND_FOR_APPROVAL, APPROVE, REJECT, REQUEST_INFO, ACTIVATE, DEACTIVATE, ADD_USER
 	}
 
+	/** One company, in the shape its audience may see. */
+	public sealed interface CompanyView permits CompanyResponse, ErgoCompanyResponse {
+
+		long id();
+
+	}
+
+	/** What a customer or supplier sees of its own company: basic details only (client question 9). */
 	public record CompanyResponse(long id, String code, CompanyType type, CompanyStatus status,
-			CompanyProfile profile, Set<CompanyAction> actions) {
+			CompanyProfile profile, Set<CompanyAction> actions) implements CompanyView {
+	}
+
+	/**
+	 * What ERGO sees: also Management's latest review comment and which of the information needed to send the company
+	 * for approval is still missing (client questions 15 and 19). Never sent to a customer or supplier.
+	 */
+	public record ErgoCompanyResponse(long id, String code, CompanyType type, CompanyStatus status,
+			CompanyProfile profile, Set<CompanyAction> actions, String reviewComment,
+			List<String> missing) implements CompanyView {
 	}
 
 }

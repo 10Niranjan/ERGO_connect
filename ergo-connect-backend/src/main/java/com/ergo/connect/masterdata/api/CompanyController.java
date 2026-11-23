@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.ergo.connect.common.security.CompanyType;
 import com.ergo.connect.masterdata.access.CompanyDtos.CompanyProfile;
 import com.ergo.connect.masterdata.access.CompanyDtos.CompanyRequest;
-import com.ergo.connect.masterdata.access.CompanyDtos.CompanyResponse;
+import com.ergo.connect.masterdata.access.CompanyDtos.CompanyView;
 import com.ergo.connect.masterdata.access.CompanyDtos.ReviewRequest;
 import com.ergo.connect.masterdata.access.CompanyService;
 import com.ergo.connect.masterdata.access.CompanyStatus;
@@ -38,7 +38,8 @@ class CompanyController {
 	private static final String EDITORS = "hasAnyRole('ERGO_ADMIN', 'ERGO_RFQ', 'ERGO_KAM', 'CUSTOMER_RFQ', "
 			+ "'CUSTOMER_KAM', 'CUSTOMER_MANAGEMENT', 'SUPPLIER_RFQ', 'SUPPLIER_KAM')";
 
-	private static final String REVIEWERS = "hasAnyRole('ERGO_ADMIN', 'ERGO_MANAGEMENT')";
+	/** ERGO Management alone approves companies (client question 11, 2026-11-19). */
+	private static final String REVIEWERS = "hasRole('ERGO_MANAGEMENT')";
 
 	private final CompanyService companies;
 
@@ -51,50 +52,57 @@ class CompanyController {
 	 * approved supplier list is {@code ?type=SUPPLIER&status=ACTIVE}.
 	 */
 	@GetMapping
-	List<CompanyResponse> list(@RequestParam(required = false) CompanyType type,
+	List<CompanyView> list(@RequestParam(required = false) CompanyType type,
 			@RequestParam(required = false) CompanyStatus status) {
 		return companies.list(type, status);
 	}
 
 	@GetMapping("/{id}")
-	CompanyResponse get(@PathVariable long id) {
+	CompanyView get(@PathVariable long id) {
 		return companies.get(id);
 	}
 
 	@PostMapping
 	@PreAuthorize(CREATORS)
 	@ResponseStatus(HttpStatus.CREATED)
-	CompanyResponse create(@Valid @RequestBody CompanyRequest body) {
+	CompanyView create(@Valid @RequestBody CompanyRequest body) {
 		return companies.create(body);
 	}
 
 	@PutMapping("/{id}")
 	@PreAuthorize(EDITORS)
-	CompanyResponse update(@PathVariable long id, @Valid @RequestBody CompanyProfile body) {
+	CompanyView update(@PathVariable long id, @Valid @RequestBody CompanyProfile body) {
 		return companies.update(id, body);
 	}
 
 	@PostMapping("/{id}/approve")
 	@PreAuthorize(REVIEWERS)
-	CompanyResponse approve(@PathVariable long id, @Valid @RequestBody ReviewRequest body) {
+	CompanyView approve(@PathVariable long id, @Valid @RequestBody ReviewRequest body) {
 		return companies.approve(id, body.comment());
 	}
 
 	@PostMapping("/{id}/reject")
 	@PreAuthorize(REVIEWERS)
-	CompanyResponse reject(@PathVariable long id, @Valid @RequestBody ReviewRequest body) {
+	CompanyView reject(@PathVariable long id, @Valid @RequestBody ReviewRequest body) {
 		return companies.reject(id, body.comment());
 	}
 
-	@PostMapping("/{id}/resubmit")
+	/** A draft, a company sent back for more information or a rejected one goes (again) to ERGO Management. */
+	@PostMapping("/{id}/send-for-approval")
 	@PreAuthorize(CREATORS)
-	CompanyResponse resubmit(@PathVariable long id) {
-		return companies.resubmit(id);
+	CompanyView sendForApproval(@PathVariable long id) {
+		return companies.sendForApproval(id);
+	}
+
+	@PostMapping("/{id}/request-info")
+	@PreAuthorize(REVIEWERS)
+	CompanyView requestInfo(@PathVariable long id, @Valid @RequestBody ReviewRequest body) {
+		return companies.requestInfo(id, body.comment());
 	}
 
 	@PutMapping("/{id}/active")
 	@PreAuthorize("hasRole('ERGO_ADMIN')")
-	CompanyResponse setActive(@PathVariable long id, @Valid @RequestBody ActiveRequest body) {
+	CompanyView setActive(@PathVariable long id, @Valid @RequestBody ActiveRequest body) {
 		return companies.setActive(id, body.active());
 	}
 

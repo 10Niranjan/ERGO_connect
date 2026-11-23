@@ -1,5 +1,6 @@
 export * from './components/CompanyDialog'
 export * from './components/CompanyRowActions'
+export * from './components/CompanyStatusCell'
 export * from './components/ReviewDialog'
 export * from './pages/CompaniesPage'
 export * from './pages/MyCompanyPage'

@@ -26,6 +26,9 @@ const DETAILS: [Exclude<keyof CompanyProfile, 'name' | 'rfqPrefix'>, string, num
   ['primaryContactPhone', 'Primary contact phone', 30],
 ]
 
+// The client's minimum before a company can be sent for approval (question 15); the backend enforces it.
+const NEEDED_FOR_APPROVAL = new Set<keyof CompanyProfile>(['addressLine1', 'city', 'country', 'taxId', 'primaryContactName', 'primaryContactEmail'])
+
 interface Props {
   /** null = add a new company of one of {@link types} */
   company: Company | null
@@ -55,8 +58,7 @@ export function CompanyDialog({ company, types = ['CUSTOMER', 'SUPPLIER'], onClo
       if (company) {
         await updateCompany({ id: company.id, profile }).unwrap()
       } else {
-        const code = String(form.get('code')).trim().toUpperCase()
-        await createCompany({ code, type: form.get('type') as CompanyType, profile }).unwrap()
+        await createCompany({ type: form.get('type') as CompanyType, profile }).unwrap()
       }
       onClose()
     } catch {
@@ -69,6 +71,11 @@ export function CompanyDialog({ company, types = ['CUSTOMER', 'SUPPLIER'], onClo
       <form onSubmit={handleSubmit}>
         <DialogTitle>{company ? `Edit ${company.profile.name}` : 'New company'}</DialogTitle>
         <DialogContent sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, pt: '8px !important' }}>
+          {company?.status === 'INFO_REQUESTED' && company.reviewComment && (
+            <Alert severity="info" sx={{ gridColumn: '1 / -1' }}>
+              ERGO Management asks: {company.reviewComment}
+            </Alert>
+          )}
           {company ? (
             <>
               <TextField label="Code" value={company.code} disabled helperText="Cannot be changed" />
@@ -76,13 +83,7 @@ export function CompanyDialog({ company, types = ['CUSTOMER', 'SUPPLIER'], onClo
             </>
           ) : (
             <>
-              <TextField
-                name="code"
-                label="Code"
-                required
-                helperText="Capital letters, digits, - and _"
-                slotProps={{ htmlInput: { pattern: '[A-Za-z0-9][A-Za-z0-9_\\-]{1,29}' } }}
-              />
+              <TextField label="Code" value="Given automatically" disabled helperText="CUS-00001 for customers, SUP-00001 for suppliers" />
               <TextField name="type" label="Type" select defaultValue={types[0]} required onChange={(e) => setNewType(e.target.value as CompanyType)}>
                 {types.map((type) => (
                   <MenuItem key={type} value={type}>
@@ -107,6 +108,7 @@ export function CompanyDialog({ company, types = ['CUSTOMER', 'SUPPLIER'], onClo
               label={label}
               type={name === 'primaryContactEmail' ? 'email' : 'text'}
               defaultValue={company?.profile[name] ?? ''}
+              helperText={ergoUser && NEEDED_FOR_APPROVAL.has(name) ? 'Needed for approval' : undefined}
               slotProps={{ htmlInput: { maxLength } }}
             />
           ))}
@@ -122,7 +124,8 @@ export function CompanyDialog({ company, types = ['CUSTOMER', 'SUPPLIER'], onClo
           )}
           {!company && (
             <Alert severity="info" sx={{ gridColumn: '1 / -1' }}>
-              Every supplier waits for approval by ERGO Management, and a customer added by ERGO RFQ or a Key Account Manager waits for ERGO Management or ERGO Admin. A supplier joins the approved supplier list only after that.
+              The company is saved as a draft. When the fields marked "Needed for approval" are filled in, use Send for approval: ERGO
+              Management then approves it, rejects it or asks for more information. Only an approved company can be used and have users.
             </Alert>
           )}
           {error && (
