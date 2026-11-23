@@ -13,7 +13,15 @@ FROM nginxinc/nginx-unprivileged:1.30-alpine
 # The base image lags Alpine's security fixes (Trivy gate in demo-images.yml: brotli, curl, expat, zlib, 2026-11-06), so
 # pull the patched packages at build time, then drop back to the base image's non-root user (uid 101 "nginx").
 USER root
-RUN apk upgrade --no-cache
+# The base image pins nginx and its four modules to the version it was built with (nginx=1.30.6-r1 in /etc/apk/world),
+# so a plain `apk upgrade` never moves nginx: 1.30.7 fixes several HIGH/CRITICAL CVEs (Trivy gate, 2026-11-22), and the
+# modules have no build for it yet. We use none of them (no load_module here), so remove them, unpin nginx, upgrade.
+# APK_REFRESH changes on every CI run: without it the gha layer cache serves an old upgrade result.
+ARG APK_REFRESH=manual
+RUN : "$APK_REFRESH" \
+ && apk del --no-cache nginx-module-geoip nginx-module-image-filter nginx-module-njs nginx-module-xslt \
+ && apk add --no-cache nginx \
+ && apk upgrade --no-cache
 USER 101
 COPY --from=build /build/dist /usr/share/nginx/html
 # A template, not a static conf: the base image's entrypoint envsubst's it into
