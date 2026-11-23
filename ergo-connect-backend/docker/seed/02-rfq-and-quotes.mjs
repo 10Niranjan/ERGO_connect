@@ -23,7 +23,7 @@ export async function run(ctx) {
     { buyer: 'acmeBuyer', cust: C.acme, part: 'ACM-LINK-06', desc: 'Suspension link arm', mat: 'C45', coat: 'PHOS-OIL', eau: 60000, net: 1.2, gross: 1.5, tgt: [215, 200, 160000], steps: [step('FORGING', 'Hot forge', 30), step('CNC-TURN', 'Turn ends', 55)], plan: ['submit', 'review'] },
     { buyer: 'acmeBuyer', cust: C.acme, part: 'ACM-CAMSHAFT-07', desc: 'Camshaft, induction hardened', mat: 'EN24', mspec: 'Vacuum degassed, ultrasonic tested bar', coat: 'BLACK-OX', eau: 30000, net: 2.2, gross: 2.9, tgt: [640, 600, 380000], steps: [step('FORGING', 'Forge blank', 38), step('CNC-TURN', 'Rough and finish turn', 150), step('GRIND', 'Grind journals', 210)], plan: ['submit', 'review', 'clarify:Please confirm the required surface hardness on the cam lobes (HRC) and the allowed runout.'] },
     { buyer: 'acmeBuyer', cust: C.acme, part: 'ACM-FLANGE-08', desc: 'Exhaust flange, ductile iron', mat: 'SG500', mspec: 'Nodularity above 85%, pearlite 40-60%', coat: null, eau: 24000, net: 2.6, gross: 3.2, tgt: [255, 240, 210000], steps: [step('SAND-CAST', 'Sand cast', 80), step('FETTLING', 'Fettle', 45), step('CNC-MILL', 'Face and drill', 110)], plan: ['submit', 'review', 'validate', 'invite:precision,deccan'] },
-    { buyer: 'acmeBuyer', cust: C.acme, part: 'ACM-GEARBLANK-09', desc: 'Helical gear blank', mat: '20MNCR5', coat: 'PHOS-OIL', eau: 42000, net: 3.4, gross: 4.1, tgt: [590, 560, 330000], steps: [step('FORGING', 'Forge blank', 36), step('HEAT-TREAT', 'Normalise', 2800), step('CNC-TURN', 'Turn blank', 85)], plan: ['submit', 'review', 'validate', 'invite:precision,shakti', 'quote:precision=548,shakti=571', 'select:precision', 'send:605', 'respond:APPROVED'] },
+    { buyer: 'acmeBuyer', cust: C.acme, part: 'ACM-GEARBLANK-09', desc: 'Helical gear blank', mat: '20MNCR5', coat: 'PHOS-OIL', eau: 42000, net: 3.4, gross: 4.1, tgt: [590, 560, 330000], steps: [step('FORGING', 'Forge blank', 36), step('HEAT-TREAT', 'Normalise', 2800), step('CNC-TURN', 'Turn blank', 85)], plan: ['submit', 'review', 'validate', 'invite:precision,shakti', 'quote:precision=548,shakti=571', 'select:precision', 'send:605', 'respond:ON_HOLD'] },
     { buyer: 'bharatBuyer', cust: C.bharat, part: 'BHM-GEAR-04', desc: 'Transmission gear blank', mat: 'SAE8620', coat: 'PHOS-OIL', eau: 52000, net: 2.8, gross: 3.4, tgt: [470, 445, 260000], steps: [step('FORGING', 'Forge', 34), step('CNC-TURN', 'Turn', 75)], plan: [] },
     { buyer: 'bharatBuyer', cust: C.bharat, part: 'BHM-AXLE-16', desc: 'Rear axle shaft', mat: 'SAE4140', coat: 'ZN-PLATE', eau: 20000, net: 7.4, gross: 8.6, tgt: [940, 900, 640000], steps: [step('FORGING', 'Forge', 70), step('HEAT-TREAT', 'Induction harden', 900), step('GRIND', 'Grind bearing seats', 260)], plan: ['submit', 'review', 'clarify:What is the required case depth and the allowed shaft straightness after hardening?', 'answer:Case depth 1.8-2.2 mm; straightness 0.15 mm TIR. Updated drawing rev B attached.'] },
     { buyer: 'bharatBuyer', cust: C.bharat, part: 'BHM-SHAFT-05', desc: 'Drive shaft forging', mat: 'SAE4140', coat: 'ZN-PLATE', eau: 26000, net: 5.2, gross: 6.4, tgt: [810, 770, 480000], steps: [step('FORGING', 'Forge', 60), step('HEAT-TREAT', 'Quench and temper', 3600), step('GRIND', 'Grind splines', 240)], plan: ['submit'] },
@@ -40,7 +40,7 @@ export async function run(ctx) {
 
   // Multi-item RFQs (flow slice 2): the part-level fields now live in items[0].
   const form = (s) => ({
-    customerCompanyId: s.cust, targetQuoteDate: inDays(25),
+    customerCompanyId: s.cust, title: `${s.desc.split(',')[0]} (${s.part})`, targetQuoteDate: inDays(25),
     priority: s.part.endsWith('-01') || s.part.endsWith('-12') ? 'HIGH' : s.part.endsWith('-06') ? 'LOW' : 'NORMAL',
     currencyId: cur.INR, paymentTermId: pay.NET30 ?? Object.values(pay)[0],
     customerRemarks: 'Annual volume as per our current schedule; PPAP level 3 required before production.',
@@ -91,7 +91,7 @@ export async function run(ctx) {
       if (cmd === 'submit') await attempt(`${s.part} submit`, s.buyer, 'POST', `/rfqs/${rfq.id}/submit`, { comment: 'Please quote against the attached drawing.' })
       else if (cmd === 'review') await attempt(`${s.part} review`, 'rfq', 'POST', `/rfqs/${rfq.id}/start-review`, { comment: null })
       else if (cmd === 'clarify') await attempt(`${s.part} clarify`, 'rfq', 'POST', `/rfqs/${rfq.id}/request-clarification`, { comment: arg })
-      else if (cmd === 'validate') await attempt(`${s.part} validate`, 'rfq', 'POST', `/rfqs/${rfq.id}/validate`, { comment: 'Technical and commercial data checked.' })
+      else if (cmd === 'validate') { /* removed from the flow */ }
       else if (cmd === 'answer') await attempt(`${s.part} answer`, s.buyer, 'POST', `/rfqs/${rfq.id}/submit`, { comment: arg })
       else if (cmd === 'cancel') await attempt(`${s.part} cancel`, s.buyer, 'POST', `/rfqs/${rfq.id}/cancel`, { comment: 'Programme postponed by the customer.' })
       else if (cmd === 'close') await attempt(`${s.part} close`, 'rfq', 'POST', `/rfqs/${rfq.id}/close`, { comment: 'Customer chose a different source; closing.' })
@@ -101,13 +101,12 @@ export async function run(ctx) {
         const supplierIds = names.map((n) => SUPPLIER_COMPANY[n]).filter(Boolean).slice(0, 1)
         const itemIds = (await get('admin', `/rfqs/${rfq.id}`)).items?.map((i) => i.id) ?? []
         invitedQuotes = await attempt(`${s.part} invite`, 'rfq', 'POST', `/rfqs/${rfq.id}/quotes`, { subRfqs: supplierIds.map((supplierId) => ({ supplierId, itemIds })), responseDueDate: inDays(14) })
-        for (const q of invitedQuotes?.quotes ?? []) quotes[Object.keys(SUPPLIER_NAME).find((k) => SUPPLIER_NAME[k] === q.supplier.name)] = q.id
+        for (const q of invitedQuotes?.parts ?? []) quotes[Object.keys(SUPPLIER_NAME).find((k) => SUPPLIER_NAME[k] === q.supplier.name)] = q.quoteId
       } else if (cmd === 'ask') {
-        await attempt(`${s.part} ask`, PERSONA_OF[arg], 'POST', `/quotes/${quotes[arg]}/request-clarification`, { comment: 'Is the surface finish Ra 3.2 or better acceptable, or do you need Ra 1.6 on the seating faces?' })
-        await attempt(`${s.part} answer ask`, 'rfq', 'POST', `/quotes/${quotes[arg]}/answer-clarification`, { comment: 'Ra 3.2 is acceptable everywhere except the bearing seats, which need Ra 1.6.' })
+        /* supplier clarification removed from the flow */
       } else if (cmd === 'reopen') {
         const [sup, price] = arg.split('=')
-        await attempt(`${s.part} reopen`, 'rfq', 'POST', `/quotes/${quotes[sup]}/reopen`, { comment: 'Please revisit the tooling lead time; the customer needs samples two weeks earlier.' })
+        await attempt(`${s.part} reopen`, 'rfq', 'POST', `/quotes/${quotes[sup]}/revision`, { comment: 'Please revisit the tooling lead time; the customer needs samples two weeks earlier.' })
         await attempt(`${s.part} requote`, PERSONA_OF[sup], 'PUT', `/quotes/${quotes[sup]}`, { ...quoteForm(s, Number(price)), toolingLeadTimeDays: 42 })
         await attempt(`${s.part} resubmit`, PERSONA_OF[sup], 'POST', `/quotes/${quotes[sup]}/submit`)
       } else if (cmd === 'quote') {
@@ -119,24 +118,19 @@ export async function run(ctx) {
           if (sup === 'precision') await upload(PERSONA_OF[sup], `/quotes/${qid}/documents`, files.costSheet(s.part), {}, 'Quotation')
           await attempt(`${s.part} ${sup} submit`, PERSONA_OF[sup], 'POST', `/quotes/${qid}/submit`)
         }
-      } else if (cmd === 'regret') await attempt(`${s.part} regret`, PERSONA_OF[arg], 'POST', `/quotes/${quotes[arg]}/regret`, { comment: 'Capacity fully committed for the next two quarters.' })
-      else if (cmd === 'score') {
-        for (const [sup, qid] of Object.entries(quotes)) {
-          const k = sup.length
-          await attempt(`${s.part} score ${sup}`, 'rfq', 'PUT', `/quotes/${qid}/evaluation`, { scores: { commercial: 6 + (k % 3), technical: 7 + (k % 2), quality: 7 + ((k + 1) % 3), risk: 6 + (k % 4) }, internalRemarks: `${SUPPLIER_NAME[sup]}: capable, delivery history ${k % 2 ? 'good' : 'excellent'}.` })
-        }
-        await attempt(`${s.part} summary`, 'rfq', 'PUT', `/rfqs/${rfq.id}/comparison`, { internalSummary: 'Three quotes received; all technically acceptable. Spread between lowest and highest is under 6%.', recommendationSummary: 'Recommend the supplier with the best combination of price and delivery reliability.' })
-      } else if (cmd === 'shortlist') await attempt(`${s.part} shortlist`, 'rfq', 'POST', `/quotes/${quotes[arg]}/decision`, { decision: 'SHORTLIST', comment: null })
-      else if (cmd === 'select') {
-        selected = quotes[arg]
-        await attempt(`${s.part} select`, 'rfq', 'POST', `/quotes/${selected}/decision`, { decision: 'SELECT_FOR_CUSTOMER', comment: null })
-      }
+      } else if (cmd === 'regret') { /* removed */ }
+      else if (cmd === 'score' || cmd === 'shortlist') { /* removed */ }
+      else if (cmd === 'select') selected = quotes[arg]
       else if (cmd === 'send') {
-        await attempt(`${s.part} send`, 'rfq', 'POST', `/rfqs/${rfq.id}/customer-quotes`, { quoteId: selected, type: 'ERGO_QUOTE', remarks: 'Pricing includes packing and delivery to your plant.', ergoQuote: ergo(Number(arg)) })
+        if (selected) {
+          await attempt(`${s.part} accept`, 'rfq', 'POST', `/quotes/${selected}/accept`)
+          const e = ergo(Number(arg))
+          await attempt(`${s.part} generate`, 'rfq', 'POST', `/rfqs/${rfq.id}/customer-quotes`, { remarks: 'Pricing includes packing and delivery to your plant.', lines: [{ quoteId: selected, ergoQuote: { currencyId: e.currencyId, productionPiecePrice: e.productionPiecePrice, ppapPiecePrice: e.ppapPiecePrice, toolingCost: e.toolingCost, validityDate: e.validityDate } }] })
+        }
       } else if (cmd === 'respond') {
         const cq = await get(s.buyer, `/rfqs/${rfq.id}/customer-quotes`)
-        const id = cq.quotes?.[0]?.id
-        const comment = arg === 'APPROVED' ? 'Approved. Please proceed with tooling.' : arg === 'DECLINED' ? 'Pricing is above our budget for this programme.' : 'Please review the tooling cost and resubmit.'
+        const id = cq.quotations?.[0]?.id
+        const comment = arg === 'APPROVED' ? 'Approved. Please proceed with tooling.' : arg === 'DECLINED' ? 'Pricing is above our budget for this programme.' : arg === 'ON_HOLD' ? 'Programme timing under review; we will revert after the board meeting.' : 'Please review the tooling cost and resubmit.'
         if (id) await attempt(`${s.part} respond`, s.buyer, 'POST', `/customer-quotes/${id}/respond`, { response: arg, comment })
       }
     }

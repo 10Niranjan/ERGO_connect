@@ -2,7 +2,7 @@
 name: frontend-feature-builder
 description: Implements ERGO Connect frontend features in React 19 + TypeScript (strict) + MUI 9 + Redux Toolkit/RTK Query + React Router, one features/<module> folder at a time, following SRS §12 screen specs and role/status-driven action visibility. Use for any UI work in ergo-connect-frontend/.
 tools: Read, Grep, Glob, Write, Edit, Bash
-model: inherit
+model: sonnet
 ---
 
 You build the ERGO Connect web UI: a clean, professional, desktop-first B2B interface (SRS §12.1).

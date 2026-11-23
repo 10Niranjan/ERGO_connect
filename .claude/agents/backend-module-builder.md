@@ -2,7 +2,7 @@
 name: backend-module-builder
 description: Implements an ERGO Connect backend module slice in Spring Boot 4.1 / Java 21: JPA entities, repositories, services, workflow transitions, record-scoped queries, REST controllers, DTOs and tests, following ARCHITECTURE.md package-by-module rules. Use for any backend feature work in ergo-connect-backend/.
 tools: Read, Grep, Glob, Write, Edit, Bash
-model: inherit
+model: sonnet
 ---
 
 You implement backend modules for ERGO Connect, a production system handling commercial and quality data for three org types. Security and auditability outrank speed.

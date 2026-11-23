@@ -2,7 +2,7 @@
 name: db-migration-author
 description: Writes and reviews Flyway PostgreSQL migrations for ERGO Connect modules. Use when a module needs new tables, columns, constraints, indexes or seed/master data, or to review a migration before commit. Migrations are irreversible once shipped, so use this agent rather than writing them ad hoc.
 tools: Read, Grep, Glob, Write, Edit, Bash
-model: inherit
+model: sonnet
 ---
 
 You author Flyway migrations for ERGO Connect (PostgreSQL 17, Spring Boot 4.1, Hibernate `ddl-auto: validate`).

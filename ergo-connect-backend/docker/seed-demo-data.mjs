@@ -10,18 +10,12 @@
 import { failures, log, stat } from './seed/lib.mjs'
 import * as p1 from './seed/01-master-and-companies.mjs'
 import * as p2 from './seed/02-rfq-and-quotes.mjs'
-import * as p3 from './seed/03-npd.mjs'
-import * as p4 from './seed/04-orders.mjs'
-import * as p5 from './seed/05-quality.mjs'
-import * as p6 from './seed/06-comments-documents-notifications.mjs'
+import * as p3 from './seed/03-flow.mjs'
 
 const PHASES = [
   [1, 'Master data, companies and users', p1],
   [2, 'RFQs and quotations', p2],
-  [3, 'NPD projects', p3],
-  [4, 'Orders and shipments', p4],
-  [5, 'Quality: inspections, NCRs, deviations', p5],
-  [6, 'Comments, documents and notifications', p6],
+  [3, 'Sample PO, NPD plan, quality gates, production PO, OFP project', p3],
 ]
 
 const only = process.argv.find((a) => a.startsWith('--only='))?.slice(7).split(',').map(Number)

@@ -52,6 +52,8 @@ const NEW_USERS = [
   { company: 'SHAKTI-FORGE', persona: 'shaktiNpd', firstName: 'Gurpreet', lastName: 'Singh', email: 'tooling@shakti.dev', mobile: '+91 98150 31208', roles: ['SUPPLIER_NPD'] },
   { company: 'SHAKTI-FORGE', persona: 'shaktiOfp', firstName: 'Harjit', lastName: 'Kaur', email: 'planner@shakti.dev', mobile: '+91 98150 31209', roles: ['SUPPLIER_OFP'] },
   { company: 'SHAKTI-FORGE', persona: 'shaktiQa', firstName: 'Manpreet', lastName: 'Gill', email: 'qa@shakti.dev', mobile: '+91 98150 31210', roles: ['SUPPLIER_QUALITY'] },
+  { company: 'SHAKTI-FORGE', persona: 'shaktiQa2', firstName: 'Anmol', lastName: 'Dhillon', email: 'qa2@shakti.dev', mobile: '+91 98150 31211', roles: ['SUPPLIER_QUALITY'] },
+  { company: 'PRECISION-CAST', persona: 'precQa2', firstName: 'Anita', lastName: 'Rao', email: 'qa2@precision.dev', mobile: '+91 98250 30031', roles: ['SUPPLIER_QUALITY'] },
 ]
 const MOBILES = {
   'admin@ergo.dev': '+91 98900 10001', 'management@ergo.dev': '+91 98900 10002', 'rfq@ergo.dev': '+91 98900 10003', 'quality@ergo.dev': '+91 98900 10004',
