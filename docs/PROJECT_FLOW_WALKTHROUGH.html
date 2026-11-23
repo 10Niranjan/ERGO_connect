@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ERGO Connect - Complete Process Flow and Demo Walkthrough</title>
+<style>
+  @page { size: A4; margin: 14mm 14mm 15mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Arial, sans-serif; font-size: 9.8pt; line-height: 1.42; color: #1f2937; margin: 0; }
+  h1 { font-size: 23pt; margin: 0 0 4px; color: #0f3d6e; }
+  h2 { font-size: 14.5pt; color: #0f3d6e; border-bottom: 2px solid #0f3d6e; padding-bottom: 3px; margin: 20px 0 8px; break-after: avoid; }
+  h3 { font-size: 11.5pt; color: #0f3d6e; margin: 13px 0 4px; break-after: avoid; }
+  p { margin: 0 0 7px; }
+  .sub { color: #6b7280; font-size: 10.5pt; margin-bottom: 12px; }
+  .box { background: #eff6ff; border-left: 4px solid #0f3d6e; padding: 7px 11px; margin: 8px 0 11px; break-inside: avoid; }
+  .box.green { background: #f0fdf4; border-color: #166534; }
+  .box.amber { background: #fffbeb; border-color: #b45309; }
+  .box.red { background: #fef2f2; border-color: #b91c1c; }
+  ul { margin: 0 0 7px; padding-left: 18px; }
+  li { margin-bottom: 2px; }
+  table { width: 100%; border-collapse: collapse; margin: 5px 0 10px; font-size: 9pt; }
+  th { background: #0f3d6e; color: #fff; text-align: left; padding: 4px 6px; font-weight: 600; }
+  td { border: 1px solid #d1d5db; padding: 4px 6px; vertical-align: top; }
+  tr { break-inside: avoid; }
+  tr:nth-child(even) td { background: #f8fafc; }
+  code { background: #eef2f7; padding: 0 3px; border-radius: 3px; font-size: 9pt; }
+  .step { break-inside: avoid; border: 1px solid #cbd5e1; border-radius: 6px; margin: 9px 0; }
+  .step .hd { background: #0f3d6e; color: #fff; padding: 5px 10px; font-weight: 600; font-size: 10.5pt; border-radius: 5px 5px 0 0; }
+  .step .bd { padding: 7px 10px 3px; }
+  .who { display: inline-block; background: #e0ecf8; color: #0f3d6e; border-radius: 10px; padding: 0 8px; font-size: 8.6pt; margin-right: 4px; }
+  .flow { text-align: center; font-size: 9pt; margin: 8px 0; }
+  .flow span { display: inline-block; background: #0f3d6e; color: #fff; border-radius: 4px; padding: 3px 7px; margin: 2px; }
+  .flow i { color: #0f3d6e; font-style: normal; font-weight: 700; }
+  .pb { break-before: page; }
+</style>
+</head>
+<body>
+
+<h1>ERGO Connect</h1>
+<div class="sub">Complete process flow, from the customer's RFQ to the production order, with the demo logins to show each step<br>Prepared for the client demonstration, 21 November 2026</div>
+
+<h2>1. The big picture</h2>
+<p>ERGO sits between <b>customers</b> (who need parts) and <b>suppliers</b> (who make them). The customer never deals with the supplier directly, and the supplier never learns who the customer is. Everything passes through ERGO, which checks, prices and controls every hand-over. The platform records who did what, when and why, so every step can be traced afterwards.</p>
+<div class="flow">
+<span>Customer RFQ</span> <i>&rarr;</i> <span>ERGO review</span> <i>&rarr;</i> <span>Supplier quotation</span> <i>&rarr;</i> <span>ERGO checks and prices</span> <i>&rarr;</i> <span>Customer quotation</span> <i>&rarr;</i> <span>Customer decision</span><br>
+<i>&darr;</i><br>
+<span>Sample PO</span> <i>&rarr;</i> <span>KAM creates project</span> <i>&rarr;</i> <span>NPD plan</span> <i>&rarr;</i> <span>Supplier submits, ERGO agrees</span> <i>&rarr;</i> <span>Execution</span> <i>&rarr;</i> <span>Quality gate</span> <i>&rarr;</i> <span>Customer final approval</span> <i>&rarr;</i> <span>Production PO</span> <i>&rarr;</i> <span>OFP project</span>
+</div>
+
+<h3>The three kinds of organisation and their teams</h3>
+<table>
+<tr><th style="width:18%">Organisation</th><th>Teams (roles)</th></tr>
+<tr><td><b>Customer</b> (buys parts)</td><td>RFQ team, NPD team, OFP team, Quality team, KAM, Management</td></tr>
+<tr><td><b>ERGO</b> (the company in the middle)</td><td>RFQ, NPD, OFP, Quality, KAM (Key Account Manager), Management, Admin</td></tr>
+<tr><td><b>Supplier</b> (makes parts)</td><td>RFQ, NPD, OFP, Quality, KAM</td></tr>
+</table>
+<p><b>NPD</b> = New Product Development (making the sample). <b>OFP</b> = Order Fulfilment and Production (making the real order). <b>PO</b> = purchase order. <b>KAM</b> = the ERGO person who looks after a customer account.</p>
+
+<h2>2. Stage A: from RFQ to customer decision (flow steps 1 to 5)</h2>
+
+<div class="step"><div class="hd">Step 1. The customer creates the RFQ</div><div class="bd">
+<p><span class="who">Customer RFQ team</span></p>
+<p>A request for quotation (RFQ) is the customer's enquiry: "please quote for these parts". One RFQ can hold <b>several parts</b> (items). For each part the customer gives the part number, description, yearly volume (EAU), material, drawings and the price it hopes to pay. The RFQ starts as a <b>Draft</b>, and the customer <b>submits</b> it when ready (status: <b>Submitted</b>). A title, an expected quote-receipt date and a yearly volume on every part are required.</p>
+<p><b>Demo login:</b> <code>buyer@acme.dev</code> (Acme Auto) or <code>buyer@bharat.dev</code> (Bharat Motors)</p>
+</div></div>
+
+<div class="step"><div class="hd">Step 2. ERGO reviews the RFQ and sends it to suppliers</div><div class="bd">
+<p><span class="who">ERGO RFQ team</span></p>
+<p>ERGO opens the RFQ (<b>Under Review</b>), checks it against the drawings, and can <b>edit</b> details or <b>ask the customer for clarification</b> (status <b>Clarification Required</b>; the customer answers and resubmits). ERGO then picks suppliers from the supplier list. It can send the <b>whole RFQ to one supplier</b>, or <b>split it into sub-RFQs</b>: for example, 7 parts become 3 machined parts to supplier A, 2 plastic parts to supplier B and 2 castings to supplier C. One part is with one supplier at a time. The supplier sees only its own parts and a neutral reference number, never the customer's name.</p>
+<p><b>Status:</b> Sent to Suppliers. <b>Demo login:</b> <code>rfq@ergo.dev</code></p>
+</div></div>
+
+<div class="step"><div class="hd">Step 3. The supplier prepares and submits a quotation</div><div class="bd">
+<p><span class="who">Supplier RFQ team</span></p>
+<p>The supplier reviews the drawings and costs the part: piece price, tooling cost, lead times, minimum order quantity, process steps, remarks. It can save a draft and then <b>submits</b> the quotation to ERGO. There is one quotation <b>per part number</b>, and the dashboard shows the status of every part separately.</p>
+<p><b>Demo logins:</b> <code>sales@precision.dev</code> (Precision Castings), <code>sales@shakti.dev</code> (Shakti Forgings), <code>sales@deccan.dev</code> (Deccan Machining)</p>
+</div></div>
+
+<div class="step"><div class="hd">Step 4. ERGO reviews the supplier quote and generates the customer quotation</div><div class="bd">
+<p><span class="who">ERGO RFQ team</span></p>
+<p>ERGO reads the supplier's quote and remarks. Two outcomes:</p>
+<ul>
+<li><b>Revision required:</b> ERGO sends it back to the supplier with comments; the supplier fixes it and resubmits.</li>
+<li><b>Accepted:</b> ERGO uses <b>Generate Quotation for Customer</b>. The system builds ERGO's <b>own</b> customer-facing quotation (with ERGO's price and margin) in the customer's format and sends it.</li>
+</ul>
+<div class="box"><b>Key rule:</b> the supplier's quotation is <b>never forwarded as it is</b>, and the customer <b>never sees any supplier quotation</b>. ERGO keeps both documents for traceability. The customer also never sees competitor prices or ERGO's margin.</div>
+<p><b>Status:</b> Quotes Partial / Quotes Complete, then Sent to Customer. <b>Demo login:</b> <code>rfq@ergo.dev</code></p>
+</div></div>
+
+<div class="step"><div class="hd">Step 5. The customer reviews the quotation and decides</div><div class="bd">
+<p><span class="who">Customer RFQ team</span></p>
+<p>For each part the customer chooses one of four answers, and <b>every decision needs a comment</b>:</p>
+<table>
+<tr><th style="width:24%">Decision</th><th>What happens</th></tr>
+<tr><td><b>Approve</b></td><td>The part is approved and can go to a Sample PO (Stage B).</td></tr>
+<tr><td><b>Correction required</b></td><td>The quotation goes back to ERGO RFQ for changes (status Customer Revision Requested).</td></tr>
+<tr><td><b>Reject</b></td><td>The part is declined (status Customer Declined).</td></tr>
+<tr><td><b>On hold</b></td><td>Received, but the decision to move on is paused. The customer answers once more later.</td></tr>
+</table>
+<p><b>Demo login:</b> <code>buyer@acme.dev</code>. Only the customer's approving role may approve, reject or hold; lower roles can only request a correction.</p>
+</div></div>
+
+<h2 class="pb">3. Stage B: Sample development (flow steps 6 to 10)</h2>
+
+<div class="step"><div class="hd">Step 6. The customer raises a Sample PO</div><div class="bd">
+<p><span class="who">Customer NPD team</span></p>
+<p>Once a part is approved, the Customer NPD team raises a <b>Sample Purchase Order</b> for it (PO number, sample quantity, required date) and submits it to the ERGO KAM.</p>
+<p><b>Demo login:</b> <code>npd@acme.dev</code>. In the demo data, the Sample PO for <b>SAH-SPRING-15</b> (<code>npd@sahyadri.dev</code>) is raised and waiting.</p>
+</div></div>
+
+<div class="step"><div class="hd">Step 7. The KAM creates the sample project and assigns ERGO's team</div><div class="bd">
+<p><span class="who">ERGO KAM</span> <span class="who">ERGO NPD</span> <span class="who">ERGO Quality</span></p>
+<p>The KAM reviews the Sample PO and either <b>returns it with a comment</b> or <b>creates the sample development project</b>, assigning one ERGO NPD and one ERGO Quality person. ERGO NPD then discusses the project with ERGO Quality and builds the <b>NPD plan</b>: the steps needed, such as raw-material availability, tooling readiness, sample manufacturing date and packaging design. ERGO NPD then <b>releases the plan to the supplier's</b> NPD, RFQ and Quality teams. Until it is released, the supplier cannot see the project at all.</p>
+<p><b>Demo logins:</b> KAM <code>kam@ergo.dev</code> (Acme only; for Bharat and Sahyadri use <code>management@ergo.dev</code>), ERGO NPD <code>npd@ergo.dev</code></p>
+</div></div>
+
+<div class="step"><div class="hd">Step 8. Plan submission, ERGO agreement and execution</div><div class="bd">
+<p><span class="who">Supplier NPD</span> <span class="who">ERGO NPD</span></p>
+<p>The supplier fills in its steps (planned dates, owners, remarks) and <b>submits the plan</b>. ERGO NPD either <b>agrees</b> it or <b>sends it back with a mandatory comment</b>. Once agreed, the project goes into <b>execution</b>: the teams work the steps through nine stages (Planning, Commercial and Sourcing Readiness, Tooling and Material Release, Trial Preparation, Trial Execution, Final Sample Readiness, Customer Feedback, Approved for Production Handover). Progress is calculated automatically, and a stage can be closed only when its steps are done.</p>
+<p><b>Demo logins:</b> <code>tooling@precision.dev</code> or <code>tooling@shakti.dev</code> (supplier NPD), <code>npd@ergo.dev</code>. <b>BHM-HUB-12</b> is waiting for ERGO to agree the supplier's plan.</p>
+</div></div>
+
+<div class="step"><div class="hd">Step 9. The quality gate: Supplier Quality and ERGO Quality</div><div class="bd">
+<p><span class="who">Supplier Quality</span> <span class="who">ERGO Quality</span></p>
+<p>When the development steps are complete, <b>Supplier Quality inspects and approves internally</b>, then submits the project. <b>Both ERGO Quality and a (second) Supplier Quality engineer must approve</b>. If ERGO Quality <b>rejects</b>, the project goes back to the relevant development stage for rework, with the failure comments. Every quality decision is recorded in the project history.</p>
+<p><b>Demo logins:</b> <code>qa@precision.dev</code> and <code>qa2@precision.dev</code> (two Precision quality engineers), <code>quality@ergo.dev</code></p>
+</div></div>
+
+<div class="step"><div class="hd">Step 10. The customer's final approval</div><div class="bd">
+<p><span class="who">Customer NPD</span> <span class="who">Customer Quality</span></p>
+<p>After both quality approvals, the sample goes to the customer. <b>Both Customer NPD and Customer Quality must approve.</b> If either rejects, the project returns to the quality stage with comments for correction and resubmission. When both approve, the project is <b>Approved for Production Handover</b>.</p>
+<p><b>Demo logins:</b> <code>npd@acme.dev</code> and <code>quality@acme.dev</code></p>
+</div></div>
+
+<h2>4. Stage C: Production order and OFP (flow step 11)</h2>
+<div class="step"><div class="hd">Step 11. Production PO, the OFP project and production</div><div class="bd">
+<p><span class="who">Customer OFP</span> <span class="who">ERGO KAM</span> <span class="who">ERGO OFP</span> <span class="who">Supplier OFP</span></p>
+<ul>
+<li>The <b>Customer OFP</b> team releases a <b>production purchase order</b> for an approved sample. The ERGO KAM is notified.</li>
+<li>The KAM <b>accepts it by creating the OFP project</b> (or returns it with a comment), and assigns an ERGO OFP person and an ERGO Quality person.</li>
+<li>ERGO OFP builds a project like the NPD one but <b>with only the relevant steps</b> (no tool development and no sample approval), adds the <b>Customer OFP and Supplier OFP</b> teams, and releases the plan to the supplier.</li>
+<li>The same cycle follows: supplier plan, ERGO agreement, execution, dual quality gate and customer approval.</li>
+<li>After that, ERGO OFP creates the <b>order</b>, tracks production and packaging, and dispatches shipments to the customer until delivery and closure.</li>
+</ul>
+<p><b>Demo logins:</b> <code>logistics@acme.dev</code> (Customer OFP), <code>kam@ergo.dev</code>, <code>ofp@ergo.dev</code>, <code>planner@precision.dev</code> (Supplier OFP). In the demo data, <b>ACM-KNUCKLE-01</b> has reached an OFP project in execution.</p>
+</div></div>
+
+<h2 class="pb">5. Rules that apply everywhere</h2>
+<table>
+<tr><th style="width:26%">Rule</th><th>What it means</th></tr>
+<tr><td>Nobody sees another side's data</td><td>Customers never see suppliers, supplier quotes, competitor quotes, target prices or ERGO's margin. Suppliers never see the customer. Only ERGO sees both sides. This is enforced on the server, not just hidden in the screens.</td></tr>
+<tr><td>Comments on decisions</td><td>Approve, reject, correction, on hold, send-back and reopen all require a written reason.</td></tr>
+<tr><td>Rework with a trail</td><td>Rejected quotations, failed quality checks and rejected approvals return to the right stage with comments, and the earlier history stays visible.</td></tr>
+<tr><td>Approve is separate from edit</td><td>The ability to change a record and the ability to approve it are separate permissions.</td></tr>
+<tr><td>Audit history</td><td>Every change to RFQs, quotations, steps, quality results and decisions is recorded and cannot be altered.</td></tr>
+<tr><td>Role-based screens</td><td>Each person sees only the menu and buttons their role allows.</td></tr>
+</table>
+
+<h2>6. Demo data already loaded (16 RFQs)</h2>
+<table>
+<tr><th style="width:22%">Part</th><th style="width:20%">Customer</th><th>Where it stands</th></tr>
+<tr><td>ACM-KNUCKLE-01</td><td>Acme</td><td><b>Complete journey:</b> approved, Sample PO, project, quality gates, customer approval, production PO, OFP project in execution</td></tr>
+<tr><td>BHM-HUB-12</td><td>Bharat</td><td>Approved; sample project's plan submitted by the supplier, waiting for ERGO NPD to agree</td></tr>
+<tr><td>SAH-SPRING-15</td><td>Sahyadri</td><td>Approved; Sample PO raised, waiting for the KAM or Management to create the project</td></tr>
+<tr><td>ACM-GEARBLANK-09</td><td>Acme</td><td>Customer put the quotation <b>On Hold</b></td></tr>
+<tr><td>ACM-HOUSING-03</td><td>Acme</td><td>Customer asked for a <b>correction</b></td></tr>
+<tr><td>BHM-PINION-11</td><td>Bharat</td><td>Customer <b>rejected</b> the quotation</td></tr>
+<tr><td>BHM-CRANK-10</td><td>Bharat</td><td>Quotes complete; ERGO has yet to generate the customer quotation</td></tr>
+<tr><td>ACM-FLANGE-08</td><td>Acme</td><td>Sent to the supplier, waiting for the quote</td></tr>
+<tr><td>ACM-CAMSHAFT-07</td><td>Acme</td><td>ERGO asked the customer for clarification</td></tr>
+<tr><td>ACM-LINK-06, BHM-AXLE-16</td><td>Acme, Bharat</td><td>Under review by ERGO</td></tr>
+<tr><td>ACM-BRACKET-02, BHM-SHAFT-05</td><td>Acme, Bharat</td><td>Submitted, waiting for ERGO to start the review</td></tr>
+<tr><td>BHM-GEAR-04</td><td>Bharat</td><td>Draft, not yet submitted</td></tr>
+<tr><td>SAH-ARM-14 / SAH-BRKT-13</td><td>Sahyadri</td><td>Closed / cancelled</td></tr>
+</table>
+
+<h2 class="pb">7. Demo logins</h2>
+<div class="box amber"><b>Password for every account: <code>ErgoDev#2026</code></b>. These are demo accounts on a local test system, not real company data. Open the application at <code>http://localhost:5173</code>.</div>
+<table>
+<tr><th style="width:21%">Organisation</th><th style="width:27%">Email</th><th style="width:22%">Role</th><th>Use it for</th></tr>
+<tr><td>ERGO</td><td>admin@ergo.dev</td><td>Admin</td><td>Users, permissions, master data</td></tr>
+<tr><td>ERGO</td><td>management@ergo.dev</td><td>Management</td><td>Overview, approvals, desk for Bharat and Sahyadri</td></tr>
+<tr><td>ERGO</td><td>rfq@ergo.dev</td><td>RFQ and NPD (2 roles)</td><td>Review RFQs, send to suppliers, generate quotations</td></tr>
+<tr><td>ERGO</td><td>npd@ergo.dev</td><td>NPD and OFP (2 roles)</td><td>Build the plan, agree supplier plans</td></tr>
+<tr><td>ERGO</td><td>ofp@ergo.dev</td><td>OFP</td><td>Production project and orders</td></tr>
+<tr><td>ERGO</td><td>quality@ergo.dev</td><td>Quality</td><td>Quality validation</td></tr>
+<tr><td>ERGO</td><td>kam@ergo.dev</td><td>KAM (Acme)</td><td>Create projects from Sample and Production POs</td></tr>
+<tr><td>Acme Auto</td><td>buyer@acme.dev</td><td>Customer RFQ</td><td>Create RFQ, decide on the quotation</td></tr>
+<tr><td>Acme Auto</td><td>npd@acme.dev</td><td>Customer NPD</td><td>Sample PO, final approval</td></tr>
+<tr><td>Acme Auto</td><td>quality@acme.dev</td><td>Customer Quality</td><td>Final quality approval</td></tr>
+<tr><td>Acme Auto</td><td>logistics@acme.dev</td><td>Customer OFP</td><td>Production PO, orders</td></tr>
+<tr><td>Acme Auto</td><td>account@acme.dev</td><td>Customer KAM</td><td>Account overview</td></tr>
+<tr><td>Bharat Motors</td><td>buyer@, npd@, logistics@, quality@bharat.dev</td><td>RFQ, NPD, OFP, Quality</td><td>Second customer</td></tr>
+<tr><td>Sahyadri Motors</td><td>buyer@, npd@, logistics@sahyadri.dev</td><td>RFQ, NPD, OFP</td><td>Third customer</td></tr>
+<tr><td>Precision Castings</td><td>sales@precision.dev</td><td>Supplier RFQ</td><td>Quote on assigned parts</td></tr>
+<tr><td>Precision Castings</td><td>tooling@precision.dev</td><td>Supplier NPD</td><td>Submit the NPD plan</td></tr>
+<tr><td>Precision Castings</td><td>qa@precision.dev, qa2@precision.dev</td><td>Supplier Quality</td><td>Internal approval, and a second approver</td></tr>
+<tr><td>Precision Castings</td><td>planner@precision.dev</td><td>Supplier OFP</td><td>Production plan</td></tr>
+<tr><td>Precision Castings</td><td>lead@precision.dev</td><td>Supplier KAM</td><td>Supplier overview</td></tr>
+<tr><td>Shakti Forgings</td><td>sales@, tooling@, planner@, qa@, qa2@shakti.dev</td><td>Supplier RFQ, NPD, OFP, Quality</td><td>Second supplier</td></tr>
+<tr><td>Deccan Machining</td><td>sales@deccan.dev</td><td>Supplier RFQ</td><td>Third supplier</td></tr>
+</table>
+<p><i>Note:</i> management@acme.dev exists, but the Customer Management role is switched off in this version and cannot sign in. The two-role ERGO users (rfq@, npd@) sign in with one role and can switch to the other after login.</p>
+
+<h2>8. Suggested order for the live demo</h2>
+<table>
+<tr><th style="width:5%">#</th><th style="width:30%">Log in as</th><th>Show</th></tr>
+<tr><td>1</td><td>buyer@acme.dev</td><td>Create a new RFQ with two parts and submit it</td></tr>
+<tr><td>2</td><td>rfq@ergo.dev</td><td>Review it, split it between Precision and Shakti, send</td></tr>
+<tr><td>3</td><td>sales@precision.dev</td><td>See only its own part (no customer name); submit a quotation</td></tr>
+<tr><td>4</td><td>rfq@ergo.dev</td><td>Accept, then Generate Quotation for Customer</td></tr>
+<tr><td>5</td><td>buyer@acme.dev</td><td>See the ERGO quotation only (no supplier data); approve with a comment</td></tr>
+<tr><td>6</td><td>npd@acme.dev, then kam@ergo.dev</td><td>Raise a Sample PO, then create the project</td></tr>
+<tr><td>7</td><td>npd@ergo.dev, tooling@precision.dev</td><td>Build and release the plan, supplier submits, ERGO agrees</td></tr>
+<tr><td>8</td><td>Open ACM-KNUCKLE-01</td><td>Show a finished journey: quality gate history, customer approvals, production PO and OFP project</td></tr>
+<tr><td>9</td><td>Any role, side by side</td><td>Show that each role sees a different menu, and that the customer and supplier never see each other</td></tr>
+</table>
+
+</body>
+</html>

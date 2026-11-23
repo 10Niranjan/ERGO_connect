@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ERGO Connect - Decisions Needed: Customer and Supplier Registration</title>
+<style>
+  @page { size: A4; margin: 15mm 15mm 16mm; @bottom-right { content: counter(page); } }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Arial, sans-serif; font-size: 10pt; line-height: 1.4; color: #1f2937; margin: 0; }
+  h1 { font-size: 22pt; margin: 0 0 4px; color: #0f3d6e; }
+  h2 { font-size: 14pt; color: #0f3d6e; border-bottom: 2px solid #0f3d6e; padding-bottom: 3px; margin: 20px 0 10px; break-after: avoid; }
+  p { margin: 0 0 8px; }
+  .sub { color: #6b7280; font-size: 10pt; margin-bottom: 14px; }
+  .box { background: #eff6ff; border-left: 4px solid #0f3d6e; padding: 8px 12px; margin: 8px 0 12px; break-inside: avoid; }
+  .box.green { background: #f0fdf4; border-color: #166534; }
+  ul { margin: 0 0 8px; padding-left: 18px; }
+  li { margin-bottom: 2px; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0 12px; font-size: 9pt; }
+  th { background: #0f3d6e; color: #fff; text-align: left; padding: 5px 7px; font-weight: 600; }
+  td { border: 1px solid #d1d5db; padding: 4px 7px; vertical-align: top; }
+  tr { break-inside: avoid; }
+  tr:nth-child(even) td { background: #f8fafc; }
+  td.n { width: 26px; text-align: center; font-weight: 700; color: #0f3d6e; }
+  td.tick { width: 120px; white-space: nowrap; }
+
+  .q { border: 1px solid #d1d5db; border-radius: 6px; padding: 8px 11px 9px; margin: 0 0 10px; break-inside: avoid; }
+  .qh { font-weight: 600; font-size: 10.5pt; color: #0f3d6e; margin-bottom: 4px; display: flex; gap: 8px; }
+  .qh .n { flex: none; background: #0f3d6e; color: #fff; border-radius: 4px; min-width: 24px; text-align: center; font-size: 9.5pt; padding: 1px 4px; height: fit-content; }
+  .why { color: #4b5563; font-size: 9.5pt; margin-bottom: 5px; }
+  .opts { margin: 0 0 5px; }
+  .opts div { margin: 2px 0; padding-left: 20px; position: relative; }
+  .cb { position: absolute; left: 0; top: 3px; width: 11px; height: 11px; border: 1.3px solid #374151; border-radius: 2px; }
+  .sug { background: #f0fdf4; border-left: 3px solid #166534; padding: 3px 8px; margin: 5px 0; font-size: 9.5pt; }
+  .cbi { display: inline-block; width: 11px; height: 11px; border: 1.3px solid #374151; border-radius: 2px; vertical-align: -1px; }
+  .ans { border-bottom: 1px dotted #9ca3af; height: 54px; color: #6b7280; font-size: 9pt; }
+  .tag { display: inline-block; font-size: 8pt; font-weight: 600; color: #9a3412; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 3px; padding: 0 5px; margin-left: 4px; }
+  .pb { break-before: page; }
+</style>
+</head>
+<body>
+
+<h1>Decisions Needed: New Customer and Supplier Registration</h1>
+<div class="sub">ERGO Connect &middot; prepared for ERGO &middot; 16 November 2026</div>
+
+<div class="box">
+  <p><b>What this is.</b> You asked for new screens to register customers and suppliers. The screens should cover
+  everything needed to judge a company on financial, process and quality grounds, with audit reports that
+  management reviews before approving the company. Before we build them, we need your answers to the questions below.</p>
+  <p style="margin:0"><b>How to answer.</b> Tick one option per question, or write your own answer on the line.
+  Each question shows our suggestion; if you agree with all of them, simply tick "Agree" in the
+  <b>Quick answer sheet</b> on the last page.</p>
+</div>
+
+<div class="box green">
+  <p style="margin:0"><b>Already done: the New RFQ screen.</b> Your final RFQ format is live in ERGO Connect.
+  That covers Section 1 with Quote Currency, the one-row parts table with 2D Drawing, 3D Models, Specifications,
+  Additional Data File, Target Price and Remarks, Save as Draft and Submit, and the status line. One small item is
+  left: the Cancel button will warn about unsaved changes. No decision is needed from you on the RFQ screen.</p>
+</div>
+
+<p>Questions marked <span class="tag">Important</span> change how the system works today, so we cannot start without them.</p>
+
+<!-- ============================================================ -->
+<h2>A. What to build first</h2>
+
+<div class="q">
+  <div class="qh"><span class="n">1</span><span>What should the first version include? <span class="tag">Important</span></span></div>
+  <div class="why">Why we ask: the full proposal is about twice the work of the core version. The core version lets you start registering and approving companies sooner.</div>
+  <div class="opts">
+    <div><span class="cb"></span><b>Core version:</b> full company information (financial, process, quality), contacts, documents, audit reports and management approval.</div>
+    <div><span class="cb"></span><b>Full version at once:</b> the core version plus audit scoring with A to D grades, follow-up of audit findings, approval per process, a yearly re-review and certificate expiry reminders.</div>
+  </div>
+  <div class="sug"><b>Our suggestion:</b> the core version first, then the rest as a second version.</div>
+  <div class="ans">Your answer / notes:</div>
+</div>
+
+<div class="q">
+  <div class="qh"><span class="n">2</span><span>Are the information lists in your proposal final?</span></div>
+  <div class="why">Why we ask: the proposal lists more than 150 pieces of information across both screens. Each one becomes a box someone must fill in, so we want only what your team will really use.</div>
+  <div class="opts">
+    <div><span class="cb"></span>Use them exactly as written.</div>
+    <div><span class="cb"></span>Send us a list per section so we can mark each item: keep, remove or required.</div>
+  </div>
+  <div class="sug"><b>Our suggestion:</b> we send you a short list per section to mark up. Please tell us who on your side will review it.</div>
+  <div class="ans">Your answer / reviewer's name:</div>
+</div>
+
+<div class="q">
+  <div class="qh"><span class="n">3</span><span>One long page, or separate tabs per section?</span></div>
+  <div class="why">Why we ask: with tabs, each team can fill its own part (for example Quality) without scrolling through everything else.</div>
+  <div class="opts">
+    <div><span class="cb"></span>Tabs: General, Contacts, Financial, Process, Quality, Compliance, Audit reports, Approval.</div>
+    <div><span class="cb"></span>One long page.</div>
+  </div>
+  <div class="sug"><b>Our suggestion:</b> tabs.</div>
+  <div class="ans">Your answer / notes:</div>
+</div>
+
+<!-- ============================================================ -->
+<h2>B. Who does what</h2>
+
+<div class="q">
+  <div class="qh"><span class="n">4</span><span>Who in ERGO may register a new customer?</span></div>
+  <div class="why">Today: ERGO Admin, the ERGO RFQ team and Key Account Managers (for their own customers).</div>
+  <div class="opts">
+    <div><span class="cb"></span>Keep it as it is today.</div>
+    <div><span class="cb"></span>Change it to: ______________________________</div>
+  </div>
+  <div class="sug"><b>Our suggestion:</b> keep it as it is today.</div>
+  <div class="ans">Your answer / notes:</div>
+</div>
+
+<div class="q">
+  <div class="qh"><span class="n">5</span><span>Who in ERGO may register a new supplier?</span></div>
+  <div class="why">Today: ERGO Admin and the ERGO RFQ team. Your proposal mentions a Supply Management team, which does not exist as a separate user type in the system.</div>
+  <div class="opts">
+    <div><span class="cb"></span>Keep it as it is today.</div>
+    <div><span class="cb"></span>Also allow ERGO Quality.</div>
+    <div><span class="cb"></span>Change it to: ______________________________</div>
+  </div>
+  <div class="sug"><b>Our suggestion:</b> keep it as it is today.</div>
+  <div class="ans">Your answer / notes:</div>
+</div>
+
+<div class="q">
+  <div class="qh"><span class="n">6</span><span>Who fills in each section?</span></div>
+  <div class="why">Why we ask: if each team fills its own section, the system must let several people work on one registration and show who did what.</div>
+  <div class="opts">
+    <div><span class="cb"></span>The person registering the company fills in everything; ERGO Quality adds the audit reports.</div>
+    <div><span class="cb"></span>Each team fills its own section: Quality the quality section, Management the financial section, and so on.</div>
+  </div>
+  <div class="sug"><b>Our suggestion:</b> the first option. It is simpler, and Quality still owns the audits.</div>
+  <div class="ans">Your answer / notes:</div>
+</div>
+
+<div class="q">
+  <div class="qh"><span class="n">7</span><span>Who may see the financial information and bank details? <span class="tag">Important</span></span></div>
+  <div class="why">Why we ask: this is sensitive information. ERGO Connect has no Finance user type today, so someone else must enter and check it.</div>
+  <div class="opts">
+    <div><span class="cb"></span>ERGO Management and the person who registered the company; bank details for ERGO Management only.</div>
+    <div><span class="cb"></span>Add a new user type, <b>ERGO Finance</b>, who enters and sees all financial information.</div>
+    <div><span class="cb"></span>Other: ______________________________</div>
+  </div>
+  <div class="sug"><b>Our suggestion:</b> the first option. Add ERGO Finance only if a finance person will actually log in and use the system.</div>
+  <div class="ans">Your answer / notes:</div>
+</div>
+
+<div class="q">
+  <div class="qh"><span class="n">8</span><span>Should customers and suppliers fill in their own information?</span></div>
+  <div class="why">Why we ask: suppliers know their own machines and certificates best, but self-registration needs an extra online form and a review step.</div>
+  <div class="opts">
+    <div><span class="cb"></span>ERGO enters everything.</div>
+    <div><span class="cb"></span>The company fills in an online form; ERGO checks it and completes the assessment.</div>
+  </div>
+  <div class="sug"><b>Our suggestion:</b> ERGO enters everything in the first version. ERGO already creates every company and its user accounts.</div>
+  <div class="ans">Your answer / notes:</div>
+</div>
+
+<div class="q">
+  <div class="qh"><span class="n">9</span><span>What may a customer or supplier see of its own record? <span class="tag">Important</span></span></div>
+  <div class="why">Why we ask: the record will hold ERGO's internal judgements, such as risk ratings, credit limits, audit findings and scores.</div>
+  <div class="opts">
+    <div><span class="cb"></span>Only their basic details and contacts; never ERGO's ratings, credit limit, audit reports or scores.</div>
+    <div><span class="cb"></span>Also the audit findings they must correct (but not scores or ratings).</div>
+    <div><span class="cb"></span>Everything.</div>
+  </div>
+  <div class="sug"><b>Our suggestion:</b> the first option. Findings can be shared later if you choose the follow-up of audit findings (question 30).</div>
+  <div class="ans">Your answer / notes:</div>
+</div>
+
+<!-- ============================================================ -->
+<h2>C. The approval</h2>
+
+<div class="q">
+  <div class="qh"><span class="n">10</span><span>Must every new customer be approved by management? <span class="tag">Important</span></span></div>
+  <div class="why">Today every new supplier waits for approval. A new customer waits too, except when the ERGO Admin adds it: then it is active immediately.</div>
+  <div class="opts">
+    <div><span class="cb"></span>Yes, every new customer waits for approval, the same as suppliers.</div>
+    <div><span class="cb"></span>No, keep today's rule.</div>
+  </div>
+  <div class="sug"><b>Our suggestion:</b> yes, every new customer waits. That matches your request that management approves both.</div>
+  <div class="ans">Your answer / notes:</div>
+</div>
+
+<div class="q">
+  <div class="qh"><span class="n">11</span><span>Who gives the approval?</span></div>
+  <div class="why">Today: suppliers are approved by ERGO Management only; customers by ERGO Management or ERGO Admin.</div>
+  <div class="opts">
+    <div><span class="cb"></span>ERGO Management only, for both.</div>
+    <div><span class="cb"></span>Keep today's rule.</div>
+  </div>
+  <div class="sug"><b>Our suggestion:</b> ERGO Management only, for both.</div>
+  <div class="ans">Your answer / notes:</div>
+</div>
+
+<div class="q">
+  <div class="qh"><span class="n">12</span><span>One approval, or several reviews before it?</span></div>
+  <div class="why">Your proposal shows a financial review, a quality review and a commercial review, each approved before management decides.</div>
+  <div class="opts">
+    <div><span class="cb"></span>Management decides alone, seeing all the information and audit reports on one screen.</div>
+    <div><span class="cb"></span>Finance, Quality and Commercial each sign off first, then Management decides.</div>
+  </div>
+  <div class="sug"><b>Our suggestion:</b> management decides alone. Several sign-offs slow every approval down and need a named person for each review.</div>
+  <div class="ans">Your answer / notes:</div>
+</div>
+
+<div class="q">
+  <div class="qh"><span class="n">13</span><span>Which decisions can management take?</span></div>
+  <div class="why">Your proposal includes "Conditional Approval". For the system to handle it, we need to know exactly what a conditionally approved company may and may not do.</div>
+  <div class="opts">
+    <div><span class="cb"></span>Approve, Reject or Ask for more information.</div>
+    <div><span class="cb"></span>The above plus Conditional Approval, which means: ______________________________<br><small>(for example: may receive RFQs but no purchase orders until the condition is met)</small></div>
+  </div>
+  <div class="sug"><b>Our suggestion:</b> the first option now; add Conditional Approval once you have defined what it limits.</div>
+  <div class="ans">Your answer / notes:</div>
+</div>
+
+<div class="q">
+  <div class="qh"><span class="n">14</span><span>Is an audit report required before approval?</span></div>
+  <div class="opts">
+    <div><span class="cb"></span>Required for suppliers and customers.</div>
+    <div><span class="cb"></span>Required for suppliers only (an on-site, virtual or desk audit).</div>
+    <div><span class="cb"></span>Never required.</div>
+  </div>
+  <div class="sug"><b>Our suggestion:</b> required for suppliers only; optional for customers.</div>
+  <div class="ans">Your answer / notes:</div>
+</div>
+
+<div class="q">
+  <div class="qh"><span class="n">15</span><span>What is the minimum information before a company can be sent for approval?</span></div>
+  <div class="why">Why we ask: anything not on this list can be left empty and completed later.</div>
+  <div class="opts">
+    <div><span class="cb"></span>Our proposal: legal name, country, address, registration or tax number, business type, one contact. For suppliers also at least one manufacturing process and the audit report.</div>
+    <div><span class="cb"></span>Your list: ______________________________</div>
+  </div>
+  <div class="sug"><b>Our suggestion:</b> our proposal above.</div>
+  <div class="ans">Your answer / notes:</div>
+</div>
+
+<div class="q">
+  <div class="qh"><span class="n">16</span><span>Can a rejected company be corrected and sent again?</span></div>
+  <div class="opts">
+    <div><span class="cb"></span>Yes, it can be corrected and resubmitted; the earlier rejection stays in its history.</div>
+    <div><span class="cb"></span>No, a rejection is final.</div>
+  </div>
+  <div class="sug"><b>Our suggestion:</b> yes, with the history kept.</div>
+  <div class="ans">Your answer / notes:</div>
+</div>
+
+<div class="q">
+  <div class="qh"><span class="n">17</span><span>What may a company do while it waits for approval?</span></div>
+  <div class="why">Today a company waiting for approval cannot be selected for RFQs or orders.</div>
+  <div class="opts">
+    <div><span class="cb"></span>Nothing until approved (as today).</div>
+    <div><span class="cb"></span>Something more: ______________________________</div>
+  </div>
+  <div class="sug"><b>Our suggestion:</b> nothing until approved.</div>
+  <div class="ans">Your answer / notes:</div>
+</div>
+
+<!-- ============================================================ -->
+<h2>D. After approval</h2>
+
+<div class="q">
+  <div class="qh"><span class="n">18</span><span>Suspending an approved company: who may do it, and what happens to its open work?</span></div>
+  <div class="why">Your proposal includes a "Suspended" status, for example after a serious quality or payment problem.</div>
+  <div class="opts">
+    <div><span class="cb"></span>ERGO Management suspends; no new RFQs or orders, but RFQs and orders already running continue.</div>
+    <div><span class="cb"></span>ERGO Management suspends; everything, including running orders, is put on hold.</div>
+    <div><span class="cb"></span>No suspension; only Inactive (as today).</div>
+  </div>
+  <div class="sug"><b>Our suggestion:</b> the first option, with a reason required.</div>
+  <div class="ans">Your answer / notes:</div>
+</div>
+
+<div class="q">
+  <div class="qh"><span class="n">19</span><span>What happens to the customers and suppliers already in the system? <span class="tag">Important</span></span></div>
+  <div class="opts">
+    <div><span class="cb"></span>They stay active; the system shows what information is missing so it can be completed over time.</div>
+    <div><span class="cb"></span>They must be completed and approved again before new RFQs or orders.</div>
+  </div>
+  <div class="sug"><b>Our suggestion:</b> they stay active and are completed over time, so no running work is interrupted.</div>
+  <div class="ans">Your answer / notes:</div>
+</div>
+
+<div class="q">
+  <div class="qh"><span class="n">20</span><span>Should approvals be reviewed again after some time?</span></div>
+  <div class="why">Your proposal suggests a yearly supplier review and a yearly customer credit review. This is part of the full version (question 1).</div>
+  <div class="opts">
+    <div><span class="cb"></span>Yes, every ____ months; the system reminds ERGO Management when a review is due.</div>
+    <div><span class="cb"></span>No automatic review.</div>
+  </div>
+  <div class="sug"><b>Our suggestion:</b> yearly, in the second version.</div>
+  <div class="ans">Your answer / notes:</div>
+</div>
+
+<!-- ============================================================ -->
+<h2>E. The information itself</h2>
+
+<div class="q">
+  <div class="qh"><span class="n">21</span><span>Customer credit limit: record only, or should the system enforce it?</span></div>
+  <div class="why">ERGO Connect does not handle invoices or payments, so it cannot know how much a customer owes.</div>
+  <div class="opts">
+    <div><span class="cb"></span>Record the approved credit limit and credit period only.</div>
+    <div><span class="cb"></span>Warn or block when an order would go over the limit (needs payment information from your accounts system).</div>
+  </div>
+  <div class="sug"><b>Our suggestion:</b> record only.</div>
+  <div class="ans">Your answer / notes:</div>
+</div>
+
+<div class="q">
+  <div class="qh"><span class="n">22</span><span>Business model per customer: record only, or does it change how the work is done?</span></div>
+  <div class="why">Your proposal lists four models: ERGO buys and resells, the supplier invoices the customer and ERGO earns commission, a service fee, or a mix.</div>
+  <div class="opts">
+    <div><span class="cb"></span>Record only, for information.</div>
+    <div><span class="cb"></span>It should change quotations or orders, in this way: ______________________________</div>
+  </div>
+  <div class="sug"><b>Our suggestion:</b> record only.</div>
+  <div class="ans">Your answer / notes:</div>
+</div>
+
+<div class="q">
+  <div class="qh"><span class="n">23</span><span>Supplier processes and materials: chosen from a list, or typed freely?</span></div>
+  <div class="why">ERGO already keeps lists of processes, materials and coatings, used in RFQs. Choosing from them lets you later find, for example, all suppliers that do CNC turning.</div>
+  <div class="opts">
+    <div><span class="cb"></span>Chosen from ERGO's lists (ERGO Admin adds new entries when needed).</div>
+    <div><span class="cb"></span>Typed freely.</div>
+  </div>
+  <div class="sug"><b>Our suggestion:</b> chosen from ERGO's lists.</div>
+  <div class="ans">Your answer / notes:</div>
+</div>
+
+<div class="q">
+  <div class="qh"><span class="n">24</span><span>Certificates: which ones, and what happens when one expires?</span></div>
+  <div class="why">For example ISO 9001, IATF 16949, ISO 14001, ISO 13485, AS9100. Each certificate would be uploaded with its expiry date.</div>
+  <div class="opts">
+    <div><span class="cb"></span>Fixed list kept by ERGO Admin; an expired certificate is shown in red, nothing more.</div>
+    <div><span class="cb"></span>As above, plus a reminder ____ days before expiry to ______________ (full version).</div>
+    <div><span class="cb"></span>As above, and the supplier is blocked from new RFQs while a required certificate is expired.</div>
+  </div>
+  <div class="sug"><b>Our suggestion:</b> shown in red in the first version; reminders 30 days before expiry to ERGO Quality in the second version.</div>
+  <div class="ans">Certificates to list / your answer:</div>
+</div>
+
+<div class="q">
+  <div class="qh"><span class="n">25</span><span>Suppliers with more than one factory</span></div>
+  <div class="opts">
+    <div><span class="cb"></span>Several factory addresses, but processes and certificates recorded for the company as a whole.</div>
+    <div><span class="cb"></span>Each factory with its own processes, certificates and audits.</div>
+  </div>
+  <div class="sug"><b>Our suggestion:</b> the first option now; per-factory detail together with approval per process (full version).</div>
+  <div class="ans">Your answer / notes:</div>
+</div>
+
+<div class="q">
+  <div class="qh"><span class="n">26</span><span>Should bank details be stored in ERGO Connect at all?</span></div>
+  <div class="why">Bank details are the most sensitive information on the screen. They are only useful if your team pays suppliers or checks accounts using them.</div>
+  <div class="opts">
+    <div><span class="cb"></span>Yes: Indian accounts (IFSC) and international accounts (SWIFT / IBAN), visible to the people chosen in question 7.</div>
+    <div><span class="cb"></span>No, they stay in your accounts system.</div>
+  </div>
+  <div class="sug"><b>Our suggestion:</b> leave them out unless your team will use them in ERGO Connect.</div>
+  <div class="ans">Your answer / notes:</div>
+</div>
+
+<div class="q">
+  <div class="qh"><span class="n">27</span><span>Company numbers</span></div>
+  <div class="why">Today each company gets a code typed in by ERGO. Each customer also has an RFQ prefix (for example IC in IC-2026-001).</div>
+  <div class="opts">
+    <div><span class="cb"></span>Automatic numbers: customers CUS-00001, suppliers SUP-00001. The RFQ prefix is set during registration.</div>
+    <div><span class="cb"></span>Keep typing the codes by hand.</div>
+  </div>
+  <div class="sug"><b>Our suggestion:</b> automatic numbers.</div>
+  <div class="ans">Your answer / notes:</div>
+</div>
+
+<!-- ============================================================ -->
+<h2>F. Audits</h2>
+
+<div class="q">
+  <div class="qh"><span class="n">28</span><span>What does an audit report look like in the first version?</span></div>
+  <div class="opts">
+    <div><span class="cb"></span>The report file plus a short summary: date, type (on-site, virtual, desk review), auditor, findings, recommendation (approve or reject).</div>
+    <div><span class="cb"></span>A scored checklist filled in on screen, with the weights from your proposal: quality system 25%, manufacturing process 25%, inspection and testing 15%, planning and delivery 15%, financial 10%, management and compliance 10%. Grades: A 85% or more, B 70&ndash;84%, C 60&ndash;69%, D below 60%.</div>
+  </div>
+  <div class="sug"><b>Our suggestion:</b> report file plus summary first; the scored checklist in the second version. <b>If you already use an audit checklist, please send it to us</b>, so the scored version follows your own questions and weights.</div>
+  <div class="ans">Your answer / notes:</div>
+</div>
+
+<div class="q">
+  <div class="qh"><span class="n">29</span><span>Customer assessments: same as supplier audits, or simpler?</span></div>
+  <div class="opts">
+    <div><span class="cb"></span>Simpler: a desk review with notes, a risk rating (low, medium, high) and an optional report file.</div>
+    <div><span class="cb"></span>The same as supplier audits, with scores.</div>
+  </div>
+  <div class="sug"><b>Our suggestion:</b> simpler.</div>
+  <div class="ans">Your answer / notes:</div>
+</div>
+
+<div class="q">
+  <div class="qh"><span class="n">30</span><span>Audit findings: should suppliers answer them in ERGO Connect? (full version)</span></div>
+  <div class="opts">
+    <div><span class="cb"></span>Yes: the supplier sees each finding, uploads its corrective action, and ERGO Quality closes it.</div>
+    <div><span class="cb"></span>No: ERGO tracks findings internally and talks to the supplier outside the system.</div>
+  </div>
+  <div class="sug"><b>Our suggestion:</b> yes, in the second version.</div>
+  <div class="ans">Your answer / notes:</div>
+</div>
+
+<!-- ============================================================ -->
+<h2>G. Messages and connections to other screens</h2>
+
+<div class="q">
+  <div class="qh"><span class="n">31</span><span>Who should be told, and when?</span></div>
+  <div class="why">Today ERGO Management (and ERGO Admin, for customers) is notified when a company waits for approval.</div>
+  <div class="opts">
+    <div><span class="cb"></span>Approvers when a company is sent for approval; the person who registered it when it is approved, rejected or sent back.</div>
+    <div><span class="cb"></span>As above, and the company itself receives an email when it is approved.</div>
+  </div>
+  <div class="sug"><b>Our suggestion:</b> the first option; ERGO tells the company itself when its user accounts are ready.</div>
+  <div class="ans">Your answer / notes:</div>
+</div>
+
+<div class="q">
+  <div class="qh"><span class="n">32</span><span>Should approval affect which suppliers can receive an RFQ? (full version)</span></div>
+  <div class="why">Your proposal suggests approving a supplier per process, for example approved for CNC machining but not for plating.</div>
+  <div class="opts">
+    <div><span class="cb"></span>Any approved supplier can receive any RFQ (as today).</div>
+    <div><span class="cb"></span>The system suggests suppliers approved for the processes in the RFQ, but ERGO may still choose others.</div>
+    <div><span class="cb"></span>Only suppliers approved for those processes can be chosen.</div>
+  </div>
+  <div class="sug"><b>Our suggestion:</b> as today in the first version; "suggests" in the second version.</div>
+  <div class="ans">Your answer / notes:</div>
+</div>
+
+<!-- ============================================================ -->
+<div class="box">
+  <p style="margin:0"><b>What happens next.</b> Once we have your answers, we send you the list of information per section to confirm (question 2). Building starts after that.</p>
+</div>
+
+<h2 class="pb">Quick answer sheet</h2>
+<p>If you agree with our suggestion, tick <b>Agree</b>. Otherwise tick <b>Change</b> and write your answer on the question's page.</p>
+
+<table>
+  <tr><th>#</th><th>Question</th><th>Our suggestion</th><th>Your choice</th></tr>
+  <tr><td class="n">1</td><td>First version scope</td><td>Core version first, the rest later</td><td class="tick"><span class="cbi"></span> Agree &nbsp; <span class="cbi"></span> Change</td></tr>
+  <tr><td class="n">2</td><td>Information lists</td><td>We send lists per section to mark up</td><td class="tick"><span class="cbi"></span> Agree &nbsp; <span class="cbi"></span> Change</td></tr>
+  <tr><td class="n">3</td><td>Layout</td><td>Tabs</td><td class="tick"><span class="cbi"></span> Agree &nbsp; <span class="cbi"></span> Change</td></tr>
+  <tr><td class="n">4</td><td>Who registers customers</td><td>As today (Admin, RFQ team, Key Account Managers)</td><td class="tick"><span class="cbi"></span> Agree &nbsp; <span class="cbi"></span> Change</td></tr>
+  <tr><td class="n">5</td><td>Who registers suppliers</td><td>As today (Admin, RFQ team)</td><td class="tick"><span class="cbi"></span> Agree &nbsp; <span class="cbi"></span> Change</td></tr>
+  <tr><td class="n">6</td><td>Who fills each section</td><td>The registering person; Quality adds audits</td><td class="tick"><span class="cbi"></span> Agree &nbsp; <span class="cbi"></span> Change</td></tr>
+  <tr><td class="n">7</td><td>Who sees financial data</td><td>Management and the registering person; bank details Management only</td><td class="tick"><span class="cbi"></span> Agree &nbsp; <span class="cbi"></span> Change</td></tr>
+  <tr><td class="n">8</td><td>Self-registration</td><td>ERGO enters everything</td><td class="tick"><span class="cbi"></span> Agree &nbsp; <span class="cbi"></span> Change</td></tr>
+  <tr><td class="n">9</td><td>What companies see of their own record</td><td>Basic details and contacts only</td><td class="tick"><span class="cbi"></span> Agree &nbsp; <span class="cbi"></span> Change</td></tr>
+  <tr><td class="n">10</td><td>Every new customer approved</td><td>Yes</td><td class="tick"><span class="cbi"></span> Agree &nbsp; <span class="cbi"></span> Change</td></tr>
+  <tr><td class="n">11</td><td>Who approves</td><td>ERGO Management only</td><td class="tick"><span class="cbi"></span> Agree &nbsp; <span class="cbi"></span> Change</td></tr>
+  <tr><td class="n">12</td><td>One approval or several reviews</td><td>Management decides alone</td><td class="tick"><span class="cbi"></span> Agree &nbsp; <span class="cbi"></span> Change</td></tr>
+  <tr><td class="n">13</td><td>Approval choices</td><td>Approve, Reject, Ask for more information</td><td class="tick"><span class="cbi"></span> Agree &nbsp; <span class="cbi"></span> Change</td></tr>
+  <tr><td class="n">14</td><td>Audit report required</td><td>Suppliers only</td><td class="tick"><span class="cbi"></span> Agree &nbsp; <span class="cbi"></span> Change</td></tr>
+  <tr><td class="n">15</td><td>Minimum information</td><td>Our proposed list</td><td class="tick"><span class="cbi"></span> Agree &nbsp; <span class="cbi"></span> Change</td></tr>
+  <tr><td class="n">16</td><td>Rejected company</td><td>Can be corrected and resubmitted</td><td class="tick"><span class="cbi"></span> Agree &nbsp; <span class="cbi"></span> Change</td></tr>
+  <tr><td class="n">17</td><td>While waiting for approval</td><td>Nothing until approved</td><td class="tick"><span class="cbi"></span> Agree &nbsp; <span class="cbi"></span> Change</td></tr>
+  <tr><td class="n">18</td><td>Suspension</td><td>Management; no new work, running work continues</td><td class="tick"><span class="cbi"></span> Agree &nbsp; <span class="cbi"></span> Change</td></tr>
+  <tr><td class="n">19</td><td>Existing companies</td><td>Stay active, completed over time</td><td class="tick"><span class="cbi"></span> Agree &nbsp; <span class="cbi"></span> Change</td></tr>
+  <tr><td class="n">20</td><td>Re-review</td><td>Yearly, second version</td><td class="tick"><span class="cbi"></span> Agree &nbsp; <span class="cbi"></span> Change</td></tr>
+  <tr><td class="n">21</td><td>Credit limit</td><td>Record only</td><td class="tick"><span class="cbi"></span> Agree &nbsp; <span class="cbi"></span> Change</td></tr>
+  <tr><td class="n">22</td><td>Business model</td><td>Record only</td><td class="tick"><span class="cbi"></span> Agree &nbsp; <span class="cbi"></span> Change</td></tr>
+  <tr><td class="n">23</td><td>Processes and materials</td><td>Chosen from ERGO's lists</td><td class="tick"><span class="cbi"></span> Agree &nbsp; <span class="cbi"></span> Change</td></tr>
+  <tr><td class="n">24</td><td>Certificates</td><td>Shown in red when expired; reminders later</td><td class="tick"><span class="cbi"></span> Agree &nbsp; <span class="cbi"></span> Change</td></tr>
+  <tr><td class="n">25</td><td>Several factories</td><td>Several addresses, details for the company as a whole</td><td class="tick"><span class="cbi"></span> Agree &nbsp; <span class="cbi"></span> Change</td></tr>
+  <tr><td class="n">26</td><td>Bank details</td><td>Leave out unless used in ERGO Connect</td><td class="tick"><span class="cbi"></span> Agree &nbsp; <span class="cbi"></span> Change</td></tr>
+  <tr><td class="n">27</td><td>Company numbers</td><td>Automatic (CUS-00001, SUP-00001)</td><td class="tick"><span class="cbi"></span> Agree &nbsp; <span class="cbi"></span> Change</td></tr>
+  <tr><td class="n">28</td><td>Audit report format</td><td>Report file plus summary; scoring later (please send your checklist)</td><td class="tick"><span class="cbi"></span> Agree &nbsp; <span class="cbi"></span> Change</td></tr>
+  <tr><td class="n">29</td><td>Customer assessments</td><td>Simpler than supplier audits</td><td class="tick"><span class="cbi"></span> Agree &nbsp; <span class="cbi"></span> Change</td></tr>
+  <tr><td class="n">30</td><td>Suppliers answer findings</td><td>Yes, second version</td><td class="tick"><span class="cbi"></span> Agree &nbsp; <span class="cbi"></span> Change</td></tr>
+  <tr><td class="n">31</td><td>Notifications</td><td>Approvers and the registering person</td><td class="tick"><span class="cbi"></span> Agree &nbsp; <span class="cbi"></span> Change</td></tr>
+  <tr><td class="n">32</td><td>Approval and RFQ supplier choice</td><td>As today, then suggestions in the second version</td><td class="tick"><span class="cbi"></span> Agree &nbsp; <span class="cbi"></span> Change</td></tr>
+</table>
+
+
+
+</body>
+</html>

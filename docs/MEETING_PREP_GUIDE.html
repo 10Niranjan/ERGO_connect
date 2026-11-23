@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ERGO Connect - Meeting Prep Guide</title>
+<style>
+  :root {
+    --navy: #1d3b84; --navy-d: #142a5e; --red: #e3202a; --ink: #1f2937; --muted: #6b7280;
+    --line: #dbe2ee; --soft: #f3f6fb; --soft2: #eaf0fa; --green: #15803d; --amber: #b45309;
+  }
+  @page { size: A4; margin: 15mm 15mm 16mm;
+    @bottom-left { content: "ERGO Connect  ·  Meeting prep guide"; font: 7.5pt "Segoe UI", Arial, sans-serif; color: #9ca3af; }
+    @bottom-right { content: counter(page); font: 600 8pt "Segoe UI", Arial, sans-serif; color: #1d3b84; } }
+  @page :first { margin: 0; @bottom-left { content: none; } @bottom-right { content: none; } }
+  * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { font-family: "Segoe UI", Arial, sans-serif; font-size: 9.6pt; line-height: 1.42; color: var(--ink); margin: 0; background: #fff; }
+  p { margin: 0 0 7px; }
+  ul, ol { margin: 0 0 7px; padding-left: 18px; }
+  li { margin-bottom: 3px; }
+  b, strong { font-weight: 600; }
+  code, .mono { font-family: "Cascadia Mono", Consolas, monospace; font-size: 8.4pt; }
+  .pb { break-before: page; }
+
+  /* ---------- cover ---------- */
+  .cover { height: 296mm; padding: 16mm 17mm 14mm; display: flex; flex-direction: column; position: relative; overflow: hidden; }
+  .cover .top { display: flex; justify-content: space-between; align-items: center; }
+  .cover .top img { width: 150px; }
+  .cover .tag { font-size: 7.8pt; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--line); border-radius: 20px; padding: 3px 10px; }
+  .hero { margin-top: 16mm; background: var(--navy); color: #fff; border-radius: 14px; padding: 13mm 12mm 12mm; position: relative; overflow: hidden; }
+  .hero::after { content: ""; position: absolute; right: -40px; top: -40px; width: 190px; height: 190px; border-radius: 50%; background: rgba(255,255,255,.06); }
+  .hero::before { content: ""; position: absolute; right: 60px; bottom: -70px; width: 150px; height: 150px; border-radius: 50%; background: rgba(227,32,42,.85); }
+  .hero .kicker { font-size: 8.5pt; letter-spacing: .2em; text-transform: uppercase; color: #c7d4f2; font-weight: 600; }
+  .hero h1 { font-size: 30pt; line-height: 1.08; margin: 8px 0 10px; font-weight: 700; position: relative; z-index: 1; }
+  .hero h1 span { color: #ffb3b6; }
+  .hero .lead { font-size: 11.5pt; color: #e3e9f7; max-width: 125mm; margin: 0; position: relative; z-index: 1; }
+  .meet { margin-top: 9mm; display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+  .meet .cell { background: var(--soft); border-radius: 10px; padding: 9px 12px; border-left: 4px solid var(--navy); }
+  .meet .cell.wide { grid-column: span 2; }
+  .meet .k { font-size: 7.6pt; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  .meet .v { font-size: 11pt; font-weight: 600; color: var(--navy-d); margin-top: 1px; }
+  .meet .v small { font-weight: 400; color: var(--ink); font-size: 9.5pt; }
+  .inside { margin-top: 9mm; }
+  .inside h4 { font-size: 8pt; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); margin: 0 0 7px; }
+  .parts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .parts .pc { border: 1px solid var(--line); border-radius: 10px; padding: 10px 11px 11px; }
+  .parts .num { width: 26px; height: 26px; border-radius: 50%; background: var(--red); color: #fff; font-weight: 700; font-size: 11pt; display: flex; align-items: center; justify-content: center; }
+  .parts .t { font-weight: 700; color: var(--navy-d); margin-top: 7px; font-size: 10pt; }
+  .parts .d { color: var(--muted); font-size: 8.4pt; margin-top: 2px; }
+  .cover .foot { margin-top: auto; display: flex; justify-content: space-between; color: var(--muted); font-size: 8pt; border-top: 1px solid var(--line); padding-top: 8px; }
+
+  /* ---------- section heads ---------- */
+  .part-head { display: flex; align-items: center; gap: 12px; margin: 0 0 10px; }
+  .part-head .pn { background: var(--red); color: #fff; font-weight: 700; font-size: 9pt; letter-spacing: .14em; text-transform: uppercase; border-radius: 6px; padding: 5px 9px; white-space: nowrap; }
+  .part-head h2 { margin: 0; font-size: 19pt; color: var(--navy-d); line-height: 1.1; }
+  .part-head .when { margin-left: auto; font-size: 8.4pt; color: var(--muted); border: 1px solid var(--line); border-radius: 20px; padding: 3px 10px; white-space: nowrap; }
+  h3 { font-size: 11.5pt; color: var(--navy); margin: 14px 0 6px; break-after: avoid; display: flex; align-items: center; gap: 7px; }
+  h3::before { content: ""; width: 4px; height: 13px; background: var(--red); border-radius: 2px; display: inline-block; }
+
+  /* ---------- blocks ---------- */
+  .oneline { background: var(--soft2); border-radius: 12px; padding: 9px 15px; font-size: 12pt; color: var(--navy-d); font-weight: 600; line-height: 1.35; margin-bottom: 10px; }
+  .oneline small { display: block; font-size: 7.8pt; letter-spacing: .14em; text-transform: uppercase; color: var(--red); margin-bottom: 3px; }
+  .box { border-radius: 10px; padding: 9px 13px; margin: 7px 0 10px; break-inside: avoid; background: var(--soft); border-left: 4px solid var(--navy); }
+  .box.red { background: #fef2f2; border-color: var(--red); }
+  .box.amber { background: #fffbeb; border-color: var(--amber); }
+  .box.green { background: #f0fdf4; border-color: var(--green); }
+  .box .bt { font-weight: 700; margin-bottom: 3px; display: block; }
+  .box.red .bt { color: #b91c1c; } .box.amber .bt { color: var(--amber); } .box.green .bt { color: var(--green); }
+  .box p:last-child, .box ul:last-child { margin-bottom: 0; }
+
+  .three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; margin: 6px 0 8px; }
+  .card { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; break-inside: avoid; background: #fff; }
+  .card .cn { display: inline; font-size: 14pt; font-weight: 700; color: var(--red); line-height: 1; margin-right: 5px; }
+  .card .ct { display: inline; font-weight: 700; color: var(--navy-d); font-size: 10pt; }
+  .card p { margin-top: 4px !important; }
+  .card p { font-size: 8.9pt; margin: 0; }
+
+  .stages { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; margin: 6px 0 8px; }
+  .stage { border-radius: 11px; overflow: hidden; border: 1px solid var(--line); break-inside: avoid; }
+  .stage .sh { padding: 8px 12px; color: #fff; }
+  .stage.a .sh { background: var(--navy); } .stage.b .sh { background: #2f5fb8; } .stage.c .sh { background: var(--red); }
+  .stage .sl { display: inline; margin-right: 6px; font-size: 7.5pt; letter-spacing: .16em; text-transform: uppercase; opacity: .85; font-weight: 600; }
+  .stage .st { display: inline; font-size: 12pt; font-weight: 700; }
+  .stage .sq { font-size: 8.8pt; font-style: italic; opacity: .9; }
+  .stage ol { padding: 7px 10px 7px 26px; margin: 0; font-size: 8.7pt; }
+  .stage ol li { margin-bottom: 2px; }
+  .stage .gate { margin: 0 10px 10px; background: #fef2f2; color: #b91c1c; border-radius: 6px; padding: 4px 8px; font-size: 8pt; font-weight: 600; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+  .chip { background: var(--soft2); color: var(--navy-d); border-radius: 20px; padding: 3px 10px; font-size: 8.6pt; font-weight: 600; }
+
+  .steps { counter-reset: s; margin: 4px 0 8px; }
+  .step { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 7px; break-inside: avoid; }
+  .step .sn { flex: 0 0 22px; height: 22px; border-radius: 50%; background: var(--navy); color: #fff; font-weight: 700; font-size: 9pt; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
+  .step .sb { flex: 1; }
+  .cmd { display: block; background: #0f1b3d; color: #e5ecff; border-radius: 7px; padding: 6px 10px; margin-top: 3px; font-family: "Cascadia Mono", Consolas, monospace; font-size: 8.2pt; }
+  .cmd .c { color: #8fa3d6; }
+
+  .browsers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; margin: 6px 0 8px; }
+  .bw { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; break-inside: avoid; }
+  .bw .bar { background: #e8edf5; padding: 5px 9px; display: flex; gap: 4px; align-items: center; }
+  .bw .dot { width: 7px; height: 7px; border-radius: 50%; background: #c3cbd8; }
+  .bw .bn { margin-left: 6px; font-size: 8pt; font-weight: 600; color: var(--muted); }
+  .bw .bb { padding: 9px 11px; }
+  .bw .who { font-weight: 700; font-size: 11pt; }
+  .bw .acct { font-size: 8.3pt; color: var(--muted); }
+  .bw.cu .who { color: #2f5fb8; } .bw.er .who { color: var(--navy-d); } .bw.su .who { color: var(--red); }
+
+  .twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .rfq { border-radius: 10px; padding: 10px 12px; break-inside: avoid; }
+  .rfq.prep { background: var(--soft2); } .rfq.live { background: #fef2f2; }
+  .rfq .rt { font-weight: 700; font-size: 10.5pt; color: var(--navy-d); }
+  .rfq.live .rt { color: #b91c1c; }
+  .rfq p { font-size: 8.9pt; margin: 3px 0 0; }
+
+  .check { columns: 2; column-gap: 16px; padding: 0; list-style: none; margin: 4px 0 6px; }
+  .check li { break-inside: avoid; padding-left: 20px; position: relative; font-size: 9pt; margin-bottom: 4px; }
+  .check li::before { content: ""; position: absolute; left: 0; top: 2px; width: 11px; height: 11px; border: 1.4px solid var(--navy); border-radius: 3px; }
+
+  /* timeline */
+  .tl { display: flex; border-radius: 8px; overflow: hidden; margin: 6px 0 4px; height: 34px; }
+  .tl div { color: #fff; font-size: 7.6pt; font-weight: 600; display: flex; align-items: center; justify-content: center; text-align: center; line-height: 1.1; padding: 0 3px; border-right: 2px solid #fff; }
+  .tl div:last-child { border-right: 0; }
+  .tlk { display: flex; justify-content: space-between; font-size: 7.6pt; color: var(--muted); margin-bottom: 8px; }
+
+  table { width: 100%; border-collapse: separate; border-spacing: 0; margin: 5px 0 10px; font-size: 8.8pt; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  th { background: var(--navy); color: #fff; text-align: left; padding: 6px 8px; font-weight: 600; font-size: 8.4pt; }
+  td { padding: 6px 8px; vertical-align: top; border-top: 1px solid var(--line); }
+  tr { break-inside: avoid; }
+  tbody tr:nth-child(even) td { background: #f8fafd; }
+  td.n { width: 26px; text-align: center; font-weight: 700; color: var(--red); }
+  td.t { white-space: nowrap; font-weight: 700; color: var(--navy-d); width: 78px; }
+  td.say { font-style: italic; color: #334155; }
+  .pill { display: inline-block; font-size: 7.6pt; font-weight: 700; border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
+  .pill.cu { background: #e3ecfb; color: #2f5fb8; } .pill.er { background: #e2e8f5; color: var(--navy-d); } .pill.su { background: #fde4e5; color: #b91c1c; }
+  .pill.ad { background: #f1f5f9; color: #475569; }
+  .acct { font-family: "Cascadia Mono", Consolas, monospace; font-size: 8pt; color: var(--navy-d); }
+  b.btn { color: var(--navy); font-weight: 700; }
+
+  .bc { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin: 6px 0 8px; }
+  .bci { border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; break-inside: avoid; }
+  .bci .bt { font-weight: 700; color: var(--navy-d); font-size: 10pt; }
+  .bci p { font-size: 8.8pt; margin: 3px 0 0; }
+  .bci .q { color: #b91c1c; font-style: italic; }
+
+  .asks { counter-reset: a; list-style: none; padding: 0; margin: 4px 0 8px; }
+  .asks li { counter-increment: a; position: relative; padding: 6px 10px 6px 38px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 5px; break-inside: avoid; font-size: 9pt; }
+  .asks li::before { content: counter(a); position: absolute; left: 9px; top: 6px; width: 20px; height: 20px; border-radius: 50%; background: var(--red); color: #fff; font-weight: 700; font-size: 8.5pt; display: flex; align-items: center; justify-content: center; }
+
+  .qa { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin: 6px 0 8px; }
+  .qai { border: 1px solid var(--line); border-radius: 9px; padding: 5px 9px; line-height: 1.32; break-inside: avoid; }
+  .qai .q { font-weight: 700; color: var(--navy-d); font-size: 9pt; }
+  .qai .a { font-size: 8.8pt; margin-top: 2px; }
+  .qai .a .no { color: #b91c1c; font-weight: 700; }
+  .qai .a .yes { color: var(--green); font-weight: 700; }
+
+  .rules { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 6px 0 8px; }
+  .rule { background: var(--navy); color: #fff; border-radius: 10px; padding: 10px 11px; break-inside: avoid; }
+  .rule .ri { display: none; }
+  .rule .rt { font-weight: 700; font-size: 9.4pt; }
+  .rule p { font-size: 8.3pt; color: #dbe3f6; margin: 3px 0 0; }
+
+  .logins { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; margin: 6px 0 4px; }
+  .lg { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; break-inside: avoid; }
+  .lg .lh { padding: 6px 10px; color: #fff; font-weight: 700; font-size: 9pt; }
+  .lg.er .lh { background: var(--navy); } .lg.cu .lh { background: #2f5fb8; } .lg.su .lh { background: var(--red); }
+  .lg .row { display: flex; justify-content: space-between; gap: 6px; padding: 3px 10px; border-top: 1px solid var(--line); font-size: 8.2pt; }
+  .lg .row:first-of-type { border-top: 0; }
+  .lg .row .r { color: var(--muted); text-align: right; }
+  .lg .row.add { background: #fffbeb; }
+  .lg .sub { padding: 4px 10px; font-size: 7.6pt; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); background: var(--soft); font-weight: 600; }
+  .pw { text-align: center; font-size: 9pt; margin-top: 6px; }
+  .pw code { background: var(--soft2); border-radius: 5px; padding: 2px 8px; font-size: 9.5pt; color: var(--navy-d); font-weight: 700; }
+</style>
+</head>
+<body>
+
+<!-- ======================= COVER ======================= -->
+<section class="cover">
+  <div class="top">
+    <img src="../ergo-connect-frontend/public/ergo-logo.jpeg" alt="ERGO">
+    <span class="tag">Internal &middot; for the developer team</span>
+  </div>
+
+  <div class="hero">
+    <div class="kicker">Meeting prep &amp; walkthrough guide</div>
+    <h1>Explaining <span>ERGO Connect</span><br>the easy way</h1>
+    <p class="lead">How to understand the whole project tonight, set up the demo, run the meeting and answer the questions.</p>
+  </div>
+
+  <div class="meet">
+    <div class="cell"><div class="k">When</div><div class="v">Saturday, 21 November 2026<br><small>2:00 PM – 3:00 PM (60 minutes)</small></div></div>
+    <div class="cell"><div class="k">Where</div><div class="v">Microsoft Teams<br><small>Screen share from your laptop</small></div></div>
+    <div class="cell wide"><div class="k">Meeting</div><div class="v">ERGO Connect software review with Developer team<br><small>Organiser: Mohan Joshi, CEO, ERGO Asia &middot; Invited: Ajay Deshpande, Amar, Devika, Gopala, the NPD team, Varad and you</small></div></div>
+  </div>
+
+  <div class="inside">
+    <h4>Inside this guide</h4>
+    <div class="parts">
+      <div class="pc"><div class="num">1</div><div class="t">Understand it</div><div class="d">The project in 3 ideas. Tonight, about 1 hour.</div></div>
+      <div class="pc"><div class="num">2</div><div class="t">Set up the demo</div><div class="d">Start the app, prepare data, avoid the traps.</div></div>
+      <div class="pc"><div class="num">3</div><div class="t">Run the meeting</div><div class="d">60-minute plan, live script, what to say.</div></div>
+      <div class="pc"><div class="num">4</div><div class="t">Questions &amp; logins</div><div class="d">Likely questions, your rules, all demo users.</div></div>
+    </div>
+  </div>
+
+  <div class="foot"><span>ERGO Connect &middot; Meeting prep guide</span><span>Prepared 20 November 2026</span></div>
+</section>
+
+<!-- ======================= PART 1 ======================= -->
+<section class="pb">
+  <div class="part-head"><span class="pn">Part 1</span><h2>Understand it yourself</h2><span class="when">Tonight &middot; about 1 hour</span></div>
+
+  <div class="oneline"><small>The project in one line</small>ERGO Connect is one website where ERGO, its customers and its suppliers take a part from <i>“how much will this cost?”</i> to <i>“delivered and closed”</i>.</div>
+
+  <h3>The easy way to remember it: ERGO is like a travel agent</h3>
+  <p>A customer asks the agent for a price. The agent asks the hotels, adds its own margin and gives the customer its own price. The customer never deals with the hotel, and the hotel never knows who the customer is. Here it is the same:</p>
+
+  <svg viewBox="0 0 680 146" width="92%" style="display:block;margin:2px auto 4px" font-family="Segoe UI, Arial, sans-serif">
+    <defs>
+      <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#1d3b84"/></marker>
+      <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#2f5fb8"/></marker>
+    </defs>
+    <rect x="6" y="14" width="164" height="76" rx="12" fill="#e3ecfb" stroke="#2f5fb8" stroke-width="1.5"/>
+    <text x="88" y="46" text-anchor="middle" font-size="16" font-weight="700" fill="#2f5fb8">CUSTOMER</text>
+    <text x="88" y="66" text-anchor="middle" font-size="11" fill="#334155">needs parts</text>
+    <rect x="258" y="8" width="164" height="88" rx="12" fill="#1d3b84"/>
+    <text x="340" y="46" text-anchor="middle" font-size="18" font-weight="700" fill="#fff">ERGO</text>
+    <text x="340" y="66" text-anchor="middle" font-size="11" fill="#c7d4f2">in the middle, controls</text>
+    <text x="340" y="80" text-anchor="middle" font-size="11" fill="#c7d4f2">who sees what</text>
+    <rect x="510" y="14" width="164" height="76" rx="12" fill="#fde4e5" stroke="#e3202a" stroke-width="1.5"/>
+    <text x="592" y="46" text-anchor="middle" font-size="16" font-weight="700" fill="#b91c1c">SUPPLIER</text>
+    <text x="592" y="66" text-anchor="middle" font-size="11" fill="#334155">makes parts</text>
+    <line x1="172" y1="36" x2="254" y2="36" stroke="#1d3b84" stroke-width="2" marker-end="url(#ar)"/>
+    <text x="213" y="29" text-anchor="middle" font-size="9.5" fill="#1d3b84" font-weight="600">1 · asks price</text>
+    <line x1="424" y1="36" x2="506" y2="36" stroke="#1d3b84" stroke-width="2" marker-end="url(#ar)"/>
+    <text x="465" y="29" text-anchor="middle" font-size="9.5" fill="#1d3b84" font-weight="600">2 · asks price</text>
+    <line x1="508" y1="70" x2="426" y2="70" stroke="#2f5fb8" stroke-width="2" marker-end="url(#ar2)"/>
+    <text x="465" y="86" text-anchor="middle" font-size="9.5" fill="#2f5fb8" font-weight="600">3 · quotes</text>
+    <line x1="256" y1="70" x2="174" y2="70" stroke="#2f5fb8" stroke-width="2" marker-end="url(#ar2)"/>
+    <text x="213" y="86" text-anchor="middle" font-size="9.5" fill="#2f5fb8" font-weight="600">4 · own price</text>
+    <path d="M88,92 C88,140 592,140 592,92" fill="none" stroke="#e3202a" stroke-width="2" stroke-dasharray="6 5"/>
+    <rect x="232" y="118" width="216" height="22" rx="11" fill="#fff" stroke="#e3202a" stroke-width="1.2"/>
+    <text x="340" y="133" text-anchor="middle" font-size="10.5" font-weight="700" fill="#b91c1c">✕  they never see each other</text>
+  </svg>
+
+  <h3>Remember just 3 things</h3>
+  <div class="three">
+    <div class="card"><div class="cn">1</div><div class="ct">3 types of company</div><p><b>ERGO</b> sits in the middle. The <b>customer</b> needs parts. The <b>supplier</b> makes them.</p></div>
+    <div class="card"><div class="cn">2</div><div class="ct">The golden rule</div><p>Customer never sees the supplier's name or price. Supplier never sees the customer, the target price, other quotes or ERGO's margin.</p></div>
+    <div class="card"><div class="cn">3</div><div class="ct">A journey in 3 stages</div><p><b>Price</b> → <b>Sample</b> → <b>Production</b>. Every step has an owner, and nothing moves on without the right approval.</p></div>
+  </div>
+
+  <h3>The journey in 3 stages</h3>
+  <div class="stages">
+    <div class="stage a">
+      <div class="sh"><div class="sl">Stage A</div><div class="st">Price</div><div class="sq">“How much?”</div></div>
+      <ol>
+        <li>Customer sends an <b>RFQ</b> (many parts, files per part)</li>
+        <li>ERGO reviews it and sends parts to a supplier</li>
+        <li>Supplier quotes its price</li>
+        <li>ERGO makes <b>its own quotation</b> (with margin)</li>
+        <li>Customer approves, per part</li>
+      </ol>
+    </div>
+    <div class="stage b">
+      <div class="sh"><div class="sl">Stage B</div><div class="st">Sample</div><div class="sq">“Can you make it right?”</div></div>
+      <ol>
+        <li>Customer raises a <b>Sample PO</b></li>
+        <li>ERGO KAM creates the project</li>
+        <li>Supplier makes a plan, ERGO agrees</li>
+        <li>Work is done step by step</li>
+        <li>Quality check by ERGO <b>and</b> supplier</li>
+        <li>Customer approves the sample</li>
+      </ol>
+    </div>
+    <div class="stage c">
+      <div class="sh"><div class="sl">Stage C</div><div class="st">Production</div><div class="sq">“Make the real quantity”</div></div>
+      <ol>
+        <li>Customer releases a <b>Production PO</b></li>
+        <li>KAM creates the production project</li>
+        <li>Order: material → production → inspection</li>
+        <li>Dispatch → delivered → <b>closed</b></li>
+      </ol>
+      <div class="gate">⛔ Dispatch is blocked until the inspection passes</div>
+    </div>
+  </div>
+
+  <div class="chips"><b style="font-size:9pt;margin-right:2px;align-self:center">Always on:</b>
+    <span class="chip">Documents</span><span class="chip">Comments</span><span class="chip">Notification bell</span>
+    <span class="chip">Dashboards</span><span class="chip">History nobody can edit</span><span class="chip">Admin: users, companies, permissions</span>
+  </div>
+
+  <div class="twocol" style="margin-top:8px">
+    <div class="box"><span class="bt">What to read tonight (20 minutes)</span>
+      <p>Open <code>docs/PROJECT_GUIDE_CLIENT.html</code> in your browser. It is already written in the client's language. Read only sections <b>1, 2, 4, 9 and 12</b>. Skip the rest.</p></div>
+    <div class="box green"><span class="bt">The best way to really understand it</span>
+      <p>Click through the whole flow yourself once tonight (Part 3). After one full run you can explain it without notes.</p></div>
+  </div>
+</section>
+
+<!-- ======================= PART 2 ======================= -->
+<section class="pb">
+  <div class="part-head"><span class="pn">Part 2</span><h2>Set up the demo</h2><span class="when">Tonight + tomorrow from 12:30</span></div>
+
+  <div class="box red"><span class="bt">Run the demo on your laptop, not on the live site</span>
+    <p>The live site only has the admin account. Any test data you create there would stay in ERGO's real system.</p></div>
+
+  <h3>Start the app</h3>
+  <div class="steps">
+    <div class="step"><div class="sn">1</div><div class="sb"><b>Start Docker Desktop</b> and wait until it says it is running.</div></div>
+    <div class="step"><div class="sn">2</div><div class="sb"><b>Backend</b>, in <code>ergo-connect-backend/</code>:
+      <span class="cmd">JAVA_HOME="C:/Program Files/Java/jdk-21.0.10" ./mvnw -q -B spring-boot:test-run</span></div></div>
+    <div class="step"><div class="sn">3</div><div class="sb"><b>Frontend</b>, in <code>ergo-connect-frontend/</code>:
+      <span class="cmd">npm run dev   <span class="c"># then open http://localhost:5173</span></span></div></div>
+    <div class="step"><div class="sn">4</div><div class="sb">Sign in. <b>Every demo user's password is <code>ErgoDev#2026</code></b>. All demo users are on the last page.</div></div>
+  </div>
+
+  <div class="box amber"><span class="bt">⚠ The database is thrown away when you stop the app</span>
+    <p><b>Tonight</b> = practice run. <b>Tomorrow at about 12:30</b>, start fresh, prepare the data and <b>keep it running until the meeting ends</b>. Keep the laptop on the charger and turn sleep off.</p></div>
+
+  <h3>Trick: 3 browsers = 3 users side by side, no logging out</h3>
+  <div class="browsers">
+    <div class="bw cu"><div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="bn">Chrome</span></div>
+      <div class="bb"><div class="who">Customer</div><div class="acct">buyer@acme.dev</div></div></div>
+    <div class="bw er"><div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="bn">Brave</span></div>
+      <div class="bb"><div class="who">ERGO</div><div class="acct">rfq@ergo.dev</div></div></div>
+    <div class="bw su"><div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="bn">Chrome Incognito</span></div>
+      <div class="bb"><div class="who">Supplier</div><div class="acct">sales@precision.dev</div></div></div>
+  </div>
+
+  <div class="box red"><span class="bt">⚠ One trap found in the code: the quality gate needs a second Supplier Quality person</span>
+    <p>The Supplier Quality person who <b>submits</b> the sample cannot also <b>approve</b> it. This is deliberate, so nobody approves their own work. The demo data has only one (<code>qa@precision.dev</code>). <b>Before the meeting, add a second Supplier Quality user at Precision Castings</b> (as <code>admin@ergo.dev</code> → Users). Otherwise Stage B gets stuck in front of everyone.</p></div>
+
+  <h3>Prepare 2 RFQs</h3>
+  <div class="twocol">
+    <div class="rfq prep"><div class="rt">RFQ-1 &middot; prepared before</div>
+      <p>Take it all the way to an <b>order</b> before the meeting, so you can show Stages B and C without 30 live clicks.</p></div>
+    <div class="rfq live"><div class="rt">RFQ-2 &middot; created live</div>
+      <p>Create it during the meeting and show <b>Stage A only</b> (5 steps, about 15 minutes).</p></div>
+  </div>
+
+  <h3>Final checklist, 15 minutes before 2:00 PM</h3>
+  <ul class="check">
+    <li>Docker Desktop running</li>
+    <li>Backend and frontend running, login page opens</li>
+    <li>Chrome, Brave and Incognito open and signed in</li>
+    <li>Second Supplier Quality user added</li>
+    <li>RFQ-1 prepared up to the order</li>
+    <li>Client guide open in a tab (for the big picture)</li>
+    <li>Laptop on the charger, sleep turned off</li>
+    <li>Other notifications muted, other tabs closed</li>
+    <li>Teams: share the browser window, not the whole screen</li>
+    <li>Notepad ready for questions and requests</li>
+  </ul>
+</section>
+
+<!-- ======================= PART 3 ======================= -->
+<section class="pb">
+  <div class="part-head"><span class="pn">Part 3</span><h2>Run the meeting</h2><span class="when">2:00 – 3:00 PM</span></div>
+
+  <div class="tl">
+    <div style="width:8.33%;background:#64748b">Hello</div>
+    <div style="width:16.67%;background:#2f5fb8">Big picture</div>
+    <div style="width:33.33%;background:#1d3b84">Live Stage A &middot; RFQ-2</div>
+    <div style="width:16.67%;background:#142a5e">Stages B + C</div>
+    <div style="width:8.33%;background:#475569">Admin</div>
+    <div style="width:16.67%;background:#e3202a">Q&amp;A + next steps</div>
+  </div>
+  <div class="tlk"><span>2:00</span><span>2:15</span><span>2:35</span><span>2:45</span><span>3:00</span></div>
+
+  <table>
+    <thead><tr><th style="width:78px">Time</th><th>What</th><th>How</th></tr></thead>
+    <tbody>
+      <tr><td class="t">2:00–2:05</td><td>Welcome. <i>“Today we show the full flow and agree on next steps.”</i></td><td>Talk</td></tr>
+      <tr><td class="t">2:05–2:15</td><td>The big picture: 3 companies, the golden rule, 3 stages</td><td>Share sections 2–4 of the client guide</td></tr>
+      <tr><td class="t">2:15–2:35</td><td><b>Live Stage A</b> with RFQ-2</td><td>The 5 steps below</td></tr>
+      <tr><td class="t">2:35–2:45</td><td>Stages B and C with the prepared RFQ-1</td><td>Walk through the screens</td></tr>
+      <tr><td class="t">2:45–2:50</td><td>Dashboard, history, users and permissions</td><td><span class="acct">management@ergo.dev</span>, <span class="acct">admin@ergo.dev</span></td></tr>
+      <tr><td class="t">2:50–3:00</td><td>Questions and next steps</td><td>The list on the next page</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Live script for Stage A</h3>
+  <table>
+    <thead><tr><th>#</th><th style="width:118px">Who</th><th>What you click</th><th style="width:36%">What you say</th></tr></thead>
+    <tbody>
+      <tr><td class="n">1</td><td><span class="pill cu">Customer</span><br><span class="acct">buyer@acme.dev</span></td>
+        <td><b class="btn">RFQs → New</b> → title, date, currency, one part with a drawing and a target price → <b class="btn">Submit</b></td>
+        <td class="say">“This is how your customer asks for a price. One RFQ can hold many parts, with files for each part.”</td></tr>
+      <tr><td class="n">2</td><td><span class="pill er">ERGO</span><br><span class="acct">rfq@ergo.dev</span><br><small>role ERGO RFQ</small></td>
+        <td>Open the RFQ → <b class="btn">Start review</b> → fill in the technical details → <b class="btn">Parts &amp; suppliers</b> → send to Precision Castings</td>
+        <td class="say">“ERGO checks the request and chooses the supplier.”</td></tr>
+      <tr><td class="n">3</td><td><span class="pill su">Supplier</span><br><span class="acct">sales@precision.dev</span></td>
+        <td><b class="btn">Assigned RFQs</b> → open it → enter the price → <b class="btn">Submit</b></td>
+        <td class="say">“Notice: no customer name and no target price, only a neutral number like RFQ-2026-…”</td></tr>
+      <tr><td class="n">4</td><td><span class="pill er">ERGO</span><br><span class="acct">rfq@ergo.dev</span></td>
+        <td><b class="btn">Accept</b> → <b class="btn">Generate quotation for customer</b></td>
+        <td class="say">“ERGO makes its own quotation with its margin. The supplier's price never reaches the customer.”</td></tr>
+      <tr><td class="n">5</td><td><span class="pill cu">Customer</span><br><span class="acct">buyer@acme.dev</span></td>
+        <td><b class="btn">Customer quotation</b> tab → <b class="btn">Approve</b> with a comment</td>
+        <td class="say">“The customer decides per part: Approve, Correction, Reject or On hold. A comment is always required.”</td></tr>
+    </tbody>
+  </table>
+
+  <div class="box green"><span class="bt">Optional “wow” moment: prove the golden rule</span>
+    <p>Sign in as <span class="acct">buyer@bharat.dev</span> (another customer) and <span class="acct">sales@shakti.dev</span> (another supplier). Neither can see Acme's RFQ at all.</p></div>
+</section>
+
+<section class="pb">
+  <h3 style="margin-top:0">Stages B and C, on the prepared RFQ-1</h3>
+  <div class="bc">
+    <div class="bci"><div class="bt">Sample PO</div>
+      <p><span class="acct">npd@acme.dev</span> raises it, then <span class="acct">kam@ergo.dev</span> creates the project and assigns ERGO NPD and Quality.</p>
+      <p class="q">“The KAM is the gatekeeper.”</p></div>
+    <div class="bci"><div class="bt">Plan</div>
+      <p><span class="acct">npd@ergo.dev</span> releases the plan, <span class="acct">tooling@precision.dev</span> fills in dates and submits, ERGO agrees.</p>
+      <p class="q">“No work starts before the plan is agreed.”</p></div>
+    <div class="bci"><div class="bt">Quality</div>
+      <p><span class="acct">qa@precision.dev</span> submits; <span class="acct">quality@ergo.dev</span> and the second Supplier Quality user approve; then <span class="acct">npd@acme.dev</span> and <span class="acct">quality@acme.dev</span> both approve.</p>
+      <p class="q">“Both sides check the sample, then the customer gives the final OK.”</p></div>
+    <div class="bci"><div class="bt">Production</div>
+      <p><span class="acct">logistics@acme.dev</span> sends the Production PO, the KAM creates the production project, then the order runs to dispatch.</p>
+      <p class="q">“Dispatch is blocked until the inspection passes.”</p></div>
+  </div>
+
+  <div class="box"><span class="bt">Tip: show each person their own screen</span>
+    <p>When you reach a step, say who does it: <i>“This screen is what your NPD team will use.”</i> People understand much faster when they see their own work.</p></div>
+
+  <h3>Next steps to ask for at the end</h3>
+  <ol class="asks">
+    <li><b>Pilot users:</b> names and roles from ERGO, 1–2 customers and 1–2 suppliers.</li>
+    <li><b>Real master data:</b> materials, processes, coatings, payment terms and exchange rates.</li>
+    <li><b>Web address (domain)</b> they want the platform on.</li>
+    <li><b>Registration Q18:</b> when a company is suspended and its running RFQs stop, should they be put on hold or cancelled? The whole RFQ or only that supplier's parts? What happens when the company is un-suspended?</li>
+    <li><b>Their audit checklist</b>, promised for Q28.</li>
+  </ol>
+
+  <div class="box green"><span class="bt">Good news to share</span>
+    <p>The <b>unsaved-changes warning</b> they asked for on the RFQ screen is built and goes live soon.</p></div>
+</section>
+
+<!-- ======================= PART 4 ======================= -->
+<section class="pb">
+  <div class="part-head"><span class="pn">Part 4</span><h2>Questions, rules and logins</h2></div>
+
+  <h3>Questions they will probably ask</h3>
+  <div class="qa">
+    <div class="qai"><div class="q">Can a supplier find out who the customer is?</div><div class="a"><span class="no">No.</span> It sees a neutral number, also in notifications and search.</div></div>
+    <div class="qai"><div class="q">Can the customer see the supplier's name or price?</div><div class="a"><span class="no">No.</span> It sees only ERGO's own quotation.</div></div>
+    <div class="qai"><div class="q">Does the supplier learn whether the customer approved?</div><div class="a"><span class="no">No.</span> It only sees “Accepted”.</div></div>
+    <div class="qai"><div class="q">Can one RFQ go to several suppliers?</div><div class="a"><span class="yes">Yes.</span> Parts can be split between suppliers; each part is with one supplier at a time.</div></div>
+    <div class="qai"><div class="q">Can goods ship without an inspection?</div><div class="a"><span class="no">No.</span> Dispatch is blocked until the inspection passes.</div></div>
+    <div class="qai"><div class="q">Can one person have several roles?</div><div class="a"><span class="yes">Yes.</span> Pick one at login and switch any time; one role at a time.</div></div>
+    <div class="qai"><div class="q">Who changes what a role can do?</div><div class="a">Only the ERGO Admin, from a screen. A reason is required and every change is kept in the history.</div></div>
+    <div class="qai"><div class="q">Can the Admin approve things?</div><div class="a"><span class="no">No.</span> Approvals stay with the business roles.</div></div>
+    <div class="qai"><div class="q">Can the history be edited or deleted?</div><div class="a"><span class="no">No</span>, not even by the Admin.</div></div>
+    <div class="qai"><div class="q">Do we get emails?</div><div class="a">Today notifications are in the app's bell. Email is only for password reset and the login code. Want more? Note it as a request.</div></div>
+    <div class="qai"><div class="q">Where is our data?</div><div class="a">On a cloud server, with an encrypted backup every night.</div></div>
+    <div class="qai"><div class="q">When can we start using it?</div><div class="a">After a short pilot. We need the pilot users, master data and the domain (next steps 1–3).</div></div>
+  </div>
+
+  <h3>Your 4 rules in the meeting</h3>
+  <div class="rules">
+    <div class="rule"><div class="ri">?</div><div class="rt">Never guess</div><p>“Good question, I'll confirm and reply by email.” Never guess about permissions or dates.</p></div>
+    <div class="rule"><div class="ri">✎</div><div class="rt">Write everything down</div><p>Every question and request goes in your notes.</p></div>
+    <div class="rule"><div class="ri">◎</div><div class="rt">Business words only</div><p>Say “approve”, “send back”, “role”. Not Java, database or API.</p></div>
+    <div class="rule"><div class="ri">✉</div><div class="rt">Email a summary after</div><p>Decisions, open questions and next steps, the same day.</p></div>
+  </div>
+
+  <h3>All demo logins</h3>
+  <div class="logins">
+    <div class="lg er"><div class="lh">ERGO</div>
+      <div class="row"><span class="acct">admin@ergo.dev</span><span class="r">Admin</span></div>
+      <div class="row"><span class="acct">management@ergo.dev</span><span class="r">Management</span></div>
+      <div class="row"><span class="acct">rfq@ergo.dev</span><span class="r">RFQ + NPD</span></div>
+      <div class="row"><span class="acct">npd@ergo.dev</span><span class="r">NPD + OFP</span></div>
+      <div class="row"><span class="acct">ofp@ergo.dev</span><span class="r">OFP</span></div>
+      <div class="row"><span class="acct">quality@ergo.dev</span><span class="r">Quality</span></div>
+      <div class="row"><span class="acct">kam@ergo.dev</span><span class="r">KAM (Acme only)</span></div>
+    </div>
+    <div class="lg cu"><div class="lh">Customers</div>
+      <div class="sub">Acme Automotive</div>
+      <div class="row"><span class="acct">buyer@acme.dev</span><span class="r">RFQ + Quality</span></div>
+      <div class="row"><span class="acct">npd@acme.dev</span><span class="r">NPD</span></div>
+      <div class="row"><span class="acct">logistics@acme.dev</span><span class="r">OFP</span></div>
+      <div class="row"><span class="acct">quality@acme.dev</span><span class="r">Quality</span></div>
+      <div class="row"><span class="acct">account@acme.dev</span><span class="r">KAM + RFQ</span></div>
+      <div class="sub">Bharat Motors</div>
+      <div class="row"><span class="acct">buyer@bharat.dev</span><span class="r">RFQ</span></div>
+    </div>
+    <div class="lg su"><div class="lh">Suppliers</div>
+      <div class="sub">Precision Castings</div>
+      <div class="row"><span class="acct">sales@precision.dev</span><span class="r">RFQ</span></div>
+      <div class="row"><span class="acct">tooling@precision.dev</span><span class="r">NPD</span></div>
+      <div class="row"><span class="acct">planner@precision.dev</span><span class="r">OFP</span></div>
+      <div class="row"><span class="acct">qa@precision.dev</span><span class="r">Quality</span></div>
+      <div class="row"><span class="acct">lead@precision.dev</span><span class="r">KAM + RFQ</span></div>
+      <div class="row add"><span>+ 2nd Quality user</span><span class="r">you add it</span></div>
+      <div class="sub">Shakti Forgings</div>
+      <div class="row"><span class="acct">sales@shakti.dev</span><span class="r">RFQ</span></div>
+    </div>
+  </div>
+  <div class="pw">Password for every demo user: <code>ErgoDev#2026</code> &nbsp;·&nbsp; demo only, never on the live site</div>
+</section>
+
+</body>
+</html>
