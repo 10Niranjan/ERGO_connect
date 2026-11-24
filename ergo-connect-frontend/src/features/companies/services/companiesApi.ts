@@ -13,6 +13,7 @@ export type CompanyAction =
   | 'ACTIVATE'
   | 'DEACTIVATE'
   | 'ADD_USER'
+  | 'VIEW_ASSESSMENTS'
 
 export interface CompanyProfile {
   name: string

@@ -39,7 +39,7 @@ public final class CompanyDtos {
 
 	/** What the caller may do with this company now (by role and status), so the UI shows only valid buttons. */
 	public enum CompanyAction {
-		EDIT, SEND_FOR_APPROVAL, APPROVE, REJECT, REQUEST_INFO, ACTIVATE, DEACTIVATE, ADD_USER
+		EDIT, SEND_FOR_APPROVAL, APPROVE, REJECT, REQUEST_INFO, ACTIVATE, DEACTIVATE, ADD_USER, VIEW_ASSESSMENTS
 	}
 
 	/** One company, in the shape its audience may see. */

@@ -1,5 +1,5 @@
 // Phase 1: master data, exchange rates, full company profiles, extra companies and users, phone numbers.
-import { PERSONA, attempt, call, get, log, monthsAgo } from './lib.mjs'
+import { PERSONA, attempt, call, get, log, monthsAgo, upload } from './lib.mjs'
 
 const MATERIALS = [
   ['EN19', 'EN19 alloy steel (42CrMo4)', 'BS 970 709M40', 'EN19'],
@@ -115,6 +115,15 @@ export async function run() {
     const actor = nc.approve ? 'admin' : 'rfq'
     const created = await attempt(`company ${nc.code}`, actor, 'POST', '/companies', { type: nc.type, profile: nc.profile })
     if (!created) continue
+    // a supplier needs an audit report from ERGO Quality before it can be sent for approval (client question 14)
+    if (nc.type === 'SUPPLIER') {
+      const audit = { assessmentDate: monthsAgo(1), auditType: 'ON_SITE', auditor: 'Kiran Kumar (ERGO Quality)', recommendation: 'APPROVE',
+        findings: 'Process capability and calibration records reviewed on site. Minor finding: gauge labels incomplete; corrective action agreed.' }
+      await upload('quality', `/companies/${created.id}/assessments`, { content: `%PDF-1.4
+% ${nc.profile.name} audit report
+`, name: `${nc.code.toLowerCase()}-audit-report.pdf`, type: 'application/pdf' },
+        { assessment: new Blob([JSON.stringify(audit)], { type: 'application/json' }) })
+    }
     const sent = await attempt(`send ${nc.code} for approval`, actor, 'POST', `/companies/${created.id}/send-for-approval`)
     if (sent && nc.approve) await attempt(`approve ${nc.code}`, 'mgmt', 'POST', `/companies/${created.id}/approve`, { comment: 'Vendor audit completed, approved.' })
   }

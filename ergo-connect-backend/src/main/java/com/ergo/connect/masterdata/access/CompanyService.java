@@ -47,6 +47,10 @@ public class CompanyService {
 	/** Statuses ERGO Quality works with: a company still being registered or reviewed is not one (client 2026-10-21). */
 	private static final Set<CompanyStatus> QUALITY_VISIBLE = EnumSet.of(ACTIVE, INACTIVE);
 
+	/** Who sees a company's audit reports or assessments (ERGO Quality: suppliers only). */
+	private static final Set<Role> ASSESSMENT_VIEWERS = EnumSet.of(Role.ERGO_ADMIN, Role.ERGO_MANAGEMENT, Role.ERGO_RFQ,
+			Role.ERGO_KAM, Role.ERGO_QUALITY);
+
 	/** A registration can be sent for approval from these. */
 	private static final Set<CompanyStatus> SENDABLE = EnumSet.of(DRAFT, INFO_REQUESTED, REJECTED);
 
@@ -58,11 +62,15 @@ public class CompanyService {
 
 	private final Notifier notifier;
 
-	CompanyService(CompanyRepository companies, UserRepository users, AuditLogService audit, Notifier notifier) {
+	private final CompanyAssessmentRepository assessments;
+
+	CompanyService(CompanyRepository companies, UserRepository users, AuditLogService audit, Notifier notifier,
+			CompanyAssessmentRepository assessments) {
 		this.companies = companies;
 		this.users = users;
 		this.audit = audit;
 		this.notifier = notifier;
+		this.assessments = assessments;
 	}
 
 	/**
@@ -83,7 +91,7 @@ public class CompanyService {
 			// Quality only picks companies it can work with (client 2026-10-21)
 			case ERGO_QUALITY -> companies.findAllByOrderByNameAsc()
 				.stream()
-				.filter(c -> QUALITY_VISIBLE.contains(c.status))
+				.filter(CompanyService::qualitySees)
 				.toList();
 			case ERGO_KAM -> companies.findByIdInOrderByNameAsc(accounts(me));
 			// SRS "RV": the companies on their own NPD / OFP records
@@ -222,6 +230,11 @@ public class CompanyService {
 		if (!canReview(me, company)) {
 			throw ApiException.unprocessable("You cannot review a company you registered or sent for approval yourself");
 		}
+		// question 14 also at the approval door: a supplier already pending before V47 has no audit report yet
+		if (outcome == ACTIVE && company.type == CompanyType.SUPPLIER && !assessments.existsByCompanyIdAndKind(company.id,
+				CompanyAssessmentDtos.AssessmentKind.SUPPLIER_AUDIT)) {
+			throw ApiException.unprocessable("ERGO Quality must add the supplier's audit report before it can be approved");
+		}
 		String trimmed = comment == null || comment.isBlank() ? null : comment.trim();
 		if (trimmed != null) {
 			audit.reason(trimmed); // stored with the status change: approver, time, old + new status, comment
@@ -241,10 +254,24 @@ public class CompanyService {
 	}
 
 	/**
-	 * The minimum information agreed with the client (question 15) that a company still lacks. Business type, a
-	 * supplier's processes and its audit report join this list with the registration tabs (steps 2 and 3).
+	 * Quality works with approved companies, and with every supplier still being registered or reviewed because it adds
+	 * their audit reports before approval (client question 6). Customers in registration stay hidden from it.
 	 */
-	static List<String> missing(Company c) {
+	private static boolean qualitySees(Company c) {
+		return QUALITY_VISIBLE.contains(c.status) || c.type == CompanyType.SUPPLIER;
+	}
+
+	/** Record scope for this package's other services (CompanyAssessmentService): 404 when out of scope. */
+	Company scoped(CurrentUser me, long id) {
+		return visible(me, id);
+	}
+
+	/**
+	 * The minimum information agreed with the client (question 15) that a company still lacks, including a supplier's
+	 * audit report (question 14). Business type and a supplier's processes join this list with the registration tabs
+	 * (step 2).
+	 */
+	List<String> missing(Company c) {
 		List<String> missing = new ArrayList<>();
 		if (blank(c.country)) {
 			missing.add("country");
@@ -257,6 +284,11 @@ public class CompanyService {
 		}
 		if (blank(c.primaryContactName) || blank(c.primaryContactEmail)) {
 			missing.add("main contact name and email");
+		}
+		// ponytail: one exists-query per supplier row in a list; batch it if the company list ever grows large
+		if (c.type == CompanyType.SUPPLIER && !assessments.existsByCompanyIdAndKind(c.id,
+				CompanyAssessmentDtos.AssessmentKind.SUPPLIER_AUDIT)) {
+			missing.add("audit report");
 		}
 		return missing;
 	}
@@ -285,7 +317,7 @@ public class CompanyService {
 			default -> id == me.companyId();
 		};
 		return (inScope ? companies.findById(id) : Optional.<Company>empty())
-			.filter(c -> me.role() != Role.ERGO_QUALITY || QUALITY_VISIBLE.contains(c.status))
+			.filter(c -> me.role() != Role.ERGO_QUALITY || qualitySees(c))
 			.orElseThrow(() -> ApiException.notFound("Company"));
 	}
 
@@ -312,6 +344,12 @@ public class CompanyService {
 	private static boolean canReview(CurrentUser me, Company company) {
 		return me.role() == Role.ERGO_MANAGEMENT && !Objects.equals(company.createdByUserId, me.userId())
 				&& !Objects.equals(company.submittedByUserId, me.userId());
+	}
+
+	/** Audit reports and assessments: ERGO-internal (question 9); ERGO Quality for suppliers only. Scope checked first. */
+	static boolean canViewAssessments(CurrentUser me, Company c) {
+		return me.companyType() == CompanyType.ERGO && ASSESSMENT_VIEWERS.contains(me.role()) && c.type != CompanyType.ERGO
+				&& (me.role() != Role.ERGO_QUALITY || c.type == CompanyType.SUPPLIER);
 	}
 
 	/** ERGO Admin adds accounts to any approved company; ERGO RFQ only to an approved supplier. */
@@ -348,7 +386,7 @@ public class CompanyService {
 	}
 
 	/** The audience decides the shape (CLAUDE.md: separate DTOs per audience, chosen by company type, not by role). */
-	private static CompanyView toView(Company c, CurrentUser me) {
+	private CompanyView toView(Company c, CurrentUser me) {
 		Set<CompanyAction> actions = EnumSet.noneOf(CompanyAction.class);
 		if (canEdit(me, c) && c.status != PENDING_APPROVAL) {
 			actions.add(CompanyAction.EDIT);
@@ -363,6 +401,9 @@ public class CompanyService {
 		}
 		if (canAddUser(me, c)) {
 			actions.add(CompanyAction.ADD_USER);
+		}
+		if (canViewAssessments(me, c)) {
+			actions.add(CompanyAction.VIEW_ASSESSMENTS);
 		}
 		if (me.role() == Role.ERGO_ADMIN && c.type != CompanyType.ERGO) {
 			if (c.status == ACTIVE) {

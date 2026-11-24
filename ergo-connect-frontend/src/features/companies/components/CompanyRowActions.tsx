@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { TemporaryPasswordDialog } from '../../admin/components/TemporaryPasswordDialog'
 import { UserDialog } from '../../admin/components/UserDialog'
 import { useSendCompanyForApprovalMutation, useSetCompanyActiveMutation, type Company, type ReviewDecision } from '../companiesApi'
+import { AssessmentsDialog } from './AssessmentsDialog'
 import { CompanyDialog } from './CompanyDialog'
 import { ReviewDialog } from './ReviewDialog'
 import { useConfirm } from '@/components/ui/useConfirm'
@@ -22,6 +23,7 @@ export function CompanyRowActions({ company, onError }: Props) {
   const [setActive] = useSetCompanyActiveMutation()
   const [editing, setEditing] = useState(false)
   const [addingUser, setAddingUser] = useState(false)
+  const [assessing, setAssessing] = useState(false)
   const [reviewing, setReviewing] = useState<ReviewDecision | null>(null)
   const [issued, setIssued] = useState<{ email: string; password: string } | null>(null)
   const [confirm, confirmDialog] = useConfirm()
@@ -53,6 +55,11 @@ export function CompanyRowActions({ company, onError }: Props) {
       {can('EDIT') && (
         <Button size="small" onClick={() => setEditing(true)}>
           Edit
+        </Button>
+      )}
+      {can('VIEW_ASSESSMENTS') && (
+        <Button size="small" onClick={() => setAssessing(true)}>
+          {company.type === 'SUPPLIER' ? 'Audit reports' : 'Assessments'}
         </Button>
       )}
       {can('ADD_USER') && (
@@ -88,6 +95,7 @@ export function CompanyRowActions({ company, onError }: Props) {
           Activate
         </Button>
       )}
+      {assessing && <AssessmentsDialog company={company} onClose={() => setAssessing(false)} />}
       {editing && <CompanyDialog company={company} onClose={() => setEditing(false)} />}
       {reviewing && <ReviewDialog company={company} decision={reviewing} onClose={() => setReviewing(null)} />}
       {addingUser && (

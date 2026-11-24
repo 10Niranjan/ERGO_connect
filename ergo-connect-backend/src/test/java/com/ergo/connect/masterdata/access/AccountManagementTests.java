@@ -146,6 +146,7 @@ class AccountManagementTests {
 			.andReturn()
 			.getResponse()
 			.getContentAsString(), "$.id").longValue();
+		Audits.supplierAudit(mvc, accounts.bearer(accounts.user(ergo, Role.ERGO_QUALITY)), pending);
 		mvc.perform(post("/api/companies/{id}/send-for-approval", pending).header(HttpHeaders.AUTHORIZATION, asRfq))
 			.andExpect(status().isOk());
 
